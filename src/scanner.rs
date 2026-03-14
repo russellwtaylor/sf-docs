@@ -113,7 +113,11 @@ mod tests {
     #[test]
     fn finds_cls_files() {
         let tmp = TempDir::new().unwrap();
-        write_file(tmp.path(), "AccountService.cls", "public class AccountService {}");
+        write_file(
+            tmp.path(),
+            "AccountService.cls",
+            "public class AccountService {}",
+        );
         write_file(tmp.path(), "AccountService.cls-meta.xml", "<ApexClass/>");
         write_file(tmp.path(), "README.md", "docs");
 
@@ -129,8 +133,16 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let sub = tmp.path().join("triggers");
         fs::create_dir(&sub).unwrap();
-        write_file(tmp.path(), "AccountService.cls", "public class AccountService {}");
-        write_file(&sub, "AccountTrigger.cls", "trigger AccountTrigger on Account (before insert) {}");
+        write_file(
+            tmp.path(),
+            "AccountService.cls",
+            "public class AccountService {}",
+        );
+        write_file(
+            &sub,
+            "AccountTrigger.cls",
+            "trigger AccountTrigger on Account (before insert) {}",
+        );
 
         let scanner = ApexScanner;
         let files = scanner.scan(tmp.path()).unwrap();
@@ -141,9 +153,21 @@ mod tests {
     #[test]
     fn finds_trigger_files() {
         let tmp = TempDir::new().unwrap();
-        write_file(tmp.path(), "AccountTrigger.trigger", "trigger AccountTrigger on Account (before insert) {}");
-        write_file(tmp.path(), "AccountTrigger.trigger-meta.xml", "<ApexTrigger/>");
-        write_file(tmp.path(), "AccountService.cls", "public class AccountService {}");
+        write_file(
+            tmp.path(),
+            "AccountTrigger.trigger",
+            "trigger AccountTrigger on Account (before insert) {}",
+        );
+        write_file(
+            tmp.path(),
+            "AccountTrigger.trigger-meta.xml",
+            "<ApexTrigger/>",
+        );
+        write_file(
+            tmp.path(),
+            "AccountService.cls",
+            "public class AccountService {}",
+        );
 
         let scanner = TriggerScanner;
         let files = scanner.scan(tmp.path()).unwrap();

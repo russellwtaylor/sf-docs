@@ -8,7 +8,9 @@ use tokio::sync::Semaphore;
 use crate::prompt::{build_prompt, SYSTEM_PROMPT};
 use crate::retry::{self, MAX_RETRIES};
 use crate::trigger_prompt::{build_trigger_prompt, TRIGGER_SYSTEM_PROMPT};
-use crate::types::{ApexFile, ClassDocumentation, ClassMetadata, TriggerDocumentation, TriggerMetadata};
+use crate::types::{
+    ApexFile, ClassDocumentation, ClassMetadata, TriggerDocumentation, TriggerMetadata,
+};
 
 // ---------------------------------------------------------------------------
 // OpenAI-compatible API shapes (Groq, OpenAI, Ollama)
@@ -125,12 +127,9 @@ impl OpenAiCompatClient {
                 .with_context(|| format!("Failed to send request to {} API", self.provider_name))?;
 
             if response.status().is_success() {
-                let chat_response: ChatResponse = response
-                    .json()
-                    .await
-                    .with_context(|| {
-                        format!("Failed to deserialize {} response", self.provider_name)
-                    })?;
+                let chat_response: ChatResponse = response.json().await.with_context(|| {
+                    format!("Failed to deserialize {} response", self.provider_name)
+                })?;
 
                 let raw_json = chat_response
                     .choices
@@ -141,14 +140,13 @@ impl OpenAiCompatClient {
                         format!("{} returned an empty response", self.provider_name)
                     })?;
 
-                let doc: ClassDocumentation = serde_json::from_str(&raw_json).with_context(
-                    || {
+                let doc: ClassDocumentation =
+                    serde_json::from_str(&raw_json).with_context(|| {
                         format!(
                             "Failed to parse {} JSON for class '{}':\n{}",
                             self.provider_name, metadata.class_name, raw_json
                         )
-                    },
-                )?;
+                    })?;
 
                 return Ok(doc);
             }
@@ -179,10 +177,18 @@ impl OpenAiCompatClient {
         let request = ChatRequest {
             model: self.model.clone(),
             messages: vec![
-                Message { role: "system".to_string(), content: TRIGGER_SYSTEM_PROMPT.to_string() },
-                Message { role: "user".to_string(), content: build_trigger_prompt(file, metadata) },
+                Message {
+                    role: "system".to_string(),
+                    content: TRIGGER_SYSTEM_PROMPT.to_string(),
+                },
+                Message {
+                    role: "user".to_string(),
+                    content: build_trigger_prompt(file, metadata),
+                },
             ],
-            response_format: ResponseFormat { format_type: "json_object".to_string() },
+            response_format: ResponseFormat {
+                format_type: "json_object".to_string(),
+            },
             temperature: 0.2,
         };
 
@@ -199,24 +205,26 @@ impl OpenAiCompatClient {
                 .with_context(|| format!("Failed to send request to {} API", self.provider_name))?;
 
             if response.status().is_success() {
-                let chat_response: ChatResponse = response
-                    .json()
-                    .await
-                    .with_context(|| format!("Failed to deserialize {} response", self.provider_name))?;
+                let chat_response: ChatResponse = response.json().await.with_context(|| {
+                    format!("Failed to deserialize {} response", self.provider_name)
+                })?;
 
                 let raw_json = chat_response
                     .choices
                     .into_iter()
                     .next()
                     .map(|c| c.message.content)
-                    .with_context(|| format!("{} returned an empty response", self.provider_name))?;
+                    .with_context(|| {
+                        format!("{} returned an empty response", self.provider_name)
+                    })?;
 
-                let doc: TriggerDocumentation = serde_json::from_str(&raw_json).with_context(|| {
-                    format!(
-                        "Failed to parse {} JSON for trigger '{}':\n{}",
-                        self.provider_name, metadata.trigger_name, raw_json
-                    )
-                })?;
+                let doc: TriggerDocumentation =
+                    serde_json::from_str(&raw_json).with_context(|| {
+                        format!(
+                            "Failed to parse {} JSON for trigger '{}':\n{}",
+                            self.provider_name, metadata.trigger_name, raw_json
+                        )
+                    })?;
 
                 return Ok(doc);
             }
@@ -237,4 +245,3 @@ impl OpenAiCompatClient {
         }
     }
 }
-

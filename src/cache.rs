@@ -74,7 +74,14 @@ impl Cache {
         model: &str,
         documentation: ClassDocumentation,
     ) {
-        self.entries.insert(key, CacheEntry { hash, model: model.to_owned(), documentation });
+        self.entries.insert(
+            key,
+            CacheEntry {
+                hash,
+                model: model.to_owned(),
+                documentation,
+            },
+        );
     }
 
     /// Returns the cached trigger entry if hash and model both match.
@@ -97,7 +104,14 @@ impl Cache {
         model: &str,
         documentation: TriggerDocumentation,
     ) {
-        self.trigger_entries.insert(key, TriggerCacheEntry { hash, model: model.to_owned(), documentation });
+        self.trigger_entries.insert(
+            key,
+            TriggerCacheEntry {
+                hash,
+                model: model.to_owned(),
+                documentation,
+            },
+        );
     }
 }
 
@@ -109,7 +123,11 @@ impl Cache {
 pub fn hash_source(source: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(source.as_bytes());
-    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -147,8 +165,12 @@ mod tests {
             relationships: vec![],
         };
         cache.update("Foo.cls".to_string(), "abc".to_string(), "gpt-4o", doc);
-        assert!(cache.get_if_fresh("Foo.cls", "different", "gpt-4o").is_none());
-        assert!(cache.get_if_fresh("Foo.cls", "abc", "other-model").is_none());
+        assert!(cache
+            .get_if_fresh("Foo.cls", "different", "gpt-4o")
+            .is_none());
+        assert!(cache
+            .get_if_fresh("Foo.cls", "abc", "other-model")
+            .is_none());
         assert!(cache.get_if_fresh("Foo.cls", "abc", "gpt-4o").is_some());
     }
 
@@ -165,11 +187,18 @@ mod tests {
             usage_examples: vec![],
             relationships: vec![],
         };
-        cache.update("Foo.cls".to_string(), "deadbeef".to_string(), "gemini-2.5-flash", doc);
+        cache.update(
+            "Foo.cls".to_string(),
+            "deadbeef".to_string(),
+            "gemini-2.5-flash",
+            doc,
+        );
         cache.save(tmp.path()).unwrap();
 
         let loaded = Cache::load(tmp.path());
-        let entry = loaded.get_if_fresh("Foo.cls", "deadbeef", "gemini-2.5-flash").unwrap();
+        let entry = loaded
+            .get_if_fresh("Foo.cls", "deadbeef", "gemini-2.5-flash")
+            .unwrap();
         assert_eq!(entry.documentation.class_name, "Foo");
         assert_eq!(entry.documentation.summary, "A foo class.");
     }

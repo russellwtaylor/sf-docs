@@ -8,10 +8,11 @@ use tokio::sync::Semaphore;
 use crate::prompt::{build_prompt, SYSTEM_PROMPT};
 use crate::retry::{self, MAX_RETRIES};
 use crate::trigger_prompt::{build_trigger_prompt, TRIGGER_SYSTEM_PROMPT};
-use crate::types::{ApexFile, ClassDocumentation, ClassMetadata, TriggerDocumentation, TriggerMetadata};
+use crate::types::{
+    ApexFile, ClassDocumentation, ClassMetadata, TriggerDocumentation, TriggerMetadata,
+};
 
-const GEMINI_BASE_URL: &str =
-    "https://generativelanguage.googleapis.com/v1beta/models";
+const GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta/models";
 
 // ---------------------------------------------------------------------------
 // Gemini REST API request/response shapes
@@ -145,8 +146,13 @@ impl GeminiClient {
                     .map(|p| p.text)
                     .context("Gemini returned an empty response")?;
 
-                let doc: ClassDocumentation = serde_json::from_str(&raw_json)
-                    .with_context(|| format!("Failed to parse Gemini JSON for class '{}':\n{}", metadata.class_name, raw_json))?;
+                let doc: ClassDocumentation =
+                    serde_json::from_str(&raw_json).with_context(|| {
+                        format!(
+                            "Failed to parse Gemini JSON for class '{}':\n{}",
+                            metadata.class_name, raw_json
+                        )
+                    })?;
 
                 return Ok(doc);
             }
@@ -189,7 +195,9 @@ impl GeminiClient {
         let request = GenerateRequest {
             system_instruction: Content {
                 role: None,
-                parts: vec![Part { text: TRIGGER_SYSTEM_PROMPT.to_string() }],
+                parts: vec![Part {
+                    text: TRIGGER_SYSTEM_PROMPT.to_string(),
+                }],
             },
             contents: vec![Content {
                 role: Some("user".to_string()),
@@ -230,8 +238,13 @@ impl GeminiClient {
                     .map(|p| p.text)
                     .context("Gemini returned an empty response")?;
 
-                let doc: TriggerDocumentation = serde_json::from_str(&raw_json)
-                    .with_context(|| format!("Failed to parse Gemini JSON for trigger '{}':\n{}", metadata.trigger_name, raw_json))?;
+                let doc: TriggerDocumentation =
+                    serde_json::from_str(&raw_json).with_context(|| {
+                        format!(
+                            "Failed to parse Gemini JSON for trigger '{}':\n{}",
+                            metadata.trigger_name, raw_json
+                        )
+                    })?;
 
                 return Ok(doc);
             }

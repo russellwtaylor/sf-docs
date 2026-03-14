@@ -73,9 +73,8 @@ async fn main() -> Result<()> {
         Commands::Generate(args) => {
             let provider = &args.provider;
             // Arc<str> so task closures get a cheap pointer copy instead of a String clone.
-            let model: Arc<str> = Arc::from(
-                args.model.as_deref().unwrap_or(provider.default_model()),
-            );
+            let model: Arc<str> =
+                Arc::from(args.model.as_deref().unwrap_or(provider.default_model()));
 
             if args.verbose {
                 eprintln!("Provider:    {}", provider.display_name());
@@ -103,9 +102,9 @@ async fn main() -> Result<()> {
             }
 
             // Scan for .trigger files (non-fatal if none found)
-            let trigger_files = TriggerScanner
-                .scan(&args.source_dir)
-                .with_context(|| format!("Failed to scan triggers in {}", args.source_dir.display()))?;
+            let trigger_files = TriggerScanner.scan(&args.source_dir).with_context(|| {
+                format!("Failed to scan triggers in {}", args.source_dir.display())
+            })?;
             if !trigger_files.is_empty() {
                 println!("Found {} Apex trigger file(s)", trigger_files.len());
             }
@@ -129,7 +128,10 @@ async fn main() -> Result<()> {
             // Shared cross-linking index
             let all_names = Arc::new(AllNames {
                 class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
-                trigger_names: trigger_meta.iter().map(|m| m.trigger_name.clone()).collect(),
+                trigger_names: trigger_meta
+                    .iter()
+                    .map(|m| m.trigger_name.clone())
+                    .collect(),
             });
 
             // Load incremental build cache (empty if --force or first run)
@@ -140,10 +142,14 @@ async fn main() -> Result<()> {
             };
 
             // Hash every source file
-            let class_hashes: Vec<String> =
-                files.par_iter().map(|f| cache::hash_source(&f.raw_source)).collect();
-            let trigger_hashes: Vec<String> =
-                trigger_files.par_iter().map(|f| cache::hash_source(&f.raw_source)).collect();
+            let class_hashes: Vec<String> = files
+                .par_iter()
+                .map(|f| cache::hash_source(&f.raw_source))
+                .collect();
+            let trigger_hashes: Vec<String> = trigger_files
+                .par_iter()
+                .map(|f| cache::hash_source(&f.raw_source))
+                .collect();
 
             // Partition into cached vs. needs-API
             let mut class_work: Vec<usize> = Vec::new();
@@ -157,7 +163,8 @@ async fn main() -> Result<()> {
             }
 
             let mut trigger_work: Vec<usize> = Vec::new();
-            let mut trigger_docs: Vec<Option<TriggerDocumentation>> = vec![None; trigger_files.len()];
+            let mut trigger_docs: Vec<Option<TriggerDocumentation>> =
+                vec![None; trigger_files.len()];
             for (i, (f, h)) in trigger_files.iter().zip(trigger_hashes.iter()).enumerate() {
                 if let Some(e) = cache.get_trigger_if_fresh(&f.path.to_string_lossy(), h, &model) {
                     trigger_docs[i] = Some(e.documentation.clone());
@@ -166,7 +173,8 @@ async fn main() -> Result<()> {
                 }
             }
 
-            let skipped = (files.len() - class_work.len()) + (trigger_files.len() - trigger_work.len());
+            let skipped =
+                (files.len() - class_work.len()) + (trigger_files.len() - trigger_work.len());
             if skipped > 0 {
                 println!("{skipped} file(s) up-to-date — skipping API calls");
             }
@@ -175,10 +183,16 @@ async fn main() -> Result<()> {
                 let api_key = resolve_api_key(provider)?;
                 let client = match provider {
                     Provider::Gemini => DocClient::Gemini(Arc::new(GeminiClient::new(
-                        api_key, &model, args.concurrency,
+                        api_key,
+                        &model,
+                        args.concurrency,
                     ))),
                     _ => DocClient::OpenAiCompat(Arc::new(OpenAiCompatClient::new(
-                        api_key, &model, provider.base_url(), args.concurrency, provider.display_name(),
+                        api_key,
+                        &model,
+                        provider.base_url(),
+                        args.concurrency,
+                        provider.display_name(),
                     ))),
                 };
                 let client = Arc::new(client);
@@ -281,7 +295,12 @@ async fn main() -> Result<()> {
                 .collect();
 
             // Render and write output
-            renderer::write_output(&args.output, &args.format, &class_contexts, &trigger_contexts)?;
+            renderer::write_output(
+                &args.output,
+                &args.format,
+                &class_contexts,
+                &trigger_contexts,
+            )?;
             println!("Documentation written to {}", args.output.display());
 
             // Persist the updated cache — only reached if all API calls succeeded
@@ -306,17 +325,22 @@ fn run_status() {
             .and_then(|v| std::env::var(v).ok())
             .map_or(false, |v| !v.is_empty())
         {
-            format!(
-                "set (env: {})",
-                provider.env_var().unwrap_or("")
-            )
+            format!("set (env: {})", provider.env_var().unwrap_or(""))
         } else if has_stored_key(provider) {
             "set (OS keychain)".to_string()
         } else {
-            format!("not configured — run `sfdoc auth --provider {}`", provider.cli_name())
+            format!(
+                "not configured — run `sfdoc auth --provider {}`",
+                provider.cli_name()
+            )
         };
 
-        println!("{:<10} {:<20} {}", provider.cli_name(), provider.display_name(), status);
+        println!(
+            "{:<10} {:<20} {}",
+            provider.cli_name(),
+            provider.display_name(),
+            status
+        );
     }
 }
 
@@ -360,7 +384,10 @@ fn run_auth(provider: &Provider) -> Result<()> {
         "API key for {} saved to your OS keychain.",
         provider.display_name()
     );
-    println!("You're all set — run `sfdoc generate --provider {}` to get started.", provider.cli_name());
+    println!(
+        "You're all set — run `sfdoc generate --provider {}` to get started.",
+        provider.cli_name()
+    );
 
     Ok(())
 }

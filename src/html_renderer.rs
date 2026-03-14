@@ -41,11 +41,39 @@ li{margin-bottom:4px;line-height:1.5}
 "#;
 
 const APEX_KEYWORDS: &[&str] = &[
-    "public", "private", "protected", "global", "static", "final",
-    "abstract", "virtual", "override", "class", "interface", "enum",
-    "trigger", "on", "new", "return", "if", "else", "for", "while",
-    "do", "try", "catch", "finally", "throw", "void", "null", "true",
-    "false", "this", "super", "extends", "implements",
+    "public",
+    "private",
+    "protected",
+    "global",
+    "static",
+    "final",
+    "abstract",
+    "virtual",
+    "override",
+    "class",
+    "interface",
+    "enum",
+    "trigger",
+    "on",
+    "new",
+    "return",
+    "if",
+    "else",
+    "for",
+    "while",
+    "do",
+    "try",
+    "catch",
+    "finally",
+    "throw",
+    "void",
+    "null",
+    "true",
+    "false",
+    "this",
+    "super",
+    "extends",
+    "implements",
 ];
 
 // ---------------------------------------------------------------------------
@@ -84,7 +112,12 @@ pub fn write_html_output(
         )?;
     }
 
-    let index = render_index(class_contexts, trigger_contexts, &class_names, &trigger_names);
+    let index = render_index(
+        class_contexts,
+        trigger_contexts,
+        &class_names,
+        &trigger_names,
+    );
     std::fs::write(output_dir.join("index.html"), index)?;
 
     Ok(())
@@ -94,11 +127,7 @@ pub fn write_html_output(
 // Page renderers
 // ---------------------------------------------------------------------------
 
-fn render_class_page(
-    ctx: &RenderContext,
-    class_names: &[&str],
-    trigger_names: &[&str],
-) -> String {
+fn render_class_page(ctx: &RenderContext, class_names: &[&str], trigger_names: &[&str]) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.class_name;
@@ -107,18 +136,34 @@ fn render_class_page(
 
     body.push_str(&format!("<h1>{}</h1>\n", escape(&doc.class_name)));
     body.push_str("<div class=\"badges\">\n");
-    body.push_str(&format!("<span class=\"badge\">{}</span>\n", escape(&meta.access_modifier)));
-    if meta.is_abstract { body.push_str("<span class=\"badge\">abstract</span>\n"); }
-    if meta.is_virtual  { body.push_str("<span class=\"badge\">virtual</span>\n"); }
+    body.push_str(&format!(
+        "<span class=\"badge\">{}</span>\n",
+        escape(&meta.access_modifier)
+    ));
+    if meta.is_abstract {
+        body.push_str("<span class=\"badge\">abstract</span>\n");
+    }
+    if meta.is_virtual {
+        body.push_str("<span class=\"badge\">virtual</span>\n");
+    }
     if let Some(ref ext) = meta.extends {
-        body.push_str(&format!("<span class=\"badge\">extends {}</span>\n", escape(ext)));
+        body.push_str(&format!(
+            "<span class=\"badge\">extends {}</span>\n",
+            escape(ext)
+        ));
     }
     for iface in &meta.implements {
-        body.push_str(&format!("<span class=\"badge\">implements {}</span>\n", escape(iface)));
+        body.push_str(&format!(
+            "<span class=\"badge\">implements {}</span>\n",
+            escape(iface)
+        ));
     }
     body.push_str("</div>\n");
 
-    body.push_str(&format!("<p class=\"summary\">{}</p>\n", escape(&doc.summary)));
+    body.push_str(&format!(
+        "<p class=\"summary\">{}</p>\n",
+        escape(&doc.summary)
+    ));
 
     body.push_str("<h2>Description</h2>\n");
     body.push_str(&format!("<p>{}</p>\n", escape(&doc.description)));
@@ -127,13 +172,23 @@ fn render_class_page(
         body.push_str("<h2>Properties</h2>\n");
         body.push_str("<table><thead><tr><th>Name</th><th>Type</th><th>Description</th></tr></thead><tbody>\n");
         for prop in &doc.properties {
-            let prop_type = meta.properties.iter()
+            let prop_type = meta
+                .properties
+                .iter()
                 .find(|p| p.name == prop.name)
-                .map(|p| if p.is_static { format!("static {}", p.property_type) } else { p.property_type.clone() })
+                .map(|p| {
+                    if p.is_static {
+                        format!("static {}", p.property_type)
+                    } else {
+                        p.property_type.clone()
+                    }
+                })
                 .unwrap_or_else(|| "—".to_string());
             body.push_str(&format!(
                 "<tr><td><code>{}</code></td><td><code>{}</code></td><td>{}</td></tr>\n",
-                escape(&prop.name), escape(&prop_type), escape(&prop.description)
+                escape(&prop.name),
+                escape(&prop_type),
+                escape(&prop.description)
             ));
         }
         body.push_str("</tbody></table>\n");
@@ -142,13 +197,25 @@ fn render_class_page(
     if !doc.methods.is_empty() {
         body.push_str("<h2>Methods</h2>\n");
         for method_doc in &doc.methods {
-            let sig = meta.methods.iter().find(|m| m.name == method_doc.name)
+            let sig = meta
+                .methods
+                .iter()
+                .find(|m| m.name == method_doc.name)
                 .map(|m| {
-                    let params: Vec<String> = m.params.iter()
+                    let params: Vec<String> = m
+                        .params
+                        .iter()
                         .map(|p| format!("{} {}", p.param_type, p.name))
                         .collect();
                     let static_kw = if m.is_static { "static " } else { "" };
-                    format!("{} {}{}({}): {}", m.access_modifier, static_kw, m.name, params.join(", "), m.return_type)
+                    format!(
+                        "{} {}{}({}): {}",
+                        m.access_modifier,
+                        static_kw,
+                        m.name,
+                        params.join(", "),
+                        m.return_type
+                    )
                 })
                 .unwrap_or_else(|| method_doc.name.clone());
 
@@ -157,18 +224,24 @@ fn render_class_page(
 
             if !method_doc.params.is_empty() {
                 body.push_str("<p><strong>Parameters</strong></p>\n");
-                body.push_str("<table><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>\n");
+                body.push_str(
+                    "<table><thead><tr><th>Name</th><th>Description</th></tr></thead><tbody>\n",
+                );
                 for param in &method_doc.params {
                     body.push_str(&format!(
                         "<tr><td><code>{}</code></td><td>{}</td></tr>\n",
-                        escape(&param.name), escape(&param.description)
+                        escape(&param.name),
+                        escape(&param.description)
                     ));
                 }
                 body.push_str("</tbody></table>\n");
             }
 
             if method_doc.returns != "void" && !method_doc.returns.is_empty() {
-                body.push_str(&format!("<p><strong>Returns:</strong> {}</p>\n", escape(&method_doc.returns)));
+                body.push_str(&format!(
+                    "<p><strong>Returns:</strong> {}</p>\n",
+                    escape(&method_doc.returns)
+                ));
             }
 
             if !method_doc.throws.is_empty() {
@@ -186,20 +259,43 @@ fn render_class_page(
         for example in &doc.usage_examples {
             // Strip markdown code fences if present, then highlight
             let code = strip_code_fence(example);
-            body.push_str(&format!("<pre><code>{}</code></pre>\n", highlight_apex(&code)));
+            body.push_str(&format!(
+                "<pre><code>{}</code></pre>\n",
+                highlight_apex(&code)
+            ));
         }
     }
 
-    let see_also: Vec<String> = doc.relationships.iter().filter_map(|rel| {
-        class_names.iter()
-            .find(|&&name| rel.contains(name))
-            .map(|&name| format!("<a href=\"{}.html\">{}</a> — {}", name, escape(name), escape(rel)))
-            .or_else(|| {
-                trigger_names.iter()
-                    .find(|&&name| rel.contains(name))
-                    .map(|&name| format!("<a href=\"{}.html\">{}</a> — {}", name, escape(name), escape(rel)))
-            })
-    }).collect();
+    let see_also: Vec<String> = doc
+        .relationships
+        .iter()
+        .filter_map(|rel| {
+            class_names
+                .iter()
+                .find(|&&name| rel.contains(name))
+                .map(|&name| {
+                    format!(
+                        "<a href=\"{}.html\">{}</a> — {}",
+                        name,
+                        escape(name),
+                        escape(rel)
+                    )
+                })
+                .or_else(|| {
+                    trigger_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"{}.html\">{}</a> — {}",
+                                name,
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
+        })
+        .collect();
 
     if !see_also.is_empty() {
         body.push_str("<h2>See Also</h2>\n<ul>\n");
@@ -209,7 +305,14 @@ fn render_class_page(
         body.push_str("</ul>\n");
     }
 
-    wrap_page(&doc.class_name, "sfdoc", &body, active, class_names, trigger_names)
+    wrap_page(
+        &doc.class_name,
+        "sfdoc",
+        &body,
+        active,
+        class_names,
+        trigger_names,
+    )
 }
 
 fn render_trigger_page(
@@ -225,12 +328,21 @@ fn render_trigger_page(
 
     body.push_str(&format!("<h1>{}</h1>\n", escape(&doc.trigger_name)));
     body.push_str("<div class=\"badges\">\n");
-    body.push_str(&format!("<span class=\"badge badge-trigger\">trigger on {}</span>\n", escape(&doc.sobject)));
+    body.push_str(&format!(
+        "<span class=\"badge badge-trigger\">trigger on {}</span>\n",
+        escape(&doc.sobject)
+    ));
     for event in &meta.events {
-        body.push_str(&format!("<span class=\"badge\">{}</span>\n", event.as_str()));
+        body.push_str(&format!(
+            "<span class=\"badge\">{}</span>\n",
+            event.as_str()
+        ));
     }
     body.push_str("</div>\n");
-    body.push_str(&format!("<p class=\"summary\">{}</p>\n", escape(&doc.summary)));
+    body.push_str(&format!(
+        "<p class=\"summary\">{}</p>\n",
+        escape(&doc.summary)
+    ));
 
     body.push_str("<h2>Description</h2>\n");
     body.push_str(&format!("<p>{}</p>\n", escape(&doc.description)));
@@ -241,7 +353,8 @@ fn render_trigger_page(
         for ev in &doc.events {
             body.push_str(&format!(
                 "<tr><td><code>{}</code></td><td>{}</td></tr>\n",
-                escape(&ev.event), escape(&ev.description)
+                escape(&ev.event),
+                escape(&ev.description)
             ));
         }
         body.push_str("</tbody></table>\n");
@@ -251,7 +364,11 @@ fn render_trigger_page(
         body.push_str("<h2>Handler Classes</h2>\n<ul>\n");
         for cls in &doc.handler_classes {
             if class_names.contains(&cls.as_str()) {
-                body.push_str(&format!("<li><a href=\"{}.html\">{}</a></li>\n", escape(cls), escape(cls)));
+                body.push_str(&format!(
+                    "<li><a href=\"{}.html\">{}</a></li>\n",
+                    escape(cls),
+                    escape(cls)
+                ));
             } else {
                 body.push_str(&format!("<li><code>{}</code></li>\n", escape(cls)));
             }
@@ -267,16 +384,36 @@ fn render_trigger_page(
         body.push_str("</ul>\n");
     }
 
-    let see_also: Vec<String> = doc.relationships.iter().filter_map(|rel| {
-        class_names.iter()
-            .find(|&&name| rel.contains(name))
-            .map(|&name| format!("<a href=\"{}.html\">{}</a> — {}", name, escape(name), escape(rel)))
-            .or_else(|| {
-                trigger_names.iter()
-                    .find(|&&name| rel.contains(name))
-                    .map(|&name| format!("<a href=\"{}.html\">{}</a> — {}", name, escape(name), escape(rel)))
-            })
-    }).collect();
+    let see_also: Vec<String> = doc
+        .relationships
+        .iter()
+        .filter_map(|rel| {
+            class_names
+                .iter()
+                .find(|&&name| rel.contains(name))
+                .map(|&name| {
+                    format!(
+                        "<a href=\"{}.html\">{}</a> — {}",
+                        name,
+                        escape(name),
+                        escape(rel)
+                    )
+                })
+                .or_else(|| {
+                    trigger_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"{}.html\">{}</a> — {}",
+                                name,
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
+        })
+        .collect();
 
     if !see_also.is_empty() {
         body.push_str("<h2>See Also</h2>\n<ul>\n");
@@ -286,7 +423,14 @@ fn render_trigger_page(
         body.push_str("</ul>\n");
     }
 
-    wrap_page(&doc.trigger_name, "sfdoc", &body, active, class_names, trigger_names)
+    wrap_page(
+        &doc.trigger_name,
+        "sfdoc",
+        &body,
+        active,
+        class_names,
+        trigger_names,
+    )
 }
 
 fn render_index(
@@ -323,7 +467,11 @@ fn render_index(
         body.push_str("<h2>Triggers</h2>\n");
         body.push_str("<table><thead><tr><th>Trigger</th><th>SObject</th><th>Summary</th></tr></thead><tbody>\n");
         let mut sorted_triggers: Vec<&TriggerRenderContext> = trigger_contexts.iter().collect();
-        sorted_triggers.sort_by(|a, b| a.documentation.trigger_name.cmp(&b.documentation.trigger_name));
+        sorted_triggers.sort_by(|a, b| {
+            a.documentation
+                .trigger_name
+                .cmp(&b.documentation.trigger_name)
+        });
         for ctx in sorted_triggers {
             body.push_str(&format!(
                 "<tr><td><a href=\"{}.html\">{}</a></td><td><code>{}</code></td><td>{}</td></tr>\n",
@@ -336,7 +484,14 @@ fn render_index(
         body.push_str("</tbody></table>\n");
     }
 
-    wrap_page("Overview", "sfdoc", &body, "Overview", class_names, trigger_names)
+    wrap_page(
+        "Overview",
+        "sfdoc",
+        &body,
+        "Overview",
+        class_names,
+        trigger_names,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -384,7 +539,11 @@ fn render_sidebar(class_names: &[&str], trigger_names: &[&str], active: &str) ->
         s.push_str("<div class=\"sidebar-heading\">Classes</div>\n");
         s.push_str("<ul>\n");
         for name in class_names {
-            let cls = if *name == active { " class=\"active\"" } else { "" };
+            let cls = if *name == active {
+                " class=\"active\""
+            } else {
+                ""
+            };
             s.push_str(&format!(
                 "<li><a href=\"{}.html\"{cls}>{}</a></li>\n",
                 name,
@@ -399,7 +558,11 @@ fn render_sidebar(class_names: &[&str], trigger_names: &[&str], active: &str) ->
         s.push_str("<div class=\"sidebar-heading\">Triggers</div>\n");
         s.push_str("<ul>\n");
         for name in trigger_names {
-            let cls = if *name == active { " class=\"active\"" } else { "" };
+            let cls = if *name == active {
+                " class=\"active\""
+            } else {
+                ""
+            };
             s.push_str(&format!(
                 "<li><a href=\"{}.html\"{cls}>{}</a></li>\n",
                 name,
