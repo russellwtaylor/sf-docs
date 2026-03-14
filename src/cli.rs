@@ -1,6 +1,8 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+use crate::providers::Provider;
+
 #[derive(Parser, Debug)]
 #[command(
     name = "sfdoc",
@@ -16,8 +18,8 @@ pub struct Cli {
 pub enum Commands {
     /// Generate documentation from Apex source files
     Generate(GenerateArgs),
-    /// Save your Gemini API key to the OS keychain
-    Auth,
+    /// Save an AI provider API key to the OS keychain
+    Auth(AuthArgs),
     /// Show installation status and configuration
     Status,
 }
@@ -32,15 +34,26 @@ pub struct GenerateArgs {
     #[arg(long, short, default_value = "docs")]
     pub output: PathBuf,
 
-    /// Gemini model to use (e.g. gemini-2.5-flash, gemini-2.5-pro)
-    #[arg(long, default_value = "gemini-2.5-flash")]
-    pub model: String,
+    /// AI provider to use for documentation generation
+    #[arg(long, default_value = "gemini")]
+    pub provider: Provider,
 
-    /// Maximum number of parallel Gemini API requests
+    /// Model to use (defaults to the provider's recommended model if not set)
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Maximum number of parallel API requests
     #[arg(long, default_value_t = 3)]
     pub concurrency: usize,
 
     /// Enable verbose logging
     #[arg(long, short)]
     pub verbose: bool,
+}
+
+#[derive(clap::Args, Debug)]
+pub struct AuthArgs {
+    /// Provider to authenticate
+    #[arg(long, default_value = "gemini")]
+    pub provider: Provider,
 }

@@ -1,7 +1,10 @@
 mod cli;
 mod config;
 mod gemini;
+mod openai_compat;
 mod parser;
+mod prompt;
+mod providers;
 mod renderer;
 mod scanner;
 mod types;
@@ -14,26 +17,55 @@ use std::sync::Arc;
 use cli::{Cli, Commands};
 use config::{delete_api_key, has_stored_key, resolve_api_key, save_api_key};
 use gemini::GeminiClient;
+use openai_compat::OpenAiCompatClient;
+use providers::Provider;
 use scanner::{ApexScanner, FileScanner};
+use types::{ApexFile, ClassDocumentation, ClassMetadata};
+
+/// Unified client enum for dispatch without dynamic dispatch overhead.
+enum DocClient {
+    Gemini(Arc<GeminiClient>),
+    OpenAiCompat(Arc<OpenAiCompatClient>),
+}
+
+impl DocClient {
+    async fn document_class(
+        &self,
+        file: &ApexFile,
+        metadata: &ClassMetadata,
+    ) -> Result<ClassDocumentation> {
+        match self {
+            DocClient::Gemini(c) => c.document_class(file, metadata).await,
+            DocClient::OpenAiCompat(c) => c.document_class(file, metadata).await,
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Auth => {
-            run_auth()?;
+        Commands::Auth(args) => {
+            run_auth(&args.provider)?;
         }
         Commands::Status => {
             run_status();
         }
         Commands::Generate(args) => {
-            let api_key = resolve_api_key()?;
+            let provider = &args.provider;
+            let model = args
+                .model
+                .as_deref()
+                .unwrap_or(provider.default_model())
+                .to_string();
+            let api_key = resolve_api_key(provider)?;
 
             if args.verbose {
+                eprintln!("Provider:    {}", provider.display_name());
+                eprintln!("Model:       {model}");
                 eprintln!("Source dir:  {}", args.source_dir.display());
                 eprintln!("Output dir:  {}", args.output.display());
-                eprintln!("Model:       {}", args.model);
                 eprintln!("Concurrency: {}", args.concurrency);
             }
 
@@ -73,16 +105,31 @@ async fn main() -> Result<()> {
             let all_class_names: Vec<String> =
                 metadata.iter().map(|m| m.class_name.clone()).collect();
 
-            // Generate docs via Gemini API
-            let gemini = Arc::new(GeminiClient::new(api_key, &args.model, args.concurrency));
+            // Build the appropriate client
+            let client = match provider {
+                Provider::Gemini => DocClient::Gemini(Arc::new(GeminiClient::new(
+                    api_key,
+                    &model,
+                    args.concurrency,
+                ))),
+                _ => DocClient::OpenAiCompat(Arc::new(OpenAiCompatClient::new(
+                    api_key,
+                    &model,
+                    provider.base_url(),
+                    args.concurrency,
+                    provider.display_name(),
+                ))),
+            };
+            let client = Arc::new(client);
 
+            // Spawn concurrent documentation tasks
             let mut tasks = Vec::new();
             for (file, meta) in files.iter().zip(metadata.iter()) {
-                let gemini = Arc::clone(&gemini);
+                let client = Arc::clone(&client);
                 let file = file.clone();
                 let meta = meta.clone();
                 tasks.push(tokio::spawn(async move {
-                    gemini.document_class(&file, &meta).await
+                    client.document_class(&file, &meta).await
                 }));
             }
 
@@ -111,21 +158,46 @@ async fn main() -> Result<()> {
 fn run_status() {
     println!("sfdoc {}", env!("CARGO_PKG_VERSION"));
     println!();
+    println!("{:<10} {:<20} {}", "Provider", "Name", "API Key");
+    println!("{}", "-".repeat(60));
 
-    // API key source
-    let key_source = if std::env::var("GEMINI_API_KEY").map_or(false, |v| !v.is_empty()) {
-        "set (GEMINI_API_KEY environment variable)"
-    } else if has_stored_key() {
-        "set (OS keychain)"
-    } else {
-        "not configured — run `sfdoc auth` to set it"
-    };
-    println!("Gemini API key: {}", key_source);
+    for provider in Provider::all() {
+        let status = if !provider.requires_api_key() {
+            "not required".to_string()
+        } else if provider
+            .env_var()
+            .and_then(|v| std::env::var(v).ok())
+            .map_or(false, |v| !v.is_empty())
+        {
+            format!(
+                "set (env: {})",
+                provider.env_var().unwrap_or("")
+            )
+        } else if has_stored_key(provider) {
+            "set (OS keychain)".to_string()
+        } else {
+            format!("not configured — run `sfdoc auth --provider {}`", provider.cli_name())
+        };
+
+        println!("{:<10} {:<20} {}", provider.cli_name(), provider.display_name(), status);
+    }
 }
 
-fn run_auth() -> Result<()> {
-    if has_stored_key() {
-        println!("A Gemini API key is already stored in your OS keychain.");
+fn run_auth(provider: &Provider) -> Result<()> {
+    if !provider.requires_api_key() {
+        println!(
+            "{} runs locally and does not require an API key.",
+            provider.display_name()
+        );
+        println!("Make sure Ollama is running: https://ollama.com");
+        return Ok(());
+    }
+
+    if has_stored_key(provider) {
+        println!(
+            "An API key for {} is already stored in your OS keychain.",
+            provider.display_name()
+        );
         print!("Overwrite it? [y/N] ");
         use std::io::{self, Write};
         io::stdout().flush()?;
@@ -135,20 +207,23 @@ fn run_auth() -> Result<()> {
             println!("Aborted.");
             return Ok(());
         }
-        delete_api_key()?;
+        delete_api_key(provider)?;
     }
 
-    let key = rpassword::prompt_password("Enter your Gemini API key: ")
-        .context("Failed to read API key")?;
+    let prompt = format!("Enter your {} API key: ", provider.display_name());
+    let key = rpassword::prompt_password(&prompt).context("Failed to read API key")?;
 
     if key.trim().is_empty() {
         anyhow::bail!("API key cannot be empty.");
     }
 
-    save_api_key(key.trim())?;
+    save_api_key(provider, key.trim())?;
 
-    println!("API key saved to your OS keychain.");
-    println!("You're all set — run `sfdoc generate` to get started.");
+    println!(
+        "API key for {} saved to your OS keychain.",
+        provider.display_name()
+    );
+    println!("You're all set — run `sfdoc generate --provider {}` to get started.", provider.cli_name());
 
     Ok(())
 }
