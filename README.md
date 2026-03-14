@@ -27,7 +27,29 @@ cd sfdoc
 cargo install --path .
 ```
 
-This installs the `sfdoc` binary to `~/.cargo/bin/`. Make sure that directory is on your `PATH`.
+This installs the `sfdoc` binary to `~/.cargo/bin/`.
+
+If `rustup` was installed normally, this directory is already on your `PATH`. Verify with:
+
+```bash
+sfdoc --version
+```
+
+If that returns `command not found`, add the following to your shell profile and restart your terminal:
+
+```bash
+# zsh (default on macOS)
+echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+
+# bash
+echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+```
+
+Alternatively, `rustup` installs a shell env file you can source instead:
+
+```bash
+source "$HOME/.cargo/env"
+```
 
 ### Build without installing
 
