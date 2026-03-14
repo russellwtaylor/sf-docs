@@ -1,6 +1,5 @@
 mod cli;
 mod config;
-mod error;
 mod gemini;
 mod parser;
 mod renderer;
@@ -32,9 +31,9 @@ async fn main() -> Result<()> {
             let api_key = resolve_api_key()?;
 
             if args.verbose {
-                eprintln!("Source dir: {}", args.source_dir.display());
-                eprintln!("Output dir: {}", args.output.display());
-                eprintln!("Model: {}", args.model);
+                eprintln!("Source dir:  {}", args.source_dir.display());
+                eprintln!("Output dir:  {}", args.output.display());
+                eprintln!("Model:       {}", args.model);
                 eprintln!("Concurrency: {}", args.concurrency);
             }
 
@@ -49,6 +48,11 @@ async fn main() -> Result<()> {
             }
 
             println!("Found {} Apex class file(s)", files.len());
+            if args.verbose {
+                for f in &files {
+                    eprintln!("  {}", f.path.display());
+                }
+            }
 
             let pb = ProgressBar::new(files.len() as u64);
             pb.set_style(

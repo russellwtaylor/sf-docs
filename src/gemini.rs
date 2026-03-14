@@ -325,7 +325,6 @@ mod tests {
                     param_type: "List<Account>".to_string(),
                     name: "accounts".to_string(),
                 }],
-                existing_comment: None,
             }],
             ..Default::default()
         }

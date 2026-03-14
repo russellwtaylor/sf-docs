@@ -31,7 +31,6 @@ pub struct MethodMetadata {
     pub return_type: String,
     pub params: Vec<ParamMetadata>,
     pub is_static: bool,
-    pub existing_comment: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -46,7 +45,6 @@ pub struct PropertyMetadata {
     pub access_modifier: String,
     pub property_type: String,
     pub is_static: bool,
-    pub existing_comment: Option<String>,
 }
 
 /// AI-generated documentation for a class, parsed from the Gemini response.

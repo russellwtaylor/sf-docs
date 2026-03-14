@@ -124,9 +124,8 @@ Some useful options:
 
 | Model | Notes |
 |-------|-------|
-| `gemini-1.5-flash` (default) | Fast, free tier available (15 req/min, 1,500/day) |
-| `gemini-1.5-pro` | Higher quality, free tier available |
-| `gemini-2.0-flash` | Latest generation, paid tier required |
+| `gemini-2.5-flash` (default) | Fast, free tier available (5 req/min) |
+| `gemini-2.5-pro` | Higher quality |
 
 Full model list: [Google AI models](https://ai.google.dev/gemini-api/docs/models/gemini)
 
@@ -163,7 +162,7 @@ Options:
   --output <PATH>        Output directory for generated Markdown files
                          [default: docs]
   --model <MODEL>        Gemini model to use [default: gemini-1.5-flash]
-  --concurrency <N>      Maximum number of parallel Gemini API requests [default: 5]
+  --concurrency <N>      Maximum number of parallel Gemini API requests [default: 3]
   --verbose              Enable verbose logging
   -h, --help             Print help
   -V, --version          Print version
@@ -218,7 +217,7 @@ open docs/index.md
 
 ## Tips
 
-- **Large codebases**: increase `--concurrency` cautiously — the default of 5 is safe for most Gemini API quotas.
+- **Rate limits**: the default concurrency of 3 is tuned for the free tier (5 req/min). If you're on a paid plan, you can raise it with `--concurrency 10` or higher.
 - **Incremental updates**: re-run `sfdoc generate` at any time; it overwrites existing output files.
 - **Custom source layouts**: use `--source-dir` if your classes aren't under the default SFDX path.
 - **CI/CD integration**: set `GEMINI_API_KEY` as a secret and add `sfdoc generate` as a step to keep docs up to date automatically.

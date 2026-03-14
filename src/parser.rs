@@ -166,7 +166,6 @@ fn parse_methods(source: &str, meta: &mut ClassMetadata) {
                 .to_string(),
             is_static: mods.contains("static"),
             params,
-            existing_comment: None,
         });
     }
 
@@ -237,7 +236,6 @@ fn parse_properties(source: &str, meta: &mut ClassMetadata) {
                 .to_lowercase(),
             property_type: type_str,
             is_static: mods.contains("static"),
-            existing_comment: None,
         });
     }
 

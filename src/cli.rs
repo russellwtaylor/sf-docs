@@ -32,12 +32,12 @@ pub struct GenerateArgs {
     #[arg(long, short, default_value = "docs")]
     pub output: PathBuf,
 
-    /// Gemini model to use (e.g. gemini-1.5-flash, gemini-1.5-pro, gemini-2.0-flash)
-    #[arg(long, default_value = "gemini-1.5-flash")]
+    /// Gemini model to use (e.g. gemini-2.5-flash, gemini-2.5-pro)
+    #[arg(long, default_value = "gemini-2.5-flash")]
     pub model: String,
 
     /// Maximum number of parallel Gemini API requests
-    #[arg(long, default_value_t = 5)]
+    #[arg(long, default_value_t = 3)]
     pub concurrency: usize,
 
     /// Enable verbose logging
