@@ -314,7 +314,7 @@ async fn main() -> Result<()> {
 fn run_status() {
     println!("sfdoc {}", env!("CARGO_PKG_VERSION"));
     println!();
-    println!("{:<10} {:<20} {}", "Provider", "Name", "API Key");
+    println!("{:<10} {:<20} API Key", "Provider", "Name");
     println!("{}", "-".repeat(60));
 
     for provider in Provider::all() {
@@ -323,7 +323,7 @@ fn run_status() {
         } else if provider
             .env_var()
             .and_then(|v| std::env::var(v).ok())
-            .map_or(false, |v| !v.is_empty())
+            .is_some_and(|v| !v.is_empty())
         {
             format!("set (env: {})", provider.env_var().unwrap_or(""))
         } else if has_stored_key(provider) {

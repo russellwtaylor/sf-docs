@@ -71,12 +71,13 @@ const APEX_BUILTINS: &[&str] = &[
 // ---------------------------------------------------------------------------
 
 pub fn parse_apex_trigger(source: &str) -> Result<TriggerMetadata> {
-    let mut meta = TriggerMetadata::default();
-
-    meta.existing_comments = re_apexdoc()
-        .find_iter(source)
-        .map(|m| m.as_str().to_string())
-        .collect();
+    let mut meta = TriggerMetadata {
+        existing_comments: re_apexdoc()
+            .find_iter(source)
+            .map(|m| m.as_str().to_string())
+            .collect(),
+        ..Default::default()
+    };
 
     if let Some(caps) = re_trigger().captures(source) {
         meta.trigger_name = caps.name("name").map_or("", |m| m.as_str()).to_string();

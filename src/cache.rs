@@ -2,6 +2,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::path::Path;
 
 use crate::types::{ClassDocumentation, TriggerDocumentation};
@@ -126,8 +127,10 @@ pub fn hash_source(source: &str) -> String {
     hasher
         .finalize()
         .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+        .fold(String::new(), |mut s, b| {
+            write!(s, "{b:02x}").unwrap();
+            s
+        })
 }
 
 // ---------------------------------------------------------------------------
