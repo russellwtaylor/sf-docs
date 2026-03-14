@@ -124,13 +124,10 @@ impl Cache {
 pub fn hash_source(source: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(source.as_bytes());
-    hasher
-        .finalize()
-        .iter()
-        .fold(String::new(), |mut s, b| {
-            write!(s, "{b:02x}").unwrap();
-            s
-        })
+    hasher.finalize().iter().fold(String::new(), |mut s, b| {
+        write!(s, "{b:02x}").unwrap();
+        s
+    })
 }
 
 // ---------------------------------------------------------------------------
