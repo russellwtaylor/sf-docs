@@ -121,8 +121,8 @@ Available models:
 
 | Value             | Gemini model                              |
 | ----------------- | ----------------------------------------- |
-| `flash` (default) | `gemini-2.0-flash` — fast, cost-effective |
-| `pro`             | `gemini-2.0-pro-exp` — higher quality     |
+| `flash` (default) | `gemini-1.5-flash` — fast, free tier available |
+| `pro`             | `gemini-1.5-pro` — higher quality              |
 
 ### Tune concurrency
 

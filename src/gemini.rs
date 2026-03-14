@@ -79,8 +79,8 @@ pub struct GeminiClient {
 impl GeminiClient {
     pub fn new(api_key: String, model: &str, concurrency: usize) -> Self {
         let model_id = match model {
-            "pro" => "gemini-2.0-pro-exp",
-            _ => "gemini-2.0-flash",
+            "pro" => "gemini-1.5-pro",
+            _ => "gemini-1.5-flash",
         };
         Self {
             client: Client::new(),
