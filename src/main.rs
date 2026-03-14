@@ -18,10 +18,12 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
+use std::path::Path;
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, OutputFormat};
+
 use config::{delete_api_key, has_stored_key, resolve_api_key, save_api_key};
 use gemini::GeminiClient;
 use openai_compat::OpenAiCompatClient;
@@ -76,11 +78,20 @@ async fn main() -> Result<()> {
             let model: Arc<str> =
                 Arc::from(args.model.as_deref().unwrap_or(provider.default_model()));
 
+            // Default output directory depends on format: docs/ for Markdown, site/ for HTML.
+            let output_dir = args.output.clone().unwrap_or_else(|| {
+                if args.format == OutputFormat::Html {
+                    std::path::PathBuf::from("site")
+                } else {
+                    std::path::PathBuf::from("docs")
+                }
+            });
+
             if args.verbose {
                 eprintln!("Provider:    {}", provider.display_name());
                 eprintln!("Model:       {model}");
                 eprintln!("Source dir:  {}", args.source_dir.display());
-                eprintln!("Output dir:  {}", args.output.display());
+                eprintln!("Output dir:  {}", output_dir.display());
                 eprintln!("Concurrency: {}", args.concurrency);
             }
 
@@ -138,7 +149,7 @@ async fn main() -> Result<()> {
             let mut cache = if args.force {
                 cache::Cache::default()
             } else {
-                cache::Cache::load(&args.output)
+                cache::Cache::load(&output_dir)
             };
 
             // Hash every source file
@@ -276,7 +287,8 @@ async fn main() -> Result<()> {
                 .into_iter()
                 .zip(class_meta)
                 .zip(class_docs)
-                .map(|((_, meta), doc)| renderer::RenderContext {
+                .map(|((file, meta), doc)| renderer::RenderContext {
+                    folder: compute_folder(&file.path, &args.source_dir),
                     metadata: meta,
                     documentation: doc.expect("every class must have documentation"),
                     all_names: Arc::clone(&all_names),
@@ -287,7 +299,8 @@ async fn main() -> Result<()> {
                 .into_iter()
                 .zip(trigger_meta)
                 .zip(trigger_docs)
-                .map(|((_, meta), doc)| renderer::TriggerRenderContext {
+                .map(|((file, meta), doc)| renderer::TriggerRenderContext {
+                    folder: compute_folder(&file.path, &args.source_dir),
                     metadata: meta,
                     documentation: doc.expect("every trigger must have documentation"),
                     all_names: Arc::clone(&all_names),
@@ -296,19 +309,30 @@ async fn main() -> Result<()> {
 
             // Render and write output
             renderer::write_output(
-                &args.output,
+                &output_dir,
                 &args.format,
                 &class_contexts,
                 &trigger_contexts,
             )?;
-            println!("Documentation written to {}", args.output.display());
+            println!("Documentation written to {}", output_dir.display());
 
             // Persist the updated cache — only reached if all API calls succeeded
-            cache.save(&args.output)?;
+            cache.save(&output_dir)?;
         }
     }
 
     Ok(())
+}
+
+/// Returns the relative path from `source_dir` to `file_path`'s parent directory,
+/// using forward slashes regardless of platform. Used to group the index by
+/// namespace/folder (e.g. `"classes"`, `"classes/account"`).
+fn compute_folder(file_path: &Path, source_dir: &Path) -> String {
+    file_path
+        .parent()
+        .and_then(|p| p.strip_prefix(source_dir).ok())
+        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default()
 }
 
 fn run_status() {

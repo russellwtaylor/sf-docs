@@ -15,7 +15,7 @@ pub enum OutputFormat {
 #[derive(Parser, Debug)]
 #[command(
     name = "sfdoc",
-    about = "Generate wiki-style Markdown documentation for Salesforce Apex classes",
+    about = "Generate wiki-style Markdown documentation for Salesforce source files",
     version
 )]
 pub struct Cli {
@@ -25,7 +25,7 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Generate documentation from Apex source files
+    /// Generate documentation from Salesforce source files
     Generate(GenerateArgs),
     /// Save an AI provider API key to the OS keychain
     Auth(AuthArgs),
@@ -36,12 +36,13 @@ pub enum Commands {
 #[derive(clap::Args, Debug)]
 pub struct GenerateArgs {
     /// Path to Apex source directory
-    #[arg(long, default_value = "force-app/main/default/classes")]
+    #[arg(long, default_value = "force-app/main/default")]
     pub source_dir: PathBuf,
 
-    /// Output directory for generated Markdown files
-    #[arg(long, short, default_value = "docs")]
-    pub output: PathBuf,
+    /// Output directory for generated files.
+    /// Defaults to `docs` for Markdown output and `site` for HTML output.
+    #[arg(long, short)]
+    pub output: Option<PathBuf>,
 
     /// AI provider to use for documentation generation
     #[arg(long, default_value = "gemini")]
