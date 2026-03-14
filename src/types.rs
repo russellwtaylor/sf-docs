@@ -47,8 +47,8 @@ pub struct PropertyMetadata {
     pub is_static: bool,
 }
 
-/// AI-generated documentation for a class, parsed from the Gemini response.
-#[derive(Debug, Clone, serde::Deserialize)]
+/// AI-generated documentation for a class, parsed from the AI response.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ClassDocumentation {
     pub class_name: String,
     pub summary: String,
@@ -59,7 +59,7 @@ pub struct ClassDocumentation {
     pub relationships: Vec<String>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct MethodDocumentation {
     pub name: String,
     pub description: String,
@@ -68,13 +68,13 @@ pub struct MethodDocumentation {
     pub throws: Vec<String>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ParamDocumentation {
     pub name: String,
     pub description: String,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct PropertyDocumentation {
     pub name: String,
     pub description: String,

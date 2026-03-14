@@ -1,3 +1,4 @@
+mod cache;
 mod cli;
 mod config;
 mod gemini;
@@ -6,6 +7,7 @@ mod parser;
 mod prompt;
 mod providers;
 mod renderer;
+mod retry;
 mod scanner;
 mod types;
 
@@ -59,7 +61,6 @@ async fn main() -> Result<()> {
                 .as_deref()
                 .unwrap_or(provider.default_model())
                 .to_string();
-            let api_key = resolve_api_key(provider)?;
 
             if args.verbose {
                 eprintln!("Provider:    {}", provider.display_name());
@@ -86,69 +87,126 @@ async fn main() -> Result<()> {
                 }
             }
 
-            let pb = ProgressBar::new(files.len() as u64);
-            pb.set_style(
-                ProgressStyle::with_template(
-                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
-                )
-                .unwrap()
-                .progress_chars("#>-"),
-            );
-
             // Parse each file
             let metadata: Vec<_> = files
                 .iter()
                 .map(|f| parser::parse_apex_class(&f.raw_source))
                 .collect::<Result<_>>()?;
 
-            // Collect all class names for cross-linking
-            let all_class_names: Vec<String> =
-                metadata.iter().map(|m| m.class_name.clone()).collect();
+            // Collect all class names for cross-linking (shared across all render contexts)
+            let all_class_names: Arc<Vec<String>> = Arc::new(
+                metadata.iter().map(|m| m.class_name.clone()).collect(),
+            );
 
-            // Build the appropriate client
-            let client = match provider {
-                Provider::Gemini => DocClient::Gemini(Arc::new(GeminiClient::new(
-                    api_key,
-                    &model,
-                    args.concurrency,
-                ))),
-                _ => DocClient::OpenAiCompat(Arc::new(OpenAiCompatClient::new(
-                    api_key,
-                    &model,
-                    provider.base_url(),
-                    args.concurrency,
-                    provider.display_name(),
-                ))),
+            // Load incremental build cache (empty if --force or first run)
+            let mut cache = if args.force {
+                cache::Cache::default()
+            } else {
+                cache::Cache::load(&args.output)
             };
-            let client = Arc::new(client);
 
-            // Spawn concurrent documentation tasks
-            let mut tasks = Vec::new();
-            for (file, meta) in files.iter().zip(metadata.iter()) {
-                let client = Arc::clone(&client);
-                let file = file.clone();
-                let meta = meta.clone();
-                tasks.push(tokio::spawn(async move {
-                    client.document_class(&file, &meta).await
-                }));
+            // Hash each source file and partition into: needs API call vs. cached
+            let hashes: Vec<String> =
+                files.iter().map(|f| cache::hash_source(&f.raw_source)).collect();
+
+            let mut work_indices: Vec<usize> = Vec::new();
+            // Slot for each file's documentation; filled from cache or API result
+            let mut all_docs: Vec<Option<types::ClassDocumentation>> = vec![None; files.len()];
+
+            for (i, (f, h)) in files.iter().zip(hashes.iter()).enumerate() {
+                let key = f.path.to_string_lossy();
+                if let Some(entry) = cache.get_if_fresh(&key, h, &model) {
+                    all_docs[i] = Some(entry.documentation.clone());
+                } else {
+                    work_indices.push(i);
+                }
             }
 
-            let mut contexts = Vec::new();
-            for (task, meta) in tasks.into_iter().zip(metadata.into_iter()) {
-                let documentation = task.await??;
-                pb.inc(1);
-                contexts.push(renderer::RenderContext {
+            let skipped = files.len() - work_indices.len();
+            if skipped > 0 {
+                println!("{skipped} class(es) up-to-date — skipping API calls");
+            }
+
+            if !work_indices.is_empty() {
+                // Only resolve the API key when there's actual work to do
+                let api_key = resolve_api_key(provider)?;
+
+                let client = match provider {
+                    Provider::Gemini => DocClient::Gemini(Arc::new(GeminiClient::new(
+                        api_key,
+                        &model,
+                        args.concurrency,
+                    ))),
+                    _ => DocClient::OpenAiCompat(Arc::new(OpenAiCompatClient::new(
+                        api_key,
+                        &model,
+                        provider.base_url(),
+                        args.concurrency,
+                        provider.display_name(),
+                    ))),
+                };
+                let client = Arc::new(client);
+
+                let pb = Arc::new(ProgressBar::new(work_indices.len() as u64));
+                pb.set_style(
+                    ProgressStyle::with_template(
+                        "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
+                    )
+                    .expect("invalid progress bar template")
+                    .progress_chars("#>-"),
+                );
+
+                // Spawn one task per stale/new file
+                let mut tasks: Vec<(usize, tokio::task::JoinHandle<Result<types::ClassDocumentation>>)> =
+                    Vec::new();
+                for &idx in &work_indices {
+                    let client = Arc::clone(&client);
+                    let file = files[idx].clone();
+                    let meta = metadata[idx].clone();
+                    let pb_task = Arc::clone(&pb);
+                    tasks.push((
+                        idx,
+                        tokio::spawn(async move {
+                            let result = client.document_class(&file, &meta).await;
+                            pb_task.inc(1);
+                            result
+                        }),
+                    ));
+                }
+
+                // Collect results; update the cache entry for each newly processed file
+                for (idx, task) in tasks {
+                    let documentation = task.await??;
+                    cache.update(
+                        files[idx].path.to_string_lossy().to_string(),
+                        hashes[idx].clone(),
+                        model.clone(),
+                        documentation.clone(),
+                    );
+                    all_docs[idx] = Some(documentation);
+                }
+
+                pb.finish_with_message("Done");
+            }
+
+            // Build render contexts for every file (cached + newly generated)
+            let contexts: Vec<renderer::RenderContext> = files
+                .iter()
+                .zip(metadata.into_iter())
+                .zip(all_docs.into_iter())
+                .map(|((_, meta), doc)| renderer::RenderContext {
                     metadata: meta,
-                    documentation,
-                    all_class_names: all_class_names.clone(),
-                });
-            }
-
-            pb.finish_with_message("Done");
+                    documentation: doc.expect("every file must have documentation"),
+                    all_class_names: Arc::clone(&all_class_names),
+                })
+                .collect();
 
             // Render and write output
             renderer::write_output(&args.output, &contexts)?;
             println!("Documentation written to {}", args.output.display());
+
+            // Persist the updated cache — only reached if all API calls succeeded
+            cache.save(&args.output)?;
         }
     }
 

@@ -46,6 +46,10 @@ pub struct GenerateArgs {
     #[arg(long, default_value_t = 3)]
     pub concurrency: usize,
 
+    /// Regenerate all documentation, ignoring the incremental build cache
+    #[arg(long)]
+    pub force: bool,
+
     /// Enable verbose logging
     #[arg(long, short)]
     pub verbose: bool,

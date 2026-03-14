@@ -28,7 +28,7 @@ todos:
       status: done
     - id: incremental
       content: "Phase 9: Incremental builds — hash .cls files, skip unchanged classes, only re-generate stale docs"
-      status: pending
+      status: done
     - id: triggers
       content: "Phase 10: Extend FileScanner trait to support Apex Triggers (.trigger files)"
       status: pending

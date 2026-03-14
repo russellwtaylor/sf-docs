@@ -6,10 +6,8 @@ use std::time::Duration;
 use tokio::sync::Semaphore;
 
 use crate::prompt::{build_prompt, SYSTEM_PROMPT};
+use crate::retry::{self, MAX_RETRIES};
 use crate::types::{ApexFile, ClassDocumentation, ClassMetadata};
-
-const MAX_RETRIES: u32 = 4;
-const BASE_BACKOFF_SECS: u64 = 5;
 
 // ---------------------------------------------------------------------------
 // OpenAI-compatible API shapes (Groq, OpenAI, Ollama)
@@ -72,8 +70,13 @@ impl OpenAiCompatClient {
         concurrency: usize,
         provider_name: &str,
     ) -> Self {
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(120))
+            .build()
+            .expect("failed to build HTTP client");
         Self {
-            client: Client::new(),
+            client,
             api_key,
             model: model.to_string(),
             base_url: base_url.to_string(),
@@ -150,16 +153,13 @@ impl OpenAiCompatClient {
             }
 
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
 
             if status.as_u16() == 429 && attempt < MAX_RETRIES {
-                let wait = retry_delay_secs(&body, attempt);
-                eprintln!(
-                    "Rate limited by {} — waiting {wait}s before retry {}/{MAX_RETRIES}...",
-                    self.provider_name,
-                    attempt + 1
-                );
-                tokio::time::sleep(Duration::from_secs(wait)).await;
+                retry::sleep_for_retry(&body, attempt, &self.provider_name).await;
                 attempt += 1;
                 continue;
             }
@@ -169,41 +169,3 @@ impl OpenAiCompatClient {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Retry helpers
-// ---------------------------------------------------------------------------
-
-fn retry_delay_secs(body: &str, attempt: u32) -> u64 {
-    if let Some(start) = body.find("retry in ") {
-        let after = &body[start + 9..];
-        if let Some(end) = after.find('s') {
-            if let Ok(secs) = after[..end].trim().parse::<f64>() {
-                return (secs.ceil() as u64) + 1;
-            }
-        }
-    }
-    BASE_BACKOFF_SECS * (2u64.pow(attempt))
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::types::{MethodMetadata, ParamMetadata};
-    use std::path::PathBuf;
-
-    #[test]
-    fn retry_delay_parses_suggested_seconds() {
-        assert_eq!(retry_delay_secs("Please retry in 6.837s.", 0), 8);
-    }
-
-    #[test]
-    fn retry_delay_falls_back_to_exponential_backoff() {
-        assert_eq!(retry_delay_secs("no hint here", 0), 5);
-        assert_eq!(retry_delay_secs("no hint here", 1), 10);
-        assert_eq!(retry_delay_secs("no hint here", 2), 20);
-    }
-}

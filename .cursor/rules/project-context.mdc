@@ -10,45 +10,50 @@ alwaysApply: true
 `sfdoc` is a Rust CLI tool that:
 1. Scans a Salesforce SFDX project directory for `.cls` (Apex) files
 2. Parses each file with a regex-based structural parser (no full AST)
-3. Sends the source + extracted metadata to the Gemini API
+3. Sends the source + extracted metadata to an AI provider (Gemini, Groq, OpenAI, or Ollama)
 4. Renders wiki-style interlinked Markdown documentation
 
 ## Module Map
 | File | Responsibility |
 |------|---------------|
 | `src/main.rs` | Entry point, orchestrates the full pipeline |
-| `src/cli.rs` | `clap` CLI definitions — `sfdoc generate` subcommand |
+| `src/cli.rs` | `clap` CLI definitions — `generate`, `auth`, `status` subcommands |
+| `src/providers.rs` | `Provider` enum with per-provider metadata (model, URL, key env var) |
 | `src/scanner.rs` | Recursive `.cls` file discovery via `walkdir` |
 | `src/parser.rs` | Regex-based Apex structural parser → `ClassMetadata` |
+| `src/prompt.rs` | Shared `SYSTEM_PROMPT` and `build_prompt()` used by all API clients |
 | `src/gemini.rs` | Async Gemini REST API client with semaphore rate-limiting |
+| `src/openai_compat.rs` | OpenAI-compatible client for Groq, OpenAI, and Ollama |
+| `src/retry.rs` | Shared retry constants, delay parsing, and `sleep_for_retry` helper |
+| `src/config.rs` | OS keychain API key storage/retrieval via `keyring` crate |
 | `src/renderer.rs` | Markdown page generation + cross-linking + `index.md` |
 | `src/types.rs` | Shared data structures (`ApexFile`, `ClassMetadata`, `ClassDocumentation`, etc.) |
-| `src/error.rs` | `SfdocError` enum (thiserror) |
 
 ## Key Data Flow
 ```
 ApexFile (raw source)
   → parse_apex_class()  → ClassMetadata
-  → GeminiClient::document_class()  → ClassDocumentation
+  → DocClient::document_class()  → ClassDocumentation
   → render_class_page() / render_index()  → .md files
 ```
 
-## Gemini API
-- Base URL: `https://generativelanguage.googleapis.com/v1beta/models`
-- Models: `gemini-2.0-flash` (default) or `gemini-2.0-pro-exp`
-- Auth: `GEMINI_API_KEY` env var passed as `?key=` query param
-- Response MIME: `application/json` — Gemini returns structured JSON directly
-- Rate limiting: `tokio::sync::Semaphore` with configurable `--concurrency` (default 5)
-- System prompt instructs Gemini to act as a Salesforce expert and return a specific JSON schema
+## API Clients
+- **Gemini**: `GeminiClient` — uses `generativelanguage.googleapis.com/v1beta/models`, `generateContent` endpoint, `responseMimeType: application/json`
+- **OpenAI-compat**: `OpenAiCompatClient` — used for Groq, OpenAI, and Ollama; `/v1/chat/completions` with `response_format: { type: "json_object" }`
+- Both clients: 30s connect timeout, 120s overall timeout; up to 4 retries with backoff on 429
 
 ## CLI Interface
 ```
 sfdoc generate
-  --source-dir <PATH>    default: force-app/main/default/classes
-  --output <PATH>        default: docs/
-  --model <flash|pro>    default: flash
-  --concurrency <N>      default: 5
+  --provider <gemini|groq|openai|ollama>   default: gemini
+  --model <MODEL>                           default: provider's recommended model
+  --source-dir <PATH>                       default: force-app/main/default/classes
+  --output <PATH>                           default: docs/
+  --concurrency <N>                         default: 3
   --verbose
+
+sfdoc auth --provider <gemini|groq|openai|ollama>
+sfdoc status
 ```
 
 ## Cross-Linking Strategy
@@ -62,6 +67,6 @@ links like `[AccountService](AccountService.md)`.
   to give Gemini good context without building a full parser.
 - **Trait-based scanner** (`FileScanner` trait): designed for future plug-in of Trigger,
   LWC, Flow, or other metadata scanners.
-- **`anyhow` for application errors, `thiserror` for library errors**: follows Rust idioms.
+- **`anyhow` throughout**: this is a binary crate, so `anyhow` is used everywhere for ergonomic error propagation. No `thiserror` dependency.
 - **Structured JSON response from Gemini**: setting `responseMimeType: application/json`
   gives deterministic parsing without regex-scraping prose output.
