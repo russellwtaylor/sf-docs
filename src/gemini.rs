@@ -78,14 +78,10 @@ pub struct GeminiClient {
 
 impl GeminiClient {
     pub fn new(api_key: String, model: &str, concurrency: usize) -> Self {
-        let model_id = match model {
-            "pro" => "gemini-1.5-pro",
-            _ => "gemini-1.5-flash",
-        };
         Self {
             client: Client::new(),
             api_key,
-            model: model_id.to_string(),
+            model: model.to_string(),
             semaphore: Arc::new(Semaphore::new(concurrency)),
         }
     }

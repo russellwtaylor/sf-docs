@@ -111,18 +111,24 @@ This uses the default source path (`force-app/main/default/classes/`) and writes
 sfdoc generate --source-dir path/to/classes --output path/to/output
 ```
 
-### Use the more powerful model
+### Choose a model
+
+Pass any Gemini model name directly:
 
 ```bash
-sfdoc generate --model pro
+sfdoc generate --model gemini-1.5-pro
+sfdoc generate --model gemini-2.0-flash
 ```
 
-Available models:
+Some useful options:
 
-| Value             | Gemini model                              |
-| ----------------- | ----------------------------------------- |
-| `flash` (default) | `gemini-1.5-flash` — fast, free tier available |
-| `pro`             | `gemini-1.5-pro` — higher quality              |
+| Model | Notes |
+|-------|-------|
+| `gemini-1.5-flash` (default) | Fast, free tier available (15 req/min, 1,500/day) |
+| `gemini-1.5-pro` | Higher quality, free tier available |
+| `gemini-2.0-flash` | Latest generation, paid tier required |
+
+Full model list: [Google AI models](https://ai.google.dev/gemini-api/docs/models/gemini)
 
 ### Tune concurrency
 
@@ -156,7 +162,7 @@ Options:
                          [default: force-app/main/default/classes]
   --output <PATH>        Output directory for generated Markdown files
                          [default: docs]
-  --model <MODEL>        Gemini model to use [default: flash] [possible values: flash, pro]
+  --model <MODEL>        Gemini model to use [default: gemini-1.5-flash]
   --concurrency <N>      Maximum number of parallel Gemini API requests [default: 5]
   --verbose              Enable verbose logging
   -h, --help             Print help
