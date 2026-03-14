@@ -1,18 +1,5 @@
-mod cache;
-mod cli;
-mod config;
-mod gemini;
-mod html_renderer;
-mod openai_compat;
-mod parser;
-mod prompt;
-mod providers;
-mod renderer;
-mod retry;
-mod scanner;
-mod trigger_parser;
-mod trigger_prompt;
-mod types;
+use sfdoc::{cache, cli, config, gemini, openai_compat, parser, providers, renderer, scanner};
+use sfdoc::{trigger_parser, types};
 
 use anyhow::{Context, Result};
 use clap::Parser;

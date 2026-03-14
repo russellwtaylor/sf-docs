@@ -47,7 +47,7 @@ todos:
       status: done
     - id: e2e-test
       content: "Phase 15: End-to-end integration tests — fixture .cls files, mock HTTP server, full pipeline assertions"
-      status: pending
+      status: done
     - id: flows
       content: "Phase 16: Salesforce Flow documentation — XML scanner, structural parser, AI prompt, flow renderer"
       status: pending

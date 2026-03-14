@@ -8,6 +8,10 @@ description = "Generate wiki-style Markdown documentation for Salesforce Apex cl
 name = "sfdoc"
 path = "src/main.rs"
 
+[lib]
+name = "sfdoc"
+path = "src/lib.rs"
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 tokio = { version = "1", features = ["full"] }
@@ -25,3 +29,5 @@ keyring = "2"
 
 [dev-dependencies]
 tempfile = "3"
+httpmock = "0.7"
+tokio = { version = "1", features = ["full"] }
