@@ -1,0 +1,67 @@
+---
+description: Always-apply project context for sfdoc
+globs: ["**/*.rs", "Cargo.toml"]
+alwaysApply: true
+---
+
+# sfdoc — Apex Documentation Generator
+
+## What This Project Does
+`sfdoc` is a Rust CLI tool that:
+1. Scans a Salesforce SFDX project directory for `.cls` (Apex) files
+2. Parses each file with a regex-based structural parser (no full AST)
+3. Sends the source + extracted metadata to the Gemini API
+4. Renders wiki-style interlinked Markdown documentation
+
+## Module Map
+| File | Responsibility |
+|------|---------------|
+| `src/main.rs` | Entry point, orchestrates the full pipeline |
+| `src/cli.rs` | `clap` CLI definitions — `sfdoc generate` subcommand |
+| `src/scanner.rs` | Recursive `.cls` file discovery via `walkdir` |
+| `src/parser.rs` | Regex-based Apex structural parser → `ClassMetadata` |
+| `src/gemini.rs` | Async Gemini REST API client with semaphore rate-limiting |
+| `src/renderer.rs` | Markdown page generation + cross-linking + `index.md` |
+| `src/types.rs` | Shared data structures (`ApexFile`, `ClassMetadata`, `ClassDocumentation`, etc.) |
+| `src/error.rs` | `SfdocError` enum (thiserror) |
+
+## Key Data Flow
+```
+ApexFile (raw source)
+  → parse_apex_class()  → ClassMetadata
+  → GeminiClient::document_class()  → ClassDocumentation
+  → render_class_page() / render_index()  → .md files
+```
+
+## Gemini API
+- Base URL: `https://generativelanguage.googleapis.com/v1beta/models`
+- Models: `gemini-2.0-flash` (default) or `gemini-2.0-pro-exp`
+- Auth: `GEMINI_API_KEY` env var passed as `?key=` query param
+- Response MIME: `application/json` — Gemini returns structured JSON directly
+- Rate limiting: `tokio::sync::Semaphore` with configurable `--concurrency` (default 5)
+- System prompt instructs Gemini to act as a Salesforce expert and return a specific JSON schema
+
+## CLI Interface
+```
+sfdoc generate
+  --source-dir <PATH>    default: force-app/main/default/classes
+  --output <PATH>        default: docs/
+  --model <flash|pro>    default: flash
+  --concurrency <N>      default: 5
+  --verbose
+```
+
+## Cross-Linking Strategy
+The renderer's `all_class_names` list (populated from all parsed files) is used to detect
+class references in `ClassDocumentation.relationships` strings and generate relative Markdown
+links like `[AccountService](AccountService.md)`.
+
+## Architectural Decisions
+- **Regex parser, not AST**: Salesforce Apex has no stable open-source Rust parser. The
+  regex-based approach extracts structural metadata (signatures, modifiers) reliably enough
+  to give Gemini good context without building a full parser.
+- **Trait-based scanner** (`FileScanner` trait): designed for future plug-in of Trigger,
+  LWC, Flow, or other metadata scanners.
+- **`anyhow` for application errors, `thiserror` for library errors**: follows Rust idioms.
+- **Structured JSON response from Gemini**: setting `responseMimeType: application/json`
+  gives deterministic parsing without regex-scraping prose output.

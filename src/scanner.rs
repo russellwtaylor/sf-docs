@@ -1,0 +1,104 @@
+use anyhow::Result;
+use std::path::Path;
+use walkdir::WalkDir;
+
+use crate::types::ApexFile;
+
+pub trait FileScanner {
+    fn scan(&self, source_dir: &Path) -> Result<Vec<ApexFile>>;
+}
+
+pub struct ApexScanner;
+
+impl FileScanner for ApexScanner {
+    fn scan(&self, source_dir: &Path) -> Result<Vec<ApexFile>> {
+        let mut files = Vec::new();
+
+        for entry in WalkDir::new(source_dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+
+            if !path.is_file() {
+                continue;
+            }
+
+            let file_name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+
+            // Only process .cls files; skip -meta.xml companion files
+            if !file_name.ends_with(".cls") || file_name.contains("-meta.xml") {
+                continue;
+            }
+
+            let raw_source = std::fs::read_to_string(path)?;
+
+            files.push(ApexFile {
+                path: path.to_path_buf(),
+                filename: file_name,
+                raw_source,
+            });
+        }
+
+        // Sort for deterministic output order
+        files.sort_by(|a, b| a.filename.cmp(&b.filename));
+
+        Ok(files)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn write_file(dir: &Path, name: &str, content: &str) {
+        fs::write(dir.join(name), content).unwrap();
+    }
+
+    #[test]
+    fn finds_cls_files() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "AccountService.cls", "public class AccountService {}");
+        write_file(tmp.path(), "AccountService.cls-meta.xml", "<ApexClass/>");
+        write_file(tmp.path(), "README.md", "docs");
+
+        let scanner = ApexScanner;
+        let files = scanner.scan(tmp.path()).unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "AccountService.cls");
+    }
+
+    #[test]
+    fn recurses_into_subdirectories() {
+        let tmp = TempDir::new().unwrap();
+        let sub = tmp.path().join("triggers");
+        fs::create_dir(&sub).unwrap();
+        write_file(tmp.path(), "AccountService.cls", "public class AccountService {}");
+        write_file(&sub, "AccountTrigger.cls", "trigger AccountTrigger on Account (before insert) {}");
+
+        let scanner = ApexScanner;
+        let files = scanner.scan(tmp.path()).unwrap();
+
+        assert_eq!(files.len(), 2);
+    }
+
+    #[test]
+    fn returns_sorted_filenames() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "Zebra.cls", "public class Zebra {}");
+        write_file(tmp.path(), "Alpha.cls", "public class Alpha {}");
+
+        let scanner = ApexScanner;
+        let files = scanner.scan(tmp.path()).unwrap();
+
+        assert_eq!(files[0].filename, "Alpha.cls");
+        assert_eq!(files[1].filename, "Zebra.cls");
+    }
+}

@@ -1,0 +1,54 @@
+---
+description: Rust coding conventions for the sfdoc project
+globs: ["**/*.rs"]
+alwaysApply: true
+---
+
+# Rust Conventions for sfdoc
+
+## Error Handling
+- Use `anyhow::Result` in `main.rs` and all binary-facing code (top-level orchestration)
+- Use `thiserror` for structured errors in `error.rs` that may need to be matched on
+- Use `.context("...")` / `.with_context(|| ...)` to add actionable messages at every `?`
+- Never `.unwrap()` in production paths — only in tests or `OnceLock` initializers
+
+## Async
+- All Gemini API calls are `async` — use `tokio::spawn` for concurrent class processing
+- Rate limiting via `tokio::sync::Semaphore` — acquire permit before each API call
+- The top-level runtime is `#[tokio::main]` in `main.rs`
+
+## Regex
+- Compile each regex exactly once using `std::sync::OnceLock<Regex>` in a helper function
+- Never compile a `Regex` inside a hot loop
+
+## Naming
+- Types: `PascalCase` — `ClassMetadata`, `ApexFile`, `GeminiClient`
+- Functions/methods: `snake_case`
+- Constants: `SCREAMING_SNAKE_CASE`
+- Test modules: `#[cfg(test)] mod tests { ... }` at the bottom of each file
+
+## Testing
+- Unit tests live in the same file as the code they test (`#[cfg(test)] mod tests`)
+- Use `tempfile::TempDir` for filesystem tests (already a dev-dependency)
+- Test the public API surface; avoid testing private regex internals directly
+- Integration tests (if added) go in `tests/`
+
+## Dependencies
+| Crate | Purpose |
+|-------|---------|
+| `clap` (derive) | CLI parsing |
+| `tokio` (full) | Async runtime |
+| `reqwest` (json) | HTTP client for Gemini |
+| `serde` / `serde_json` | JSON serialization |
+| `walkdir` | Directory traversal |
+| `indicatif` | Progress bars |
+| `anyhow` | Ergonomic errors (application layer) |
+| `thiserror` | Typed errors (library layer) |
+| `regex` | Apex structural parsing |
+| `tempfile` (dev) | Temp dirs in tests |
+
+## Style
+- Prefer `collect::<Result<Vec<_>>>()` over manual loops with `?`
+- Use `OnceLock` not `lazy_static` — it is in `std` since Rust 1.70
+- Keep `src/types.rs` as the single source of truth for shared structs
+- Each module's public API should be minimal — re-export only what `main.rs` needs
