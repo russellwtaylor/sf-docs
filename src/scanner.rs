@@ -10,6 +10,9 @@ pub trait FileScanner {
 
 pub struct ApexScanner;
 
+/// Scans a directory tree for Apex trigger files (`.trigger`).
+pub struct TriggerScanner;
+
 impl FileScanner for ApexScanner {
     fn scan(&self, source_dir: &Path) -> Result<Vec<ApexFile>> {
         let mut files = Vec::new();
@@ -51,6 +54,39 @@ impl FileScanner for ApexScanner {
     }
 }
 
+impl FileScanner for TriggerScanner {
+    fn scan(&self, source_dir: &Path) -> Result<Vec<ApexFile>> {
+        let mut files = Vec::new();
+
+        for entry in WalkDir::new(source_dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let file_name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+            if !file_name.ends_with(".trigger") || file_name.contains("-meta.xml") {
+                continue;
+            }
+            let raw_source = std::fs::read_to_string(path)?;
+            files.push(ApexFile {
+                path: path.to_path_buf(),
+                filename: file_name,
+                raw_source,
+            });
+        }
+
+        files.sort_by(|a, b| a.filename.cmp(&b.filename));
+        Ok(files)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,6 +123,20 @@ mod tests {
         let files = scanner.scan(tmp.path()).unwrap();
 
         assert_eq!(files.len(), 2);
+    }
+
+    #[test]
+    fn finds_trigger_files() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "AccountTrigger.trigger", "trigger AccountTrigger on Account (before insert) {}");
+        write_file(tmp.path(), "AccountTrigger.trigger-meta.xml", "<ApexTrigger/>");
+        write_file(tmp.path(), "AccountService.cls", "public class AccountService {}");
+
+        let scanner = TriggerScanner;
+        let files = scanner.scan(tmp.path()).unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "AccountTrigger.trigger");
     }
 
     #[test]

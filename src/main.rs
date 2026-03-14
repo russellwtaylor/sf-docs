@@ -2,6 +2,7 @@ mod cache;
 mod cli;
 mod config;
 mod gemini;
+mod html_renderer;
 mod openai_compat;
 mod parser;
 mod prompt;
@@ -9,6 +10,8 @@ mod providers;
 mod renderer;
 mod retry;
 mod scanner;
+mod trigger_parser;
+mod trigger_prompt;
 mod types;
 
 use anyhow::{Context, Result};
@@ -21,8 +24,8 @@ use config::{delete_api_key, has_stored_key, resolve_api_key, save_api_key};
 use gemini::GeminiClient;
 use openai_compat::OpenAiCompatClient;
 use providers::Provider;
-use scanner::{ApexScanner, FileScanner};
-use types::{ApexFile, ClassDocumentation, ClassMetadata};
+use scanner::{ApexScanner, FileScanner, TriggerScanner};
+use types::{AllNames, ApexFile, ClassDocumentation, TriggerDocumentation};
 
 /// Unified client enum for dispatch without dynamic dispatch overhead.
 enum DocClient {
@@ -34,11 +37,22 @@ impl DocClient {
     async fn document_class(
         &self,
         file: &ApexFile,
-        metadata: &ClassMetadata,
+        metadata: &types::ClassMetadata,
     ) -> Result<ClassDocumentation> {
         match self {
             DocClient::Gemini(c) => c.document_class(file, metadata).await,
             DocClient::OpenAiCompat(c) => c.document_class(file, metadata).await,
+        }
+    }
+
+    async fn document_trigger(
+        &self,
+        file: &ApexFile,
+        metadata: &types::TriggerMetadata,
+    ) -> Result<TriggerDocumentation> {
+        match self {
+            DocClient::Gemini(c) => c.document_trigger(file, metadata).await,
+            DocClient::OpenAiCompat(c) => c.document_trigger(file, metadata).await,
         }
     }
 }
@@ -87,16 +101,29 @@ async fn main() -> Result<()> {
                 }
             }
 
-            // Parse each file
-            let metadata: Vec<_> = files
+            // Parse Apex classes
+            let class_meta: Vec<_> = files
                 .iter()
                 .map(|f| parser::parse_apex_class(&f.raw_source))
                 .collect::<Result<_>>()?;
 
-            // Collect all class names for cross-linking (shared across all render contexts)
-            let all_class_names: Arc<Vec<String>> = Arc::new(
-                metadata.iter().map(|m| m.class_name.clone()).collect(),
-            );
+            // Scan and parse Apex triggers (same source dir; non-fatal if none found)
+            let trigger_files = TriggerScanner
+                .scan(&args.source_dir)
+                .with_context(|| format!("Failed to scan triggers in {}", args.source_dir.display()))?;
+            if !trigger_files.is_empty() {
+                println!("Found {} Apex trigger file(s)", trigger_files.len());
+            }
+            let trigger_meta: Vec<_> = trigger_files
+                .iter()
+                .map(|f| trigger_parser::parse_apex_trigger(&f.raw_source))
+                .collect::<Result<_>>()?;
+
+            // Shared cross-linking index
+            let all_names = Arc::new(AllNames {
+                class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
+                trigger_names: trigger_meta.iter().map(|m| m.trigger_name.clone()).collect(),
+            });
 
             // Load incremental build cache (empty if --force or first run)
             let mut cache = if args.force {
@@ -105,49 +132,53 @@ async fn main() -> Result<()> {
                 cache::Cache::load(&args.output)
             };
 
-            // Hash each source file and partition into: needs API call vs. cached
-            let hashes: Vec<String> =
+            // Hash every source file
+            let class_hashes: Vec<String> =
                 files.iter().map(|f| cache::hash_source(&f.raw_source)).collect();
+            let trigger_hashes: Vec<String> =
+                trigger_files.iter().map(|f| cache::hash_source(&f.raw_source)).collect();
 
-            let mut work_indices: Vec<usize> = Vec::new();
-            // Slot for each file's documentation; filled from cache or API result
-            let mut all_docs: Vec<Option<types::ClassDocumentation>> = vec![None; files.len()];
-
-            for (i, (f, h)) in files.iter().zip(hashes.iter()).enumerate() {
-                let key = f.path.to_string_lossy();
-                if let Some(entry) = cache.get_if_fresh(&key, h, &model) {
-                    all_docs[i] = Some(entry.documentation.clone());
+            // Partition classes into cached vs. needs-API
+            let mut class_work: Vec<usize> = Vec::new();
+            let mut class_docs: Vec<Option<ClassDocumentation>> = vec![None; files.len()];
+            for (i, (f, h)) in files.iter().zip(class_hashes.iter()).enumerate() {
+                if let Some(e) = cache.get_if_fresh(&f.path.to_string_lossy(), h, &model) {
+                    class_docs[i] = Some(e.documentation.clone());
                 } else {
-                    work_indices.push(i);
+                    class_work.push(i);
                 }
             }
 
-            let skipped = files.len() - work_indices.len();
-            if skipped > 0 {
-                println!("{skipped} class(es) up-to-date — skipping API calls");
+            // Partition triggers into cached vs. needs-API
+            let mut trigger_work: Vec<usize> = Vec::new();
+            let mut trigger_docs: Vec<Option<TriggerDocumentation>> = vec![None; trigger_files.len()];
+            for (i, (f, h)) in trigger_files.iter().zip(trigger_hashes.iter()).enumerate() {
+                if let Some(e) = cache.get_trigger_if_fresh(&f.path.to_string_lossy(), h, &model) {
+                    trigger_docs[i] = Some(e.documentation.clone());
+                } else {
+                    trigger_work.push(i);
+                }
             }
 
-            if !work_indices.is_empty() {
-                // Only resolve the API key when there's actual work to do
-                let api_key = resolve_api_key(provider)?;
+            let skipped = (files.len() - class_work.len()) + (trigger_files.len() - trigger_work.len());
+            if skipped > 0 {
+                println!("{skipped} file(s) up-to-date — skipping API calls");
+            }
 
+            if !class_work.is_empty() || !trigger_work.is_empty() {
+                let api_key = resolve_api_key(provider)?;
                 let client = match provider {
                     Provider::Gemini => DocClient::Gemini(Arc::new(GeminiClient::new(
-                        api_key,
-                        &model,
-                        args.concurrency,
+                        api_key, &model, args.concurrency,
                     ))),
                     _ => DocClient::OpenAiCompat(Arc::new(OpenAiCompatClient::new(
-                        api_key,
-                        &model,
-                        provider.base_url(),
-                        args.concurrency,
-                        provider.display_name(),
+                        api_key, &model, provider.base_url(), args.concurrency, provider.display_name(),
                     ))),
                 };
                 let client = Arc::new(client);
 
-                let pb = Arc::new(ProgressBar::new(work_indices.len() as u64));
+                let total_work = (class_work.len() + trigger_work.len()) as u64;
+                let pb = Arc::new(ProgressBar::new(total_work));
                 pb.set_style(
                     ProgressStyle::with_template(
                         "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
@@ -156,53 +187,73 @@ async fn main() -> Result<()> {
                     .progress_chars("#>-"),
                 );
 
-                // Spawn one task per stale/new file
-                let mut tasks: Vec<(usize, tokio::task::JoinHandle<Result<types::ClassDocumentation>>)> =
-                    Vec::new();
-                for &idx in &work_indices {
+                // Spawn class tasks
+                let mut class_tasks: Vec<(usize, tokio::task::JoinHandle<Result<ClassDocumentation>>)> = Vec::new();
+                for &idx in &class_work {
                     let client = Arc::clone(&client);
                     let file = files[idx].clone();
-                    let meta = metadata[idx].clone();
+                    let meta = class_meta[idx].clone();
                     let pb_task = Arc::clone(&pb);
-                    tasks.push((
-                        idx,
-                        tokio::spawn(async move {
-                            let result = client.document_class(&file, &meta).await;
-                            pb_task.inc(1);
-                            result
-                        }),
-                    ));
+                    class_tasks.push((idx, tokio::spawn(async move {
+                        let result = client.document_class(&file, &meta).await;
+                        pb_task.inc(1);
+                        result
+                    })));
                 }
 
-                // Collect results; update the cache entry for each newly processed file
-                for (idx, task) in tasks {
-                    let documentation = task.await??;
-                    cache.update(
-                        files[idx].path.to_string_lossy().to_string(),
-                        hashes[idx].clone(),
-                        model.clone(),
-                        documentation.clone(),
-                    );
-                    all_docs[idx] = Some(documentation);
+                // Spawn trigger tasks
+                let mut trigger_tasks: Vec<(usize, tokio::task::JoinHandle<Result<TriggerDocumentation>>)> = Vec::new();
+                for &idx in &trigger_work {
+                    let client = Arc::clone(&client);
+                    let file = trigger_files[idx].clone();
+                    let meta = trigger_meta[idx].clone();
+                    let pb_task = Arc::clone(&pb);
+                    trigger_tasks.push((idx, tokio::spawn(async move {
+                        let result = client.document_trigger(&file, &meta).await;
+                        pb_task.inc(1);
+                        result
+                    })));
+                }
+
+                for (idx, task) in class_tasks {
+                    let doc = task.await??;
+                    cache.update(files[idx].path.to_string_lossy().to_string(), class_hashes[idx].clone(), model.clone(), doc.clone());
+                    class_docs[idx] = Some(doc);
+                }
+                for (idx, task) in trigger_tasks {
+                    let doc = task.await??;
+                    cache.update_trigger(trigger_files[idx].path.to_string_lossy().to_string(), trigger_hashes[idx].clone(), model.clone(), doc.clone());
+                    trigger_docs[idx] = Some(doc);
                 }
 
                 pb.finish_with_message("Done");
             }
 
-            // Build render contexts for every file (cached + newly generated)
-            let contexts: Vec<renderer::RenderContext> = files
+            // Build render contexts
+            let class_contexts: Vec<renderer::RenderContext> = files
                 .iter()
-                .zip(metadata.into_iter())
-                .zip(all_docs.into_iter())
+                .zip(class_meta.into_iter())
+                .zip(class_docs.into_iter())
                 .map(|((_, meta), doc)| renderer::RenderContext {
                     metadata: meta,
-                    documentation: doc.expect("every file must have documentation"),
-                    all_class_names: Arc::clone(&all_class_names),
+                    documentation: doc.expect("every class must have documentation"),
+                    all_names: Arc::clone(&all_names),
+                })
+                .collect();
+
+            let trigger_contexts: Vec<renderer::TriggerRenderContext> = trigger_files
+                .iter()
+                .zip(trigger_meta.into_iter())
+                .zip(trigger_docs.into_iter())
+                .map(|((_, meta), doc)| renderer::TriggerRenderContext {
+                    metadata: meta,
+                    documentation: doc.expect("every trigger must have documentation"),
+                    all_names: Arc::clone(&all_names),
                 })
                 .collect();
 
             // Render and write output
-            renderer::write_output(&args.output, &contexts)?;
+            renderer::write_output(&args.output, &args.format, &class_contexts, &trigger_contexts)?;
             println!("Documentation written to {}", args.output.display());
 
             // Persist the updated cache — only reached if all API calls succeeded

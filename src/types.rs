@@ -47,6 +47,72 @@ pub struct PropertyMetadata {
     pub is_static: bool,
 }
 
+/// Shared cross-linking index passed to every render context.
+pub struct AllNames {
+    pub class_names: Vec<String>,
+    pub trigger_names: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Trigger types
+// ---------------------------------------------------------------------------
+
+/// Structural metadata extracted from an Apex trigger.
+#[derive(Debug, Clone, Default)]
+pub struct TriggerMetadata {
+    pub trigger_name: String,
+    pub sobject: String,
+    pub events: Vec<TriggerEvent>,
+    pub existing_comments: Vec<String>,
+    pub references: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TriggerEvent {
+    BeforeInsert,
+    BeforeUpdate,
+    BeforeDelete,
+    AfterInsert,
+    AfterUpdate,
+    AfterDelete,
+    AfterUndelete,
+}
+
+impl TriggerEvent {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TriggerEvent::BeforeInsert => "before insert",
+            TriggerEvent::BeforeUpdate => "before update",
+            TriggerEvent::BeforeDelete => "before delete",
+            TriggerEvent::AfterInsert => "after insert",
+            TriggerEvent::AfterUpdate => "after update",
+            TriggerEvent::AfterDelete => "after delete",
+            TriggerEvent::AfterUndelete => "after undelete",
+        }
+    }
+}
+
+/// AI-generated documentation for an Apex trigger.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct TriggerDocumentation {
+    pub trigger_name: String,
+    pub sobject: String,
+    pub summary: String,
+    pub description: String,
+    pub events: Vec<TriggerEventDocumentation>,
+    pub handler_classes: Vec<String>,
+    pub usage_notes: Vec<String>,
+    pub relationships: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct TriggerEventDocumentation {
+    pub event: String,
+    pub description: String,
+}
+
+// ---------------------------------------------------------------------------
+
 /// AI-generated documentation for a class, parsed from the AI response.
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct ClassDocumentation {

@@ -3,6 +3,15 @@ use std::path::PathBuf;
 
 use crate::providers::Provider;
 
+#[derive(clap::ValueEnum, Clone, Debug, Default, PartialEq)]
+pub enum OutputFormat {
+    /// Wiki-style Markdown files (default)
+    #[default]
+    Markdown,
+    /// Self-contained HTML site with sidebar navigation
+    Html,
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "sfdoc",
@@ -45,6 +54,10 @@ pub struct GenerateArgs {
     /// Maximum number of parallel API requests
     #[arg(long, default_value_t = 3)]
     pub concurrency: usize,
+
+    /// Output format
+    #[arg(long, default_value = "markdown")]
+    pub format: OutputFormat,
 
     /// Regenerate all documentation, ignoring the incremental build cache
     #[arg(long)]
