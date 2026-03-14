@@ -1,36 +1,44 @@
 # sfdoc
 
-A Rust CLI tool that generates rich, wiki-style documentation for Salesforce Apex classes and triggers using AI.
+> AI-powered documentation for Salesforce projects — Apex classes, triggers, Flows, and validation rules turned into rich, interlinked Markdown or HTML in seconds.
+
+`sfdoc` is a Rust CLI tool that scans your SFDX project, extracts structural metadata from your Salesforce source files, and uses an AI provider of your choice to generate professional wiki-style documentation. It ships with an incremental build cache so that only changed files ever hit the API.
+
+## How it works
+
+```
+SFDX project → scan → parse → AI provider → Markdown / HTML output
+                                    ↑
+                         skips unchanged files
+                         (SHA-256 cache)
+```
 
 ## Features
 
-- Recursively discovers all `.cls` and `.trigger` files in your SFDX project
-- Extracts structural metadata (class signatures, methods, properties, ApexDoc comments) without a full AST
-- Sends source + metadata to your chosen AI provider for documentation generation
-- Outputs interlinked Markdown pages — one per class/trigger, plus an `index.md`
-- Also renders a self-contained HTML site (`--format html`) with sidebar navigation
-- Cross-links related classes automatically
-- Incremental builds — skips unchanged files using SHA-256 hashing
-- Concurrent API calls with configurable rate limiting
+- Discovers `.cls`, `.trigger`, `.flow-meta.xml`, and `.validationRule-meta.xml` files recursively
+- Extracts structural metadata (class signatures, methods, properties, ApexDoc comments, trigger events, flow elements, validation formulas) without a full AST
+- Generates rich documentation pages with summaries, parameter tables, usage examples, and cross-links
+- Outputs interlinked **Markdown** pages or a self-contained **HTML** site with sidebar navigation
+- **Incremental builds** — tracks SHA-256 hashes and skips unchanged files; use `--force` to regenerate everything
+- **Multi-provider** — Gemini (default), Groq, OpenAI, or Ollama; swap with a single flag
 - API keys stored securely in the OS keychain (macOS Keychain, Linux Secret Service, Windows Credential Manager)
+- Concurrent API calls with configurable rate limiting
 
 ## Supported AI Providers
 
-| Provider | Flag | Default Model | Notes |
-|----------|------|---------------|-------|
-| Google Gemini | `gemini` (default) | `gemini-2.5-flash` | Free tier available |
-| Groq | `groq` | `llama-3.3-70b-versatile` | Free tier, very fast |
-| OpenAI | `openai` | `gpt-4o-mini` | Paid |
-| Ollama | `ollama` | `llama3.2` | Local, no API key needed |
+| Provider      | Flag                 | Default Model             | Notes                       |
+| ------------- | -------------------- | ------------------------- | --------------------------- |
+| Google Gemini | `gemini` _(default)_ | `gemini-2.5-flash`        | Free tier available         |
+| Groq          | `groq`               | `llama-3.3-70b-versatile` | Free tier, very fast        |
+| OpenAI        | `openai`             | `gpt-4o-mini`             | Paid                        |
+| Ollama        | `ollama`             | `llama3.2`                | Local — no API key required |
 
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) 1.70 or later
-- An API key for your chosen provider (not needed for Ollama)
+- An API key for your chosen provider (not required for Ollama)
 
 ## Installation
-
-### From source
 
 ```bash
 git clone https://github.com/russellwtaylor/sf-docs
@@ -38,22 +46,17 @@ cd sf-docs
 cargo install --path .
 ```
 
-This installs the `sfdoc` binary to `~/.cargo/bin/`.
-
-If `rustup` was installed normally, this directory is already on your `PATH`. Verify with:
-
-```bash
-sfdoc --version
-```
-
-If that returns `command not found`, add the following to your shell profile and restart your terminal:
+This installs the `sfdoc` binary to `~/.cargo/bin/`. If that directory is not on your `PATH`, add it:
 
 ```bash
 # zsh (default on macOS)
 echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
 
-# bash
-echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+Verify the installation:
+
+```bash
+sfdoc --version
 ```
 
 ### Build without installing
@@ -63,7 +66,22 @@ cargo build --release
 # Binary is at ./target/release/sfdoc
 ```
 
-## Verify installation
+## Setup
+
+### 1. Save your API key
+
+```bash
+# Default provider (Gemini)
+sfdoc auth
+
+# Other providers
+sfdoc auth --provider groq
+sfdoc auth --provider openai
+```
+
+The key is stored encrypted in your OS keychain and never written to disk in plaintext.
+
+### 2. Verify configuration
 
 ```bash
 sfdoc status
@@ -74,43 +92,15 @@ Example output:
 ```
 sfdoc 0.1.0
 
-Providers:
-  gemini   — API key: configured (keychain)
-  groq     — API key: not configured
-  openai   — API key: not configured
-  ollama   — no API key required
+Provider   Name               API Key
+------------------------------------------------------------
+gemini     Google Gemini      set (env: GEMINI_API_KEY)
+groq       Groq               set (OS keychain)
+openai     OpenAI             not configured — run `sfdoc auth --provider openai`
+ollama     Ollama (local)     not required
 ```
 
-## Configuration
-
-### Save your API key (recommended)
-
-```bash
-# Gemini (default)
-sfdoc auth
-
-# Other providers
-sfdoc auth --provider groq
-sfdoc auth --provider openai
-```
-
-The key is stored encrypted in your OS keychain — it never touches disk in plaintext.
-
-### Environment variables (CI/CD)
-
-For automated pipelines, set the environment variable instead. It takes priority over the keychain:
-
-```bash
-export GEMINI_API_KEY=your_key_here
-export GROQ_API_KEY=your_key_here
-export OPENAI_API_KEY=your_key_here
-```
-
-Ollama runs locally and requires no API key.
-
-## Usage
-
-### Basic — generate docs for an SFDX project
+### 3. Generate documentation
 
 Run from the root of your Salesforce project:
 
@@ -118,29 +108,27 @@ Run from the root of your Salesforce project:
 sfdoc generate
 ```
 
-This uses the default source path (`force-app/main/default/classes/`), the Gemini provider, and writes Markdown output to `docs/`.
+This scans `force-app/main/default/classes/` and writes Markdown output to `docs/`.
 
-### Specify paths explicitly
+## Usage
+
+### Specify paths
 
 ```bash
 sfdoc generate --source-dir path/to/classes --output path/to/output
 ```
 
-### Choose a provider
+### Switch provider or model
 
 ```bash
+# Use Groq with its default model
 sfdoc generate --provider groq
-sfdoc generate --provider openai
-sfdoc generate --provider ollama
-```
 
-### Choose a model
+# Use OpenAI with a specific model
+sfdoc generate --provider openai --model gpt-4o
 
-Override the provider's default model:
-
-```bash
-sfdoc generate --model gemini-2.5-pro
-sfdoc generate --provider groq --model mixtral-8x7b-32768
+# Run locally with Ollama
+sfdoc generate --provider ollama --model llama3.1
 ```
 
 ### HTML output
@@ -151,11 +139,11 @@ Generate a self-contained static site instead of Markdown:
 sfdoc generate --format html
 ```
 
-Output is written to `docs/` with an `index.html` and one page per class/trigger. No external dependencies — works offline.
+Output is written to `docs/` with an `index.html` and one page per class or trigger. No external dependencies — works fully offline and can be deployed to any static host.
 
 ### Incremental builds
 
-By default, `sfdoc` skips classes whose source hasn't changed since the last run (tracked via SHA-256 hashes in `.sfdoc-cache.json`). To force a full regeneration:
+By default, `sfdoc` skips files whose source hasn't changed since the last run (tracked via SHA-256 hashes in `.sfdoc-cache.json`). To force a full regeneration:
 
 ```bash
 sfdoc generate --force
@@ -163,10 +151,9 @@ sfdoc generate --force
 
 ### Tune concurrency
 
-Controls the maximum number of simultaneous API requests. Lower this if you hit rate limits:
-
 ```bash
-sfdoc generate --concurrency 1
+# Lower if hitting rate limits; raise on a paid plan
+sfdoc generate --concurrency 10
 ```
 
 ### Verbose output
@@ -192,13 +179,13 @@ Options:
   --source-dir <PATH>    Path to Apex source directory
                          [default: force-app/main/default/classes]
   --output <PATH>        Output directory for generated files [default: docs]
-  --provider <PROVIDER>  AI provider to use [default: gemini]
+  --provider <PROVIDER>  AI provider [default: gemini]
                          [possible values: gemini, groq, openai, ollama]
-  --model <MODEL>        Model to use (defaults to provider's recommended model)
-  --concurrency <N>      Maximum number of parallel API requests [default: 3]
+  --model <MODEL>        Model override (uses provider default if omitted)
+  --concurrency <N>      Maximum parallel API requests [default: 3]
   --format <FORMAT>      Output format [default: markdown]
                          [possible values: markdown, html]
-  --force                Regenerate all docs, ignoring the incremental build cache
+  --force                Ignore the incremental build cache; regenerate all docs
   --verbose              Enable verbose logging
   -h, --help             Print help
   -V, --version          Print version
@@ -209,55 +196,52 @@ Options:
   --provider <PROVIDER>  Provider to authenticate [default: gemini]
 ```
 
-## Output structure
+## Output
 
 ### Markdown (default)
 
 ```
 docs/
-  index.md              # Home page — alphabetical class listing with summaries
-  AccountService.md     # One page per class or trigger
-  OrderTrigger.md
-  ...
-  .sfdoc-cache.json     # Incremental build cache (do not edit manually)
+  index.md                  # Home page — classes and triggers with summaries
+  AccountService.md         # One page per class
+  OrderTrigger.md           # One page per trigger
+  .sfdoc-cache.json         # Incremental build cache (do not edit manually)
 ```
 
 ### HTML
 
 ```
 docs/
-  index.html            # Home page with sidebar navigation
+  index.html                # Home page with sidebar navigation
   AccountService.html
   OrderTrigger.html
-  ...
 ```
 
-### Example class page
+### What each page contains
 
-Each page includes:
-
-- **Title + badges** — access modifier, abstract/virtual, extends/implements
-- **Summary** — one-sentence AI-generated description
-- **Table of contents**
-- **Description** — detailed explanation of the class's purpose
-- **Properties table** — name, type, description
-- **Methods** — signature, description, parameters table, return value, exceptions
-- **Usage examples** — Apex code snippets
-- **See Also** — cross-links to related classes
+| Section        | Details                                                           |
+| -------------- | ----------------------------------------------------------------- |
+| Title + badges | Access modifier, `abstract`/`virtual`, `extends`, `implements`    |
+| Summary        | One-sentence AI-generated description                             |
+| Description    | Full explanation of the class's purpose and behaviour             |
+| Properties     | Name, type, description table                                     |
+| Methods        | Signature, description, parameter table, return value, exceptions |
+| Usage examples | Apex code snippets                                                |
+| See Also       | Cross-links to related classes and triggers                       |
 
 ## Example workflow
 
 ```bash
-# 1. Install sfdoc
+# 1. Install
 cargo install --path .
 
-# 2. Save your API key
+# 2. Authenticate
 sfdoc auth
 
-# 3. Verify everything is ready
+# 3. Verify
 sfdoc status
 
-# 4. Navigate to your Salesforce project and generate docs
+# 4. Generate docs
 cd my-salesforce-project
 sfdoc generate --verbose
 
@@ -267,12 +251,11 @@ open docs/index.md
 
 ## Tips
 
-- **Rate limits**: the default concurrency of 3 is conservative. If you're on a paid plan, raise it with `--concurrency 10` or higher.
-- **Free & fast**: Groq offers a generous free tier with very low latency — great for large codebases.
-- **Offline**: use `--provider ollama` with a locally running Ollama instance for fully air-gapped generation.
-- **Incremental updates**: re-running `sfdoc generate` only processes files that have changed since the last run. Use `--force` to regenerate everything.
-- **Custom source layouts**: use `--source-dir` if your classes aren't under the default SFDX path.
-- **CI/CD integration**: set your provider's env var as a secret and add `sfdoc generate` as a pipeline step to keep docs up to date automatically.
+- **Free tier** — Groq offers a generous free tier with very low latency; a good alternative to Gemini for large codebases.
+- **Offline** — Use `--provider ollama` with a locally running Ollama instance for fully air-gapped generation.
+- **Rate limits** — The default concurrency of 3 is conservative for free-tier plans. On a paid plan, `--concurrency 10` or higher is safe.
+- **CI/CD** — Set your provider's environment variable as a secret (`GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENAI_API_KEY`) and add `sfdoc generate` as a pipeline step. The incremental cache means only changed files are re-documented on each run.
+- **Custom layouts** — Use `--source-dir` if your classes are not under the default SFDX path.
 
 ## Project structure
 
@@ -282,7 +265,7 @@ src/
   cli.rs              clap CLI definitions
   config.rs           API key storage and resolution
   providers.rs        Provider enum and per-provider defaults
-  scanner.rs          Recursive .cls and .trigger file discovery
+  scanner.rs          FileScanner trait, ApexScanner, TriggerScanner
   parser.rs           Regex-based Apex class structural parser
   trigger_parser.rs   Apex trigger structural parser
   prompt.rs           AI prompt construction for classes
@@ -295,6 +278,25 @@ src/
   cache.rs            SHA-256 incremental build cache
   types.rs            Shared data structures
 ```
+
+## Development
+
+```bash
+# Build
+cargo build
+
+# Run tests
+cargo test
+
+# Run with a local project
+cargo run -- generate --source-dir /path/to/sf-project/force-app/main/default/classes --verbose
+```
+
+All parser and renderer logic is unit-tested. To add a new metadata type, implement the `FileScanner` trait in `scanner.rs`, add a corresponding parser and prompt module, extend `types.rs` with the new metadata and documentation structs, and wire it up in `main.rs`.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test, and submit changes. We use GitHub Issues and Pull Requests for bugs and features.
 
 ## License
 
