@@ -13,6 +13,17 @@ pub struct ApexScanner;
 /// Scans a directory tree for Apex trigger files (`.trigger`).
 pub struct TriggerScanner;
 
+/// Returns `true` if WalkDir should descend into (or keep) this entry.
+/// Prunes common noise directories to reduce unnecessary syscalls.
+fn should_visit(entry: &walkdir::DirEntry) -> bool {
+    if entry.file_type().is_dir() {
+        let name = entry.file_name().to_str().unwrap_or("");
+        !matches!(name, ".git" | ".sfdx" | "node_modules" | "target")
+    } else {
+        true
+    }
+}
+
 impl FileScanner for ApexScanner {
     fn scan(&self, source_dir: &Path) -> Result<Vec<ApexFile>> {
         let mut files = Vec::new();
@@ -20,6 +31,7 @@ impl FileScanner for ApexScanner {
         for entry in WalkDir::new(source_dir)
             .follow_links(true)
             .into_iter()
+            .filter_entry(should_visit)
             .filter_map(|e| e.ok())
         {
             let path = entry.path();
@@ -61,6 +73,7 @@ impl FileScanner for TriggerScanner {
         for entry in WalkDir::new(source_dir)
             .follow_links(true)
             .into_iter()
+            .filter_entry(should_visit)
             .filter_map(|e| e.ok())
         {
             let path = entry.path();

@@ -17,7 +17,9 @@ mod types;
 use anyhow::{Context, Result};
 use clap::Parser;
 use indicatif::{ProgressBar, ProgressStyle};
+use rayon::prelude::*;
 use std::sync::Arc;
+use tokio::task::JoinSet;
 
 use cli::{Cli, Commands};
 use config::{delete_api_key, has_stored_key, resolve_api_key, save_api_key};
@@ -70,11 +72,10 @@ async fn main() -> Result<()> {
         }
         Commands::Generate(args) => {
             let provider = &args.provider;
-            let model = args
-                .model
-                .as_deref()
-                .unwrap_or(provider.default_model())
-                .to_string();
+            // Arc<str> so task closures get a cheap pointer copy instead of a String clone.
+            let model: Arc<str> = Arc::from(
+                args.model.as_deref().unwrap_or(provider.default_model()),
+            );
 
             if args.verbose {
                 eprintln!("Provider:    {}", provider.display_name());
@@ -101,23 +102,29 @@ async fn main() -> Result<()> {
                 }
             }
 
-            // Parse Apex classes
-            let class_meta: Vec<_> = files
-                .iter()
-                .map(|f| parser::parse_apex_class(&f.raw_source))
-                .collect::<Result<_>>()?;
-
-            // Scan and parse Apex triggers (same source dir; non-fatal if none found)
+            // Scan for .trigger files (non-fatal if none found)
             let trigger_files = TriggerScanner
                 .scan(&args.source_dir)
                 .with_context(|| format!("Failed to scan triggers in {}", args.source_dir.display()))?;
             if !trigger_files.is_empty() {
                 println!("Found {} Apex trigger file(s)", trigger_files.len());
             }
+
+            // Parse classes and triggers in parallel using rayon.
+            let class_meta: Vec<_> = files
+                .par_iter()
+                .map(|f| parser::parse_apex_class(&f.raw_source))
+                .collect::<Result<_>>()?;
             let trigger_meta: Vec<_> = trigger_files
-                .iter()
+                .par_iter()
                 .map(|f| trigger_parser::parse_apex_trigger(&f.raw_source))
                 .collect::<Result<_>>()?;
+
+            // Wrap in Arc so task closures share the data without cloning raw_source.
+            let files = Arc::new(files);
+            let class_meta = Arc::new(class_meta);
+            let trigger_files = Arc::new(trigger_files);
+            let trigger_meta = Arc::new(trigger_meta);
 
             // Shared cross-linking index
             let all_names = Arc::new(AllNames {
@@ -134,11 +141,11 @@ async fn main() -> Result<()> {
 
             // Hash every source file
             let class_hashes: Vec<String> =
-                files.iter().map(|f| cache::hash_source(&f.raw_source)).collect();
+                files.par_iter().map(|f| cache::hash_source(&f.raw_source)).collect();
             let trigger_hashes: Vec<String> =
-                trigger_files.iter().map(|f| cache::hash_source(&f.raw_source)).collect();
+                trigger_files.par_iter().map(|f| cache::hash_source(&f.raw_source)).collect();
 
-            // Partition classes into cached vs. needs-API
+            // Partition into cached vs. needs-API
             let mut class_work: Vec<usize> = Vec::new();
             let mut class_docs: Vec<Option<ClassDocumentation>> = vec![None; files.len()];
             for (i, (f, h)) in files.iter().zip(class_hashes.iter()).enumerate() {
@@ -149,7 +156,6 @@ async fn main() -> Result<()> {
                 }
             }
 
-            // Partition triggers into cached vs. needs-API
             let mut trigger_work: Vec<usize> = Vec::new();
             let mut trigger_docs: Vec<Option<TriggerDocumentation>> = vec![None; trigger_files.len()];
             for (i, (f, h)) in trigger_files.iter().zip(trigger_hashes.iter()).enumerate() {
@@ -187,53 +193,75 @@ async fn main() -> Result<()> {
                     .progress_chars("#>-"),
                 );
 
-                // Spawn class tasks
-                let mut class_tasks: Vec<(usize, tokio::task::JoinHandle<Result<ClassDocumentation>>)> = Vec::new();
+                // Unified work queue: classes and triggers race for the same concurrency
+                // slots, so the semaphore is never underutilised when one type dominates.
+                enum WorkResult {
+                    Class(usize, ClassDocumentation),
+                    Trigger(usize, TriggerDocumentation),
+                }
+
+                let mut tasks: JoinSet<Result<WorkResult>> = JoinSet::new();
+
                 for &idx in &class_work {
                     let client = Arc::clone(&client);
-                    let file = files[idx].clone();
-                    let meta = class_meta[idx].clone();
+                    let files = Arc::clone(&files);
+                    let class_meta = Arc::clone(&class_meta);
                     let pb_task = Arc::clone(&pb);
-                    class_tasks.push((idx, tokio::spawn(async move {
-                        let result = client.document_class(&file, &meta).await;
+                    tasks.spawn(async move {
+                        let doc = client.document_class(&files[idx], &class_meta[idx]).await?;
                         pb_task.inc(1);
-                        result
-                    })));
+                        Ok(WorkResult::Class(idx, doc))
+                    });
                 }
 
-                // Spawn trigger tasks
-                let mut trigger_tasks: Vec<(usize, tokio::task::JoinHandle<Result<TriggerDocumentation>>)> = Vec::new();
                 for &idx in &trigger_work {
                     let client = Arc::clone(&client);
-                    let file = trigger_files[idx].clone();
-                    let meta = trigger_meta[idx].clone();
+                    let trigger_files = Arc::clone(&trigger_files);
+                    let trigger_meta = Arc::clone(&trigger_meta);
                     let pb_task = Arc::clone(&pb);
-                    trigger_tasks.push((idx, tokio::spawn(async move {
-                        let result = client.document_trigger(&file, &meta).await;
+                    tasks.spawn(async move {
+                        let doc = client
+                            .document_trigger(&trigger_files[idx], &trigger_meta[idx])
+                            .await?;
                         pb_task.inc(1);
-                        result
-                    })));
+                        Ok(WorkResult::Trigger(idx, doc))
+                    });
                 }
 
-                for (idx, task) in class_tasks {
-                    let doc = task.await??;
-                    cache.update(files[idx].path.to_string_lossy().to_string(), class_hashes[idx].clone(), model.clone(), doc.clone());
-                    class_docs[idx] = Some(doc);
-                }
-                for (idx, task) in trigger_tasks {
-                    let doc = task.await??;
-                    cache.update_trigger(trigger_files[idx].path.to_string_lossy().to_string(), trigger_hashes[idx].clone(), model.clone(), doc.clone());
-                    trigger_docs[idx] = Some(doc);
+                // Collect results as they complete (not in spawn order).
+                while let Some(res) = tasks.join_next().await {
+                    match res?? {
+                        WorkResult::Class(idx, doc) => {
+                            let key = files[idx].path.to_string_lossy().into_owned();
+                            cache.update(key, class_hashes[idx].clone(), &model, doc.clone());
+                            class_docs[idx] = Some(doc);
+                        }
+                        WorkResult::Trigger(idx, doc) => {
+                            let key = trigger_files[idx].path.to_string_lossy().into_owned();
+                            cache.update_trigger(
+                                key,
+                                trigger_hashes[idx].clone(),
+                                &model,
+                                doc.clone(),
+                            );
+                            trigger_docs[idx] = Some(doc);
+                        }
+                    }
                 }
 
                 pb.finish_with_message("Done");
             }
 
-            // Build render contexts
+            // Build render contexts (tasks are all done; Arc::try_unwrap reclaims the Vecs).
+            let files = Arc::try_unwrap(files).expect("no other Arc holders after tasks join");
+            let class_meta = Arc::try_unwrap(class_meta).expect("no other Arc holders");
+            let trigger_files = Arc::try_unwrap(trigger_files).expect("no other Arc holders");
+            let trigger_meta = Arc::try_unwrap(trigger_meta).expect("no other Arc holders");
+
             let class_contexts: Vec<renderer::RenderContext> = files
-                .iter()
-                .zip(class_meta.into_iter())
-                .zip(class_docs.into_iter())
+                .into_iter()
+                .zip(class_meta)
+                .zip(class_docs)
                 .map(|((_, meta), doc)| renderer::RenderContext {
                     metadata: meta,
                     documentation: doc.expect("every class must have documentation"),
@@ -242,9 +270,9 @@ async fn main() -> Result<()> {
                 .collect();
 
             let trigger_contexts: Vec<renderer::TriggerRenderContext> = trigger_files
-                .iter()
-                .zip(trigger_meta.into_iter())
-                .zip(trigger_docs.into_iter())
+                .into_iter()
+                .zip(trigger_meta)
+                .zip(trigger_docs)
                 .map(|((_, meta), doc)| renderer::TriggerRenderContext {
                     metadata: meta,
                     documentation: doc.expect("every trigger must have documentation"),
