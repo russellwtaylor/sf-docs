@@ -4,7 +4,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use crate::cli::OutputFormat;
-use crate::types::{AllNames, ClassDocumentation, ClassMetadata, TriggerDocumentation, TriggerMetadata};
+use crate::types::{
+    AllNames, ClassDocumentation, ClassMetadata, TriggerDocumentation, TriggerMetadata,
+};
 
 pub struct RenderContext {
     pub metadata: ClassMetadata,
@@ -25,7 +27,10 @@ pub struct TriggerRenderContext {
 pub fn render_class_page(ctx: &RenderContext) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
-    let known: HashSet<&str> = ctx.all_names.class_names.iter()
+    let known: HashSet<&str> = ctx
+        .all_names
+        .class_names
+        .iter()
         .chain(ctx.all_names.trigger_names.iter())
         .map(|s| s.as_str())
         .collect();
@@ -167,7 +172,10 @@ pub fn render_class_page(ctx: &RenderContext) -> String {
 pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
-    let known: HashSet<&str> = ctx.all_names.class_names.iter()
+    let known: HashSet<&str> = ctx
+        .all_names
+        .class_names
+        .iter()
         .chain(ctx.all_names.trigger_names.iter())
         .map(|s| s.as_str())
         .collect();
@@ -177,17 +185,31 @@ pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
     out.push_str(&format!("# {}\n\n", doc.trigger_name));
 
     // Badges: trigger event list
-    let events_str = meta.events.iter().map(|e| format!("`{}`", e.as_str())).collect::<Vec<_>>().join(" · ");
-    out.push_str(&format!("`trigger` · `on {}` · {}\n\n", doc.sobject, events_str));
+    let events_str = meta
+        .events
+        .iter()
+        .map(|e| format!("`{}`", e.as_str()))
+        .collect::<Vec<_>>()
+        .join(" · ");
+    out.push_str(&format!(
+        "`trigger` · `on {}` · {}\n\n",
+        doc.sobject, events_str
+    ));
 
     out.push_str(&format!("{}\n\n", doc.summary));
 
     // ToC
     out.push_str("## Table of Contents\n\n");
     out.push_str("- [Description](#description)\n");
-    if !doc.events.is_empty() { out.push_str("- [Event Handlers](#event-handlers)\n"); }
-    if !doc.handler_classes.is_empty() { out.push_str("- [Handler Classes](#handler-classes)\n"); }
-    if !doc.usage_notes.is_empty() { out.push_str("- [Usage Notes](#usage-notes)\n"); }
+    if !doc.events.is_empty() {
+        out.push_str("- [Event Handlers](#event-handlers)\n");
+    }
+    if !doc.handler_classes.is_empty() {
+        out.push_str("- [Handler Classes](#handler-classes)\n");
+    }
+    if !doc.usage_notes.is_empty() {
+        out.push_str("- [Usage Notes](#usage-notes)\n");
+    }
     out.push('\n');
 
     out.push_str("## Description\n\n");
@@ -224,11 +246,16 @@ pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
         out.push('\n');
     }
 
-    let see_also: Vec<String> = doc.relationships.iter().filter_map(|rel| {
-        known.iter()
-            .find(|&&name| rel.contains(name))
-            .map(|&name| format!("[{name}]({name}.md) — {rel}"))
-    }).collect();
+    let see_also: Vec<String> = doc
+        .relationships
+        .iter()
+        .filter_map(|rel| {
+            known
+                .iter()
+                .find(|&&name| rel.contains(name))
+                .map(|&name| format!("[{name}]({name}.md) — {rel}"))
+        })
+        .collect();
 
     if !see_also.is_empty() {
         out.push_str("## See Also\n\n");
@@ -262,16 +289,18 @@ pub fn render_index(
     for ctx in &sorted_classes {
         out.push_str(&format!(
             "| [{}]({}.md) | {} |\n",
-            ctx.documentation.class_name,
-            ctx.documentation.class_name,
-            ctx.documentation.summary
+            ctx.documentation.class_name, ctx.documentation.class_name, ctx.documentation.summary
         ));
     }
     out.push('\n');
 
     if !trigger_contexts.is_empty() {
         let mut sorted_triggers: Vec<&TriggerRenderContext> = trigger_contexts.iter().collect();
-        sorted_triggers.sort_by(|a, b| a.documentation.trigger_name.cmp(&b.documentation.trigger_name));
+        sorted_triggers.sort_by(|a, b| {
+            a.documentation
+                .trigger_name
+                .cmp(&b.documentation.trigger_name)
+        });
 
         out.push_str("## Triggers\n\n");
         out.push_str("| Trigger | SObject | Summary |\n");
@@ -298,19 +327,29 @@ pub fn write_output(
     trigger_contexts: &[TriggerRenderContext],
 ) -> Result<()> {
     if *format == OutputFormat::Html {
-        return crate::html_renderer::write_html_output(output_dir, class_contexts, trigger_contexts);
+        return crate::html_renderer::write_html_output(
+            output_dir,
+            class_contexts,
+            trigger_contexts,
+        );
     }
 
     std::fs::create_dir_all(output_dir)?;
 
     for ctx in class_contexts {
         let page = render_class_page(ctx);
-        std::fs::write(output_dir.join(format!("{}.md", ctx.metadata.class_name)), page)?;
+        std::fs::write(
+            output_dir.join(format!("{}.md", ctx.metadata.class_name)),
+            page,
+        )?;
     }
 
     for ctx in trigger_contexts {
         let page = render_trigger_page(ctx);
-        std::fs::write(output_dir.join(format!("{}.md", ctx.metadata.trigger_name)), page)?;
+        std::fs::write(
+            output_dir.join(format!("{}.md", ctx.metadata.trigger_name)),
+            page,
+        )?;
     }
 
     let index = render_index(class_contexts, trigger_contexts);

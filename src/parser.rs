@@ -52,11 +52,42 @@ fn re_type_ref() -> &'static Regex {
 
 // Apex primitive / built-in types to exclude from the references list
 const APEX_BUILTINS: &[&str] = &[
-    "String", "Integer", "Long", "Double", "Decimal", "Boolean", "Date", "DateTime", "Time",
-    "Blob", "Id", "Object", "List", "Map", "Set", "SObject", "Schema", "Database",
-    "System", "Math", "JSON", "Type", "Exception", "DmlException", "QueryException",
-    "Test", "ApexPages", "PageReference", "SelectOption", "Messaging", "Approval",
-    "UserInfo", "Label", "Site", "Network", "ConnectApi",
+    "String",
+    "Integer",
+    "Long",
+    "Double",
+    "Decimal",
+    "Boolean",
+    "Date",
+    "DateTime",
+    "Time",
+    "Blob",
+    "Id",
+    "Object",
+    "List",
+    "Map",
+    "Set",
+    "SObject",
+    "Schema",
+    "Database",
+    "System",
+    "Math",
+    "JSON",
+    "Type",
+    "Exception",
+    "DmlException",
+    "QueryException",
+    "Test",
+    "ApexPages",
+    "PageReference",
+    "SelectOption",
+    "Messaging",
+    "Approval",
+    "UserInfo",
+    "Label",
+    "Site",
+    "Network",
+    "ConnectApi",
 ];
 
 // ---------------------------------------------------------------------------
@@ -258,9 +289,7 @@ fn parse_references(source: &str, meta: &mut ClassMetadata) {
         .captures_iter(source)
         .map(|c| c[1].to_string())
         .filter(|name| {
-            !APEX_BUILTINS.contains(&name.as_str())
-                && name != &meta.class_name
-                && name.len() > 2
+            !APEX_BUILTINS.contains(&name.as_str()) && name != &meta.class_name && name.len() > 2
         })
         .collect();
 
@@ -332,15 +361,31 @@ public class AccountService extends BaseService implements Queueable, Database.B
     fn parses_methods() {
         let meta = parse_apex_class(SAMPLE_CLASS).unwrap();
         let method_names: Vec<&str> = meta.methods.iter().map(|m| m.name.as_str()).collect();
-        assert!(method_names.contains(&"processAccounts"), "missing processAccounts: {:?}", method_names);
-        assert!(method_names.contains(&"getInstance"), "missing getInstance: {:?}", method_names);
-        assert!(method_names.contains(&"retry"), "missing retry: {:?}", method_names);
+        assert!(
+            method_names.contains(&"processAccounts"),
+            "missing processAccounts: {:?}",
+            method_names
+        );
+        assert!(
+            method_names.contains(&"getInstance"),
+            "missing getInstance: {:?}",
+            method_names
+        );
+        assert!(
+            method_names.contains(&"retry"),
+            "missing retry: {:?}",
+            method_names
+        );
     }
 
     #[test]
     fn parses_static_method() {
         let meta = parse_apex_class(SAMPLE_CLASS).unwrap();
-        let get_instance = meta.methods.iter().find(|m| m.name == "getInstance").unwrap();
+        let get_instance = meta
+            .methods
+            .iter()
+            .find(|m| m.name == "getInstance")
+            .unwrap();
         assert!(get_instance.is_static);
     }
 
@@ -388,7 +433,16 @@ public class OverloadService {
 }
 "#;
         let meta = parse_apex_class(src).unwrap();
-        let overloads: Vec<_> = meta.methods.iter().filter(|m| m.name == "process").collect();
-        assert_eq!(overloads.len(), 2, "both overloads should be kept: {:?}", overloads);
+        let overloads: Vec<_> = meta
+            .methods
+            .iter()
+            .filter(|m| m.name == "process")
+            .collect();
+        assert_eq!(
+            overloads.len(),
+            2,
+            "both overloads should be kept: {:?}",
+            overloads
+        );
     }
 }

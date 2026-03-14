@@ -11,10 +11,8 @@ use crate::types::{TriggerEvent, TriggerMetadata};
 fn re_trigger() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(
-            r"(?i)trigger\s+(?P<name>\w+)\s+on\s+(?P<sobject>\w+)\s*\((?P<events>[^)]+)\)",
-        )
-        .unwrap()
+        Regex::new(r"(?i)trigger\s+(?P<name>\w+)\s+on\s+(?P<sobject>\w+)\s*\((?P<events>[^)]+)\)")
+            .unwrap()
     })
 }
 
@@ -29,11 +27,43 @@ fn re_type_ref() -> &'static Regex {
 }
 
 const APEX_BUILTINS: &[&str] = &[
-    "String", "Integer", "Long", "Double", "Decimal", "Boolean", "Date", "DateTime", "Time",
-    "Blob", "Id", "Object", "List", "Map", "Set", "SObject", "Schema", "Database",
-    "System", "Math", "JSON", "Type", "Exception", "DmlException", "QueryException",
-    "Test", "ApexPages", "PageReference", "SelectOption", "Messaging", "Approval",
-    "UserInfo", "Label", "Site", "Network", "ConnectApi", "Trigger",
+    "String",
+    "Integer",
+    "Long",
+    "Double",
+    "Decimal",
+    "Boolean",
+    "Date",
+    "DateTime",
+    "Time",
+    "Blob",
+    "Id",
+    "Object",
+    "List",
+    "Map",
+    "Set",
+    "SObject",
+    "Schema",
+    "Database",
+    "System",
+    "Math",
+    "JSON",
+    "Type",
+    "Exception",
+    "DmlException",
+    "QueryException",
+    "Test",
+    "ApexPages",
+    "PageReference",
+    "SelectOption",
+    "Messaging",
+    "Approval",
+    "UserInfo",
+    "Label",
+    "Site",
+    "Network",
+    "ConnectApi",
+    "Trigger",
 ];
 
 // ---------------------------------------------------------------------------
@@ -41,12 +71,13 @@ const APEX_BUILTINS: &[&str] = &[
 // ---------------------------------------------------------------------------
 
 pub fn parse_apex_trigger(source: &str) -> Result<TriggerMetadata> {
-    let mut meta = TriggerMetadata::default();
-
-    meta.existing_comments = re_apexdoc()
-        .find_iter(source)
-        .map(|m| m.as_str().to_string())
-        .collect();
+    let mut meta = TriggerMetadata {
+        existing_comments: re_apexdoc()
+            .find_iter(source)
+            .map(|m| m.as_str().to_string())
+            .collect(),
+        ..Default::default()
+    };
 
     if let Some(caps) = re_trigger().captures(source) {
         meta.trigger_name = caps.name("name").map_or("", |m| m.as_str()).to_string();
@@ -134,7 +165,9 @@ trigger AccountTrigger on Account (before insert, before update, after insert, a
     #[test]
     fn parses_references() {
         let meta = parse_apex_trigger(SAMPLE_TRIGGER).unwrap();
-        assert!(meta.references.contains(&"AccountTriggerHandler".to_string()));
+        assert!(meta
+            .references
+            .contains(&"AccountTriggerHandler".to_string()));
     }
 
     #[test]
