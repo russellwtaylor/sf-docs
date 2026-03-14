@@ -93,13 +93,19 @@ fn extract_apexdoc_comments(source: &str) -> Vec<String> {
         .collect()
 }
 
+fn re_strip_block() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"/\*[\s\S]*?\*/").unwrap())
+}
+
+fn re_strip_line() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"//[^\n]*").unwrap())
+}
+
 fn strip_comments(source: &str) -> String {
-    // Remove block comments (/** ... */ and /* ... */)
-    let block = Regex::new(r"/\*[\s\S]*?\*/").unwrap();
-    let no_block = block.replace_all(source, " ");
-    // Remove single-line comments
-    let line = Regex::new(r"//[^\n]*").unwrap();
-    line.replace_all(&no_block, "").to_string()
+    let no_block = re_strip_block().replace_all(source, " ");
+    re_strip_line().replace_all(&no_block, "").to_string()
 }
 
 fn parse_class_declaration(source: &str, meta: &mut ClassMetadata) {
@@ -169,12 +175,16 @@ fn parse_methods(source: &str, meta: &mut ClassMetadata) {
         });
     }
 
-    // Deduplicate by name (regex can match multiple times for overloads — keep all)
-    // Remove obvious duplicates (exact same signature).
+    // Remove exact-duplicate signatures only. Two overloads that share a name
+    // but differ in parameter types must both be kept.
     meta.methods.dedup_by(|a, b| {
         a.name == b.name
             && a.return_type == b.return_type
             && a.params.len() == b.params.len()
+            && a.params
+                .iter()
+                .zip(b.params.iter())
+                .all(|(pa, pb)| pa.param_type == pb.param_type)
     });
 }
 
@@ -367,5 +377,18 @@ public class AccountService extends BaseService implements Queueable, Database.B
         let meta = parse_apex_class(src).unwrap();
         assert!(meta.is_virtual);
         assert_eq!(meta.access_modifier, "global");
+    }
+
+    #[test]
+    fn keeps_overloaded_methods_with_different_param_types() {
+        let src = r#"
+public class OverloadService {
+    public void process(List<Account> accounts) {}
+    public void process(Set<Id> ids) {}
+}
+"#;
+        let meta = parse_apex_class(src).unwrap();
+        let overloads: Vec<_> = meta.methods.iter().filter(|m| m.name == "process").collect();
+        assert_eq!(overloads.len(), 2, "both overloads should be kept: {:?}", overloads);
     }
 }

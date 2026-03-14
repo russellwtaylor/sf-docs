@@ -5,10 +5,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
+use crate::prompt::{build_prompt, SYSTEM_PROMPT};
+use crate::retry::{self, MAX_RETRIES};
 use crate::types::{ApexFile, ClassDocumentation, ClassMetadata};
-
-const MAX_RETRIES: u32 = 4;
-const BASE_BACKOFF_SECS: u64 = 5;
 
 const GEMINI_BASE_URL: &str =
     "https://generativelanguage.googleapis.com/v1beta/models";
@@ -78,8 +77,13 @@ pub struct GeminiClient {
 
 impl GeminiClient {
     pub fn new(api_key: String, model: &str, concurrency: usize) -> Self {
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(120))
+            .build()
+            .expect("failed to build HTTP client");
         Self {
-            client: Client::new(),
+            client,
             api_key,
             model: model.to_string(),
             semaphore: Arc::new(Semaphore::new(concurrency)),
@@ -147,7 +151,10 @@ impl GeminiClient {
             }
 
             let status = response.status();
-            let body = response.text().await.unwrap_or_default();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
 
             // 429: rate limited — retry with backoff if we have attempts left
             if status.as_u16() == 429 && attempt < MAX_RETRIES {
@@ -161,12 +168,7 @@ impl GeminiClient {
                     );
                 }
 
-                let wait = retry_delay_secs(&body, attempt);
-                eprintln!(
-                    "Rate limited by Gemini API — waiting {wait}s before retry {}/{MAX_RETRIES}...",
-                    attempt + 1
-                );
-                tokio::time::sleep(Duration::from_secs(wait)).await;
+                retry::sleep_for_retry(&body, attempt, "Gemini API").await;
                 attempt += 1;
                 continue;
             }
@@ -177,7 +179,7 @@ impl GeminiClient {
 }
 
 // ---------------------------------------------------------------------------
-// Retry helpers
+// Helpers
 // ---------------------------------------------------------------------------
 
 /// Returns true if the 429 body indicates a hard quota exhaustion (limit: 0)
@@ -185,113 +187,6 @@ impl GeminiClient {
 fn is_quota_exhausted(body: &str) -> bool {
     // The API returns "limit: 0" in the message when the free tier is fully exhausted.
     body.contains("limit: 0")
-}
-
-/// Parses the suggested retry delay from the 429 response body, falling back
-/// to exponential backoff based on the attempt number.
-fn retry_delay_secs(body: &str, attempt: u32) -> u64 {
-    // The API includes e.g. "Please retry in 6.837885891s." in the message.
-    // Try to extract the number of seconds from that string.
-    if let Some(start) = body.find("retry in ") {
-        let after = &body[start + 9..];
-        if let Some(end) = after.find('s') {
-            if let Ok(secs) = after[..end].trim().parse::<f64>() {
-                // Add a small buffer on top of the suggested delay
-                return (secs.ceil() as u64) + 1;
-            }
-        }
-    }
-    // Exponential backoff fallback: 5s, 10s, 20s, 40s
-    BASE_BACKOFF_SECS * (2u64.pow(attempt))
-}
-
-// ---------------------------------------------------------------------------
-// Prompt engineering
-// ---------------------------------------------------------------------------
-
-const SYSTEM_PROMPT: &str = r#"
-You are an expert Salesforce developer and technical writer.
-Your task is to generate rich, accurate Markdown documentation for Apex classes.
-
-Always respond with a single valid JSON object matching this schema exactly:
-{
-  "class_name": "string",
-  "summary": "string — one sentence describing the class purpose",
-  "description": "string — detailed description (2-5 sentences)",
-  "methods": [
-    {
-      "name": "string",
-      "description": "string",
-      "params": [{"name": "string", "description": "string"}],
-      "returns": "string — describe what is returned, or 'void'",
-      "throws": ["string — exception type and condition"]
-    }
-  ],
-  "properties": [
-    {"name": "string", "description": "string"}
-  ],
-  "usage_examples": ["string — a short Apex code snippet showing how to use this class"],
-  "relationships": ["string — name of related class and nature of relationship"]
-}
-
-Rules:
-- Include only methods and properties that appear in the source.
-- If a method throws no exceptions, use an empty array for "throws".
-- Keep descriptions concise and technical.
-- usage_examples should be valid Apex code snippets wrapped in a code fence (``` apex ... ```).
-- Do not invent functionality that is not in the source.
-"#;
-
-fn build_prompt(file: &ApexFile, metadata: &ClassMetadata) -> String {
-    let mut prompt = String::new();
-
-    prompt.push_str(&format!("# Apex Class: {}\n\n", metadata.class_name));
-
-    if !metadata.existing_comments.is_empty() {
-        prompt.push_str("## Existing ApexDoc Comments\n\n");
-        for comment in &metadata.existing_comments {
-            prompt.push_str(comment);
-            prompt.push('\n');
-        }
-        prompt.push('\n');
-    }
-
-    if !metadata.methods.is_empty() {
-        prompt.push_str("## Extracted Methods\n\n");
-        for method in &metadata.methods {
-            let params: Vec<String> = method
-                .params
-                .iter()
-                .map(|p| format!("{} {}", p.param_type, p.name))
-                .collect();
-            prompt.push_str(&format!(
-                "- `{} {} {}({})`\n",
-                method.access_modifier,
-                method.return_type,
-                method.name,
-                params.join(", ")
-            ));
-        }
-        prompt.push('\n');
-    }
-
-    if !metadata.properties.is_empty() {
-        prompt.push_str("## Extracted Properties\n\n");
-        for prop in &metadata.properties {
-            prompt.push_str(&format!(
-                "- `{} {} {}`\n",
-                prop.access_modifier, prop.property_type, prop.name
-            ));
-        }
-        prompt.push('\n');
-    }
-
-    prompt.push_str("## Full Source\n\n```apex\n");
-    prompt.push_str(&file.raw_source);
-    prompt.push_str("\n```\n\n");
-    prompt.push_str("Generate documentation JSON for this class.");
-
-    prompt
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,142 @@
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
+use std::path::Path;
+
+use crate::types::ClassDocumentation;
+
+const CACHE_FILE: &str = ".sfdoc-cache.json";
+
+// ---------------------------------------------------------------------------
+// Cache types
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Deserialize, Default)]
+pub struct Cache {
+    entries: HashMap<String, CacheEntry>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct CacheEntry {
+    pub hash: String,
+    pub model: String,
+    pub documentation: ClassDocumentation,
+}
+
+impl Cache {
+    /// Load the cache from the output directory. Returns an empty cache if the
+    /// file doesn't exist or can't be parsed (e.g. after a format change).
+    pub fn load(output_dir: &Path) -> Self {
+        std::fs::read_to_string(output_dir.join(CACHE_FILE))
+            .ok()
+            .and_then(|data| serde_json::from_str(&data).ok())
+            .unwrap_or_default()
+    }
+
+    /// Persist the cache to the output directory.
+    pub fn save(&self, output_dir: &Path) -> Result<()> {
+        std::fs::create_dir_all(output_dir)?;
+        let data = serde_json::to_string_pretty(self)?;
+        std::fs::write(output_dir.join(CACHE_FILE), data)?;
+        Ok(())
+    }
+
+    /// Returns the cached entry if the hash and model both match (i.e. the
+    /// source file hasn't changed and was generated with the same model).
+    pub fn get_if_fresh<'a>(
+        &'a self,
+        key: &str,
+        hash: &str,
+        model: &str,
+    ) -> Option<&'a CacheEntry> {
+        self.entries
+            .get(key)
+            .filter(|e| e.hash == hash && e.model == model)
+    }
+
+    /// Insert or update an entry after a successful API call.
+    pub fn update(
+        &mut self,
+        key: String,
+        hash: String,
+        model: String,
+        documentation: ClassDocumentation,
+    ) {
+        self.entries.insert(key, CacheEntry { hash, model, documentation });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Hashing
+// ---------------------------------------------------------------------------
+
+/// Returns the SHA-256 hex digest of the given source string.
+pub fn hash_source(source: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(source.as_bytes());
+    hasher.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hash_is_deterministic() {
+        let h1 = hash_source("public class Foo {}");
+        let h2 = hash_source("public class Foo {}");
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn different_sources_produce_different_hashes() {
+        let h1 = hash_source("public class Foo {}");
+        let h2 = hash_source("public class Bar {}");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn get_if_fresh_returns_none_for_wrong_hash() {
+        let mut cache = Cache::default();
+        let doc = ClassDocumentation {
+            class_name: "Foo".to_string(),
+            summary: "".to_string(),
+            description: "".to_string(),
+            methods: vec![],
+            properties: vec![],
+            usage_examples: vec![],
+            relationships: vec![],
+        };
+        cache.update("Foo.cls".to_string(), "abc".to_string(), "gpt-4o".to_string(), doc);
+        assert!(cache.get_if_fresh("Foo.cls", "different", "gpt-4o").is_none());
+        assert!(cache.get_if_fresh("Foo.cls", "abc", "other-model").is_none());
+        assert!(cache.get_if_fresh("Foo.cls", "abc", "gpt-4o").is_some());
+    }
+
+    #[test]
+    fn save_and_load_round_trips() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut cache = Cache::default();
+        let doc = ClassDocumentation {
+            class_name: "Foo".to_string(),
+            summary: "A foo class.".to_string(),
+            description: "Detailed description.".to_string(),
+            methods: vec![],
+            properties: vec![],
+            usage_examples: vec![],
+            relationships: vec![],
+        };
+        cache.update("Foo.cls".to_string(), "deadbeef".to_string(), "gemini-2.5-flash".to_string(), doc);
+        cache.save(tmp.path()).unwrap();
+
+        let loaded = Cache::load(tmp.path());
+        let entry = loaded.get_if_fresh("Foo.cls", "deadbeef", "gemini-2.5-flash").unwrap();
+        assert_eq!(entry.documentation.class_name, "Foo");
+        assert_eq!(entry.documentation.summary, "A foo class.");
+    }
+}

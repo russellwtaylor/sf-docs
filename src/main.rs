@@ -1,8 +1,13 @@
+mod cache;
 mod cli;
 mod config;
 mod gemini;
+mod openai_compat;
 mod parser;
+mod prompt;
+mod providers;
 mod renderer;
+mod retry;
 mod scanner;
 mod types;
 
@@ -14,26 +19,54 @@ use std::sync::Arc;
 use cli::{Cli, Commands};
 use config::{delete_api_key, has_stored_key, resolve_api_key, save_api_key};
 use gemini::GeminiClient;
+use openai_compat::OpenAiCompatClient;
+use providers::Provider;
 use scanner::{ApexScanner, FileScanner};
+use types::{ApexFile, ClassDocumentation, ClassMetadata};
+
+/// Unified client enum for dispatch without dynamic dispatch overhead.
+enum DocClient {
+    Gemini(Arc<GeminiClient>),
+    OpenAiCompat(Arc<OpenAiCompatClient>),
+}
+
+impl DocClient {
+    async fn document_class(
+        &self,
+        file: &ApexFile,
+        metadata: &ClassMetadata,
+    ) -> Result<ClassDocumentation> {
+        match self {
+            DocClient::Gemini(c) => c.document_class(file, metadata).await,
+            DocClient::OpenAiCompat(c) => c.document_class(file, metadata).await,
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Auth => {
-            run_auth()?;
+        Commands::Auth(args) => {
+            run_auth(&args.provider)?;
         }
         Commands::Status => {
             run_status();
         }
         Commands::Generate(args) => {
-            let api_key = resolve_api_key()?;
+            let provider = &args.provider;
+            let model = args
+                .model
+                .as_deref()
+                .unwrap_or(provider.default_model())
+                .to_string();
 
             if args.verbose {
+                eprintln!("Provider:    {}", provider.display_name());
+                eprintln!("Model:       {model}");
                 eprintln!("Source dir:  {}", args.source_dir.display());
                 eprintln!("Output dir:  {}", args.output.display());
-                eprintln!("Model:       {}", args.model);
                 eprintln!("Concurrency: {}", args.concurrency);
             }
 
@@ -54,54 +87,126 @@ async fn main() -> Result<()> {
                 }
             }
 
-            let pb = ProgressBar::new(files.len() as u64);
-            pb.set_style(
-                ProgressStyle::with_template(
-                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
-                )
-                .unwrap()
-                .progress_chars("#>-"),
-            );
-
             // Parse each file
             let metadata: Vec<_> = files
                 .iter()
                 .map(|f| parser::parse_apex_class(&f.raw_source))
                 .collect::<Result<_>>()?;
 
-            // Collect all class names for cross-linking
-            let all_class_names: Vec<String> =
-                metadata.iter().map(|m| m.class_name.clone()).collect();
+            // Collect all class names for cross-linking (shared across all render contexts)
+            let all_class_names: Arc<Vec<String>> = Arc::new(
+                metadata.iter().map(|m| m.class_name.clone()).collect(),
+            );
 
-            // Generate docs via Gemini API
-            let gemini = Arc::new(GeminiClient::new(api_key, &args.model, args.concurrency));
+            // Load incremental build cache (empty if --force or first run)
+            let mut cache = if args.force {
+                cache::Cache::default()
+            } else {
+                cache::Cache::load(&args.output)
+            };
 
-            let mut tasks = Vec::new();
-            for (file, meta) in files.iter().zip(metadata.iter()) {
-                let gemini = Arc::clone(&gemini);
-                let file = file.clone();
-                let meta = meta.clone();
-                tasks.push(tokio::spawn(async move {
-                    gemini.document_class(&file, &meta).await
-                }));
+            // Hash each source file and partition into: needs API call vs. cached
+            let hashes: Vec<String> =
+                files.iter().map(|f| cache::hash_source(&f.raw_source)).collect();
+
+            let mut work_indices: Vec<usize> = Vec::new();
+            // Slot for each file's documentation; filled from cache or API result
+            let mut all_docs: Vec<Option<types::ClassDocumentation>> = vec![None; files.len()];
+
+            for (i, (f, h)) in files.iter().zip(hashes.iter()).enumerate() {
+                let key = f.path.to_string_lossy();
+                if let Some(entry) = cache.get_if_fresh(&key, h, &model) {
+                    all_docs[i] = Some(entry.documentation.clone());
+                } else {
+                    work_indices.push(i);
+                }
             }
 
-            let mut contexts = Vec::new();
-            for (task, meta) in tasks.into_iter().zip(metadata.into_iter()) {
-                let documentation = task.await??;
-                pb.inc(1);
-                contexts.push(renderer::RenderContext {
+            let skipped = files.len() - work_indices.len();
+            if skipped > 0 {
+                println!("{skipped} class(es) up-to-date — skipping API calls");
+            }
+
+            if !work_indices.is_empty() {
+                // Only resolve the API key when there's actual work to do
+                let api_key = resolve_api_key(provider)?;
+
+                let client = match provider {
+                    Provider::Gemini => DocClient::Gemini(Arc::new(GeminiClient::new(
+                        api_key,
+                        &model,
+                        args.concurrency,
+                    ))),
+                    _ => DocClient::OpenAiCompat(Arc::new(OpenAiCompatClient::new(
+                        api_key,
+                        &model,
+                        provider.base_url(),
+                        args.concurrency,
+                        provider.display_name(),
+                    ))),
+                };
+                let client = Arc::new(client);
+
+                let pb = Arc::new(ProgressBar::new(work_indices.len() as u64));
+                pb.set_style(
+                    ProgressStyle::with_template(
+                        "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
+                    )
+                    .expect("invalid progress bar template")
+                    .progress_chars("#>-"),
+                );
+
+                // Spawn one task per stale/new file
+                let mut tasks: Vec<(usize, tokio::task::JoinHandle<Result<types::ClassDocumentation>>)> =
+                    Vec::new();
+                for &idx in &work_indices {
+                    let client = Arc::clone(&client);
+                    let file = files[idx].clone();
+                    let meta = metadata[idx].clone();
+                    let pb_task = Arc::clone(&pb);
+                    tasks.push((
+                        idx,
+                        tokio::spawn(async move {
+                            let result = client.document_class(&file, &meta).await;
+                            pb_task.inc(1);
+                            result
+                        }),
+                    ));
+                }
+
+                // Collect results; update the cache entry for each newly processed file
+                for (idx, task) in tasks {
+                    let documentation = task.await??;
+                    cache.update(
+                        files[idx].path.to_string_lossy().to_string(),
+                        hashes[idx].clone(),
+                        model.clone(),
+                        documentation.clone(),
+                    );
+                    all_docs[idx] = Some(documentation);
+                }
+
+                pb.finish_with_message("Done");
+            }
+
+            // Build render contexts for every file (cached + newly generated)
+            let contexts: Vec<renderer::RenderContext> = files
+                .iter()
+                .zip(metadata.into_iter())
+                .zip(all_docs.into_iter())
+                .map(|((_, meta), doc)| renderer::RenderContext {
                     metadata: meta,
-                    documentation,
-                    all_class_names: all_class_names.clone(),
-                });
-            }
-
-            pb.finish_with_message("Done");
+                    documentation: doc.expect("every file must have documentation"),
+                    all_class_names: Arc::clone(&all_class_names),
+                })
+                .collect();
 
             // Render and write output
             renderer::write_output(&args.output, &contexts)?;
             println!("Documentation written to {}", args.output.display());
+
+            // Persist the updated cache — only reached if all API calls succeeded
+            cache.save(&args.output)?;
         }
     }
 
@@ -111,21 +216,46 @@ async fn main() -> Result<()> {
 fn run_status() {
     println!("sfdoc {}", env!("CARGO_PKG_VERSION"));
     println!();
+    println!("{:<10} {:<20} {}", "Provider", "Name", "API Key");
+    println!("{}", "-".repeat(60));
 
-    // API key source
-    let key_source = if std::env::var("GEMINI_API_KEY").map_or(false, |v| !v.is_empty()) {
-        "set (GEMINI_API_KEY environment variable)"
-    } else if has_stored_key() {
-        "set (OS keychain)"
-    } else {
-        "not configured — run `sfdoc auth` to set it"
-    };
-    println!("Gemini API key: {}", key_source);
+    for provider in Provider::all() {
+        let status = if !provider.requires_api_key() {
+            "not required".to_string()
+        } else if provider
+            .env_var()
+            .and_then(|v| std::env::var(v).ok())
+            .map_or(false, |v| !v.is_empty())
+        {
+            format!(
+                "set (env: {})",
+                provider.env_var().unwrap_or("")
+            )
+        } else if has_stored_key(provider) {
+            "set (OS keychain)".to_string()
+        } else {
+            format!("not configured — run `sfdoc auth --provider {}`", provider.cli_name())
+        };
+
+        println!("{:<10} {:<20} {}", provider.cli_name(), provider.display_name(), status);
+    }
 }
 
-fn run_auth() -> Result<()> {
-    if has_stored_key() {
-        println!("A Gemini API key is already stored in your OS keychain.");
+fn run_auth(provider: &Provider) -> Result<()> {
+    if !provider.requires_api_key() {
+        println!(
+            "{} runs locally and does not require an API key.",
+            provider.display_name()
+        );
+        println!("Make sure Ollama is running: https://ollama.com");
+        return Ok(());
+    }
+
+    if has_stored_key(provider) {
+        println!(
+            "An API key for {} is already stored in your OS keychain.",
+            provider.display_name()
+        );
         print!("Overwrite it? [y/N] ");
         use std::io::{self, Write};
         io::stdout().flush()?;
@@ -135,20 +265,23 @@ fn run_auth() -> Result<()> {
             println!("Aborted.");
             return Ok(());
         }
-        delete_api_key()?;
+        delete_api_key(provider)?;
     }
 
-    let key = rpassword::prompt_password("Enter your Gemini API key: ")
-        .context("Failed to read API key")?;
+    let prompt = format!("Enter your {} API key: ", provider.display_name());
+    let key = rpassword::prompt_password(&prompt).context("Failed to read API key")?;
 
     if key.trim().is_empty() {
         anyhow::bail!("API key cannot be empty.");
     }
 
-    save_api_key(key.trim())?;
+    save_api_key(provider, key.trim())?;
 
-    println!("API key saved to your OS keychain.");
-    println!("You're all set — run `sfdoc generate` to get started.");
+    println!(
+        "API key for {} saved to your OS keychain.",
+        provider.display_name()
+    );
+    println!("You're all set — run `sfdoc generate --provider {}` to get started.", provider.cli_name());
 
     Ok(())
 }

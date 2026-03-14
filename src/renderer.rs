@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::types::{ClassDocumentation, ClassMetadata};
 
@@ -8,7 +9,7 @@ pub struct RenderContext {
     pub metadata: ClassMetadata,
     pub documentation: ClassDocumentation,
     /// Names of all classes in the project (for cross-linking)
-    pub all_class_names: Vec<String>,
+    pub all_class_names: Arc<Vec<String>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -186,10 +187,11 @@ pub fn render_index(contexts: &[RenderContext]) -> String {
 pub fn write_output(output_dir: &Path, contexts: &[RenderContext]) -> Result<()> {
     std::fs::create_dir_all(output_dir)?;
 
-    // Write individual class pages
+    // Write individual class pages. Use the parser's class name (not the AI's)
+    // to avoid path traversal via unexpected characters in AI output.
     for ctx in contexts {
         let page = render_class_page(ctx);
-        let file_name = format!("{}.md", ctx.documentation.class_name);
+        let file_name = format!("{}.md", ctx.metadata.class_name);
         std::fs::write(output_dir.join(&file_name), page)?;
     }
 
@@ -251,6 +253,7 @@ mod tests {
         ClassDocumentation, ClassMetadata, MethodDocumentation, ParamDocumentation,
         PropertyDocumentation,
     };
+    use std::sync::Arc;
 
     fn sample_context() -> RenderContext {
         RenderContext {
@@ -301,7 +304,7 @@ mod tests {
                 usage_examples: vec!["```apex\nAccountService svc = new AccountService();\nsvc.processAccounts(accounts);\n```".to_string()],
                 relationships: vec!["AccountRepository is used for data access".to_string()],
             },
-            all_class_names: vec!["AccountService".to_string(), "AccountRepository".to_string()],
+            all_class_names: Arc::new(vec!["AccountService".to_string(), "AccountRepository".to_string()]),
         }
     }
 
