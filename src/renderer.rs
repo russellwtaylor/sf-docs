@@ -327,7 +327,11 @@ pub fn render_index(
                 .push(ctx);
         }
         for group in trigger_by_folder.values_mut() {
-            group.sort_by(|a, b| a.documentation.trigger_name.cmp(&b.documentation.trigger_name));
+            group.sort_by(|a, b| {
+                a.documentation
+                    .trigger_name
+                    .cmp(&b.documentation.trigger_name)
+            });
         }
 
         out.push_str("## Triggers\n\n");

@@ -115,7 +115,12 @@ pub fn write_html_output(
         )?;
     }
 
-    let index = render_index(class_contexts, trigger_contexts, &class_items, &trigger_items);
+    let index = render_index(
+        class_contexts,
+        trigger_contexts,
+        &class_items,
+        &trigger_items,
+    );
     std::fs::write(output_dir.join("index.html"), index)?;
 
     Ok(())
@@ -309,7 +314,14 @@ fn render_class_page(
         body.push_str("</ul>\n");
     }
 
-    wrap_page(&doc.class_name, "sfdoc", &body, active, class_items, trigger_items)
+    wrap_page(
+        &doc.class_name,
+        "sfdoc",
+        &body,
+        active,
+        class_items,
+        trigger_items,
+    )
 }
 
 fn render_trigger_page(
@@ -422,7 +434,14 @@ fn render_trigger_page(
         body.push_str("</ul>\n");
     }
 
-    wrap_page(&doc.trigger_name, "sfdoc", &body, active, class_items, trigger_items)
+    wrap_page(
+        &doc.trigger_name,
+        "sfdoc",
+        &body,
+        active,
+        class_items,
+        trigger_items,
+    )
 }
 
 fn render_index(
@@ -459,9 +478,7 @@ fn render_index(
                 let label = if folder.is_empty() { "(root)" } else { folder };
                 body.push_str(&format!("<h3>{}</h3>\n", escape(label)));
             }
-            body.push_str(
-                "<table><thead><tr><th>Class</th><th>Summary</th></tr></thead><tbody>\n",
-            );
+            body.push_str("<table><thead><tr><th>Class</th><th>Summary</th></tr></thead><tbody>\n");
             for ctx in classes {
                 body.push_str(&format!(
                     "<tr><td><a href=\"{}.html\">{}</a></td><td>{}</td></tr>\n",
@@ -484,7 +501,11 @@ fn render_index(
                 .push(ctx);
         }
         for group in trigger_by_folder.values_mut() {
-            group.sort_by(|a, b| a.documentation.trigger_name.cmp(&b.documentation.trigger_name));
+            group.sort_by(|a, b| {
+                a.documentation
+                    .trigger_name
+                    .cmp(&b.documentation.trigger_name)
+            });
         }
 
         body.push_str("<h2>Triggers</h2>\n");
@@ -508,7 +529,14 @@ fn render_index(
         }
     }
 
-    wrap_page("Overview", "sfdoc", &body, "Overview", class_items, trigger_items)
+    wrap_page(
+        "Overview",
+        "sfdoc",
+        &body,
+        "Overview",
+        class_items,
+        trigger_items,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -546,7 +574,11 @@ fn wrap_page(
     )
 }
 
-fn render_sidebar(class_items: &[(&str, &str)], trigger_items: &[(&str, &str)], active: &str) -> String {
+fn render_sidebar(
+    class_items: &[(&str, &str)],
+    trigger_items: &[(&str, &str)],
+    active: &str,
+) -> String {
     let mut s = String::new();
     s.push_str("<nav class=\"sidebar\">\n");
     s.push_str("<a class=\"sidebar-brand\" href=\"index.html\">sfdoc</a>\n");
@@ -574,7 +606,11 @@ fn render_sidebar(class_items: &[(&str, &str)], trigger_items: &[(&str, &str)], 
             }
             s.push_str("<ul>\n");
             for name in names {
-                let cls = if *name == active { " class=\"active\"" } else { "" };
+                let cls = if *name == active {
+                    " class=\"active\""
+                } else {
+                    ""
+                };
                 s.push_str(&format!(
                     "<li><a href=\"{}.html\"{cls}>{}</a></li>\n",
                     name,
@@ -608,7 +644,11 @@ fn render_sidebar(class_items: &[(&str, &str)], trigger_items: &[(&str, &str)], 
             }
             s.push_str("<ul>\n");
             for name in names {
-                let cls = if *name == active { " class=\"active\"" } else { "" };
+                let cls = if *name == active {
+                    " class=\"active\""
+                } else {
+                    ""
+                };
                 s.push_str(&format!(
                     "<li><a href=\"{}.html\"{cls}>{}</a></li>\n",
                     name,
