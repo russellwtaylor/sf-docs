@@ -71,10 +71,10 @@ impl Cache {
         &mut self,
         key: String,
         hash: String,
-        model: String,
+        model: &str,
         documentation: ClassDocumentation,
     ) {
-        self.entries.insert(key, CacheEntry { hash, model, documentation });
+        self.entries.insert(key, CacheEntry { hash, model: model.to_owned(), documentation });
     }
 
     /// Returns the cached trigger entry if hash and model both match.
@@ -94,10 +94,10 @@ impl Cache {
         &mut self,
         key: String,
         hash: String,
-        model: String,
+        model: &str,
         documentation: TriggerDocumentation,
     ) {
-        self.trigger_entries.insert(key, TriggerCacheEntry { hash, model, documentation });
+        self.trigger_entries.insert(key, TriggerCacheEntry { hash, model: model.to_owned(), documentation });
     }
 }
 
@@ -146,7 +146,7 @@ mod tests {
             usage_examples: vec![],
             relationships: vec![],
         };
-        cache.update("Foo.cls".to_string(), "abc".to_string(), "gpt-4o".to_string(), doc);
+        cache.update("Foo.cls".to_string(), "abc".to_string(), "gpt-4o", doc);
         assert!(cache.get_if_fresh("Foo.cls", "different", "gpt-4o").is_none());
         assert!(cache.get_if_fresh("Foo.cls", "abc", "other-model").is_none());
         assert!(cache.get_if_fresh("Foo.cls", "abc", "gpt-4o").is_some());
@@ -165,7 +165,7 @@ mod tests {
             usage_examples: vec![],
             relationships: vec![],
         };
-        cache.update("Foo.cls".to_string(), "deadbeef".to_string(), "gemini-2.5-flash".to_string(), doc);
+        cache.update("Foo.cls".to_string(), "deadbeef".to_string(), "gemini-2.5-flash", doc);
         cache.save(tmp.path()).unwrap();
 
         let loaded = Cache::load(tmp.path());
