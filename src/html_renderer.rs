@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::renderer::{RenderContext, TriggerRenderContext};
+use crate::renderer::{FlowRenderContext, RenderContext, TriggerRenderContext};
 
 // ---------------------------------------------------------------------------
 // Inline CSS — no external dependencies, works offline
@@ -86,6 +86,7 @@ pub fn write_html_output(
     output_dir: &Path,
     class_contexts: &[RenderContext],
     trigger_contexts: &[TriggerRenderContext],
+    flow_contexts: &[FlowRenderContext],
 ) -> Result<()> {
     std::fs::create_dir_all(output_dir)?;
 
@@ -98,9 +99,13 @@ pub fn write_html_output(
         .iter()
         .map(|c| (c.metadata.trigger_name.as_str(), c.folder.as_str()))
         .collect();
+    let flow_items: Vec<(&str, &str)> = flow_contexts
+        .iter()
+        .map(|c| (c.metadata.api_name.as_str(), c.folder.as_str()))
+        .collect();
 
     for ctx in class_contexts {
-        let page = render_class_page(ctx, &class_items, &trigger_items);
+        let page = render_class_page(ctx, &class_items, &trigger_items, &flow_items);
         std::fs::write(
             output_dir.join(format!("{}.html", ctx.metadata.class_name)),
             page,
@@ -108,9 +113,17 @@ pub fn write_html_output(
     }
 
     for ctx in trigger_contexts {
-        let page = render_trigger_page(ctx, &class_items, &trigger_items);
+        let page = render_trigger_page(ctx, &class_items, &trigger_items, &flow_items);
         std::fs::write(
             output_dir.join(format!("{}.html", ctx.metadata.trigger_name)),
+            page,
+        )?;
+    }
+
+    for ctx in flow_contexts {
+        let page = render_flow_page(ctx, &class_items, &trigger_items, &flow_items);
+        std::fs::write(
+            output_dir.join(format!("{}.html", ctx.metadata.api_name)),
             page,
         )?;
     }
@@ -118,8 +131,10 @@ pub fn write_html_output(
     let index = render_index(
         class_contexts,
         trigger_contexts,
+        flow_contexts,
         &class_items,
         &trigger_items,
+        &flow_items,
     );
     std::fs::write(output_dir.join("index.html"), index)?;
 
@@ -134,9 +149,11 @@ fn render_class_page(
     ctx: &RenderContext,
     class_items: &[(&str, &str)],
     trigger_items: &[(&str, &str)],
+    flow_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
+    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.class_name;
@@ -303,6 +320,19 @@ fn render_class_page(
                             )
                         })
                 })
+                .or_else(|| {
+                    flow_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"{}.html\">{}</a> — {}",
+                                name,
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
         })
         .collect();
 
@@ -321,6 +351,7 @@ fn render_class_page(
         active,
         class_items,
         trigger_items,
+        flow_items,
     )
 }
 
@@ -328,9 +359,11 @@ fn render_trigger_page(
     ctx: &TriggerRenderContext,
     class_items: &[(&str, &str)],
     trigger_items: &[(&str, &str)],
+    flow_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
+    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.trigger_name;
@@ -423,6 +456,19 @@ fn render_trigger_page(
                             )
                         })
                 })
+                .or_else(|| {
+                    flow_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"{}.html\">{}</a> — {}",
+                                name,
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
         })
         .collect();
 
@@ -441,21 +487,203 @@ fn render_trigger_page(
         active,
         class_items,
         trigger_items,
+        flow_items,
+    )
+}
+
+fn render_flow_page(
+    ctx: &FlowRenderContext,
+    class_items: &[(&str, &str)],
+    trigger_items: &[(&str, &str)],
+    flow_items: &[(&str, &str)],
+) -> String {
+    let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
+    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
+    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
+    let doc = &ctx.documentation;
+    let meta = &ctx.metadata;
+    let active = &meta.api_name;
+
+    let mut body = String::new();
+
+    body.push_str(&format!("<h1>{}</h1>\n", escape(&doc.label)));
+    body.push_str("<div class=\"badges\">\n");
+    body.push_str("<span class=\"badge\">flow</span>\n");
+    body.push_str(&format!(
+        "<span class=\"badge\">{}</span>\n",
+        escape(&meta.process_type)
+    ));
+    body.push_str("</div>\n");
+    body.push_str(&format!(
+        "<p class=\"summary\">{}</p>\n",
+        escape(&doc.summary)
+    ));
+
+    body.push_str("<h2>Description</h2>\n");
+    body.push_str(&format!("<p>{}</p>\n", escape(&doc.description)));
+
+    body.push_str("<h2>Business Process</h2>\n");
+    body.push_str(&format!("<p>{}</p>\n", escape(&doc.business_process)));
+
+    body.push_str("<h2>Entry Criteria</h2>\n");
+    body.push_str(&format!("<p>{}</p>\n", escape(&doc.entry_criteria)));
+
+    if !meta.variables.is_empty() {
+        body.push_str("<h2>Variables</h2>\n");
+        body.push_str(
+            "<table><thead><tr><th>Name</th><th>Type</th><th>Direction</th></tr></thead><tbody>\n",
+        );
+        for v in &meta.variables {
+            let direction = match (v.is_input, v.is_output) {
+                (true, true) => "Input / Output",
+                (true, false) => "Input",
+                (false, true) => "Output",
+                (false, false) => "Internal",
+            };
+            body.push_str(&format!(
+                "<tr><td><code>{}</code></td><td><code>{}</code></td><td>{}</td></tr>\n",
+                escape(&v.name),
+                escape(&v.data_type),
+                direction
+            ));
+        }
+        body.push_str("</tbody></table>\n");
+    }
+
+    if !meta.record_operations.is_empty() {
+        body.push_str("<h2>Record Operations</h2>\n");
+        body.push_str("<table><thead><tr><th>Operation</th><th>Object</th></tr></thead><tbody>\n");
+        for op in &meta.record_operations {
+            body.push_str(&format!(
+                "<tr><td>{}</td><td><code>{}</code></td></tr>\n",
+                escape(&op.operation),
+                escape(&op.object)
+            ));
+        }
+        body.push_str("</tbody></table>\n");
+    }
+
+    if !meta.action_calls.is_empty() {
+        body.push_str("<h2>Action Calls</h2>\n");
+        body.push_str("<table><thead><tr><th>Action</th><th>Type</th></tr></thead><tbody>\n");
+        for action in &meta.action_calls {
+            body.push_str(&format!(
+                "<tr><td><code>{}</code></td><td>{}</td></tr>\n",
+                escape(&action.name),
+                escape(&action.action_type)
+            ));
+        }
+        body.push_str("</tbody></table>\n");
+    }
+
+    if meta.decisions > 0 || meta.loops > 0 || meta.screens > 0 {
+        body.push_str("<h2>Element Counts</h2>\n<ul>\n");
+        if meta.decisions > 0 {
+            body.push_str(&format!("<li>Decisions: {}</li>\n", meta.decisions));
+        }
+        if meta.loops > 0 {
+            body.push_str(&format!("<li>Loops: {}</li>\n", meta.loops));
+        }
+        if meta.screens > 0 {
+            body.push_str(&format!("<li>Screens: {}</li>\n", meta.screens));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    if !doc.key_decisions.is_empty() {
+        body.push_str("<h2>Key Decisions</h2>\n<ul>\n");
+        for d in &doc.key_decisions {
+            body.push_str(&format!("<li>{}</li>\n", escape(d)));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    if !doc.admin_notes.is_empty() {
+        body.push_str("<h2>Admin Notes</h2>\n<ul>\n");
+        for note in &doc.admin_notes {
+            body.push_str(&format!("<li>{}</li>\n", escape(note)));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    let see_also: Vec<String> = doc
+        .relationships
+        .iter()
+        .filter_map(|rel| {
+            class_names
+                .iter()
+                .find(|&&name| rel.contains(name))
+                .map(|&name| {
+                    format!(
+                        "<a href=\"{}.html\">{}</a> — {}",
+                        name,
+                        escape(name),
+                        escape(rel)
+                    )
+                })
+                .or_else(|| {
+                    trigger_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"{}.html\">{}</a> — {}",
+                                name,
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
+                .or_else(|| {
+                    flow_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"{}.html\">{}</a> — {}",
+                                name,
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
+        })
+        .collect();
+
+    if !see_also.is_empty() {
+        body.push_str("<h2>See Also</h2>\n<ul>\n");
+        for link in see_also {
+            body.push_str(&format!("<li>{}</li>\n", link));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    wrap_page(
+        &doc.label,
+        "sfdoc",
+        &body,
+        active,
+        class_items,
+        trigger_items,
+        flow_items,
     )
 }
 
 fn render_index(
     class_contexts: &[RenderContext],
     trigger_contexts: &[TriggerRenderContext],
+    flow_contexts: &[FlowRenderContext],
     class_items: &[(&str, &str)],
     trigger_items: &[(&str, &str)],
+    flow_items: &[(&str, &str)],
 ) -> String {
     let mut body = String::new();
     body.push_str("<h1>Apex Documentation</h1>\n");
     body.push_str(&format!(
-        "<p class=\"summary\">Generated documentation for {} class(es) and {} trigger(s).</p>\n",
+        "<p class=\"summary\">Generated documentation for {} class(es), {} trigger(s), and {} flow(s).</p>\n",
         class_contexts.len(),
-        trigger_contexts.len()
+        trigger_contexts.len(),
+        flow_contexts.len()
     ));
 
     if !class_contexts.is_empty() {
@@ -529,6 +757,40 @@ fn render_index(
         }
     }
 
+    if !flow_contexts.is_empty() {
+        // Group flows by folder.
+        let mut flow_by_folder: BTreeMap<&str, Vec<&FlowRenderContext>> = BTreeMap::new();
+        for ctx in flow_contexts {
+            flow_by_folder
+                .entry(ctx.folder.as_str())
+                .or_default()
+                .push(ctx);
+        }
+        for group in flow_by_folder.values_mut() {
+            group.sort_by(|a, b| a.documentation.label.cmp(&b.documentation.label));
+        }
+
+        body.push_str("<h2>Flows</h2>\n");
+        let multi_folder = flow_by_folder.len() > 1;
+        for (folder, flows) in &flow_by_folder {
+            if multi_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                body.push_str(&format!("<h3>{}</h3>\n", escape(label)));
+            }
+            body.push_str("<table><thead><tr><th>Flow</th><th>Process Type</th><th>Summary</th></tr></thead><tbody>\n");
+            for ctx in flows {
+                body.push_str(&format!(
+                    "<tr><td><a href=\"{}.html\">{}</a></td><td><code>{}</code></td><td>{}</td></tr>\n",
+                    escape(&ctx.metadata.api_name),
+                    escape(&ctx.documentation.label),
+                    escape(&ctx.metadata.process_type),
+                    escape(&ctx.documentation.summary),
+                ));
+            }
+            body.push_str("</tbody></table>\n");
+        }
+    }
+
     wrap_page(
         "Overview",
         "sfdoc",
@@ -536,6 +798,7 @@ fn render_index(
         "Overview",
         class_items,
         trigger_items,
+        flow_items,
     )
 }
 
@@ -550,8 +813,9 @@ fn wrap_page(
     active: &str,
     class_items: &[(&str, &str)],
     trigger_items: &[(&str, &str)],
+    flow_items: &[(&str, &str)],
 ) -> String {
-    let sidebar = render_sidebar(class_items, trigger_items, active);
+    let sidebar = render_sidebar(class_items, trigger_items, flow_items, active);
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">
@@ -577,6 +841,7 @@ fn wrap_page(
 fn render_sidebar(
     class_items: &[(&str, &str)],
     trigger_items: &[(&str, &str)],
+    flow_items: &[(&str, &str)],
     active: &str,
 ) -> String {
     let mut s = String::new();
@@ -633,6 +898,44 @@ fn render_sidebar(
 
         s.push_str("<div class=\"sidebar-section\">\n");
         s.push_str("<div class=\"sidebar-heading\">Triggers</div>\n");
+        let multi_folder = by_folder.len() > 1;
+        for (folder, names) in &by_folder {
+            if multi_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                s.push_str(&format!(
+                    "<div class=\"sidebar-folder\">{}</div>\n",
+                    escape(label)
+                ));
+            }
+            s.push_str("<ul>\n");
+            for name in names {
+                let cls = if *name == active {
+                    " class=\"active\""
+                } else {
+                    ""
+                };
+                s.push_str(&format!(
+                    "<li><a href=\"{}.html\"{cls}>{}</a></li>\n",
+                    name,
+                    escape(name)
+                ));
+            }
+            s.push_str("</ul>\n");
+        }
+        s.push_str("</div>\n");
+    }
+
+    if !flow_items.is_empty() {
+        let mut by_folder: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for &(name, folder) in flow_items {
+            by_folder.entry(folder).or_default().push(name);
+        }
+        for names in by_folder.values_mut() {
+            names.sort_unstable();
+        }
+
+        s.push_str("<div class=\"sidebar-section\">\n");
+        s.push_str("<div class=\"sidebar-heading\">Flows</div>\n");
         let multi_folder = by_folder.len() > 1;
         for (folder, names) in &by_folder {
             if multi_folder {

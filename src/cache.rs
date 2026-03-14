@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::path::Path;
 
-use crate::types::{ClassDocumentation, TriggerDocumentation};
+use crate::types::{ClassDocumentation, FlowDocumentation, TriggerDocumentation};
 
 const CACHE_FILE: &str = ".sfdoc-cache.json";
 
@@ -20,6 +20,10 @@ pub struct Cache {
     /// cache files written before trigger support was added.
     #[serde(default)]
     trigger_entries: HashMap<String, TriggerCacheEntry>,
+    /// Flow entries are in a separate map so the field can be absent in
+    /// cache files written before flow support was added.
+    #[serde(default)]
+    flow_entries: HashMap<String, FlowCacheEntry>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -27,6 +31,13 @@ pub struct TriggerCacheEntry {
     pub hash: String,
     pub model: String,
     pub documentation: TriggerDocumentation,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct FlowCacheEntry {
+    pub hash: String,
+    pub model: String,
+    pub documentation: FlowDocumentation,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -108,6 +119,36 @@ impl Cache {
         self.trigger_entries.insert(
             key,
             TriggerCacheEntry {
+                hash,
+                model: model.to_owned(),
+                documentation,
+            },
+        );
+    }
+
+    /// Returns the cached flow entry if hash and model both match.
+    pub fn get_flow_if_fresh<'a>(
+        &'a self,
+        key: &str,
+        hash: &str,
+        model: &str,
+    ) -> Option<&'a FlowCacheEntry> {
+        self.flow_entries
+            .get(key)
+            .filter(|e| e.hash == hash && e.model == model)
+    }
+
+    /// Insert or update a flow entry after a successful API call.
+    pub fn update_flow(
+        &mut self,
+        key: String,
+        hash: String,
+        model: &str,
+        documentation: FlowDocumentation,
+    ) {
+        self.flow_entries.insert(
+            key,
+            FlowCacheEntry {
                 hash,
                 model: model.to_owned(),
                 documentation,

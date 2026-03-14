@@ -1,6 +1,8 @@
 pub mod cache;
 pub mod cli;
 pub mod config;
+pub mod flow_parser;
+pub mod flow_prompt;
 pub mod gemini;
 pub mod html_renderer;
 pub mod openai_compat;

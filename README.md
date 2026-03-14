@@ -108,7 +108,7 @@ Run from the root of your Salesforce project:
 sfdoc generate
 ```
 
-This scans `force-app/main/default/classes/` and writes Markdown output to `docs/`.
+This scans `force-app/main/default/classes/` for `.cls` and `.trigger` files and `force-app/main/default/flows/` for `.flow-meta.xml` files, then writes Markdown output to `docs/`.
 
 ## Usage
 
@@ -209,19 +209,21 @@ Options:
 
 ```
 docs/
-  index.md                  # Home page — classes and triggers grouped by folder
-  AccountService.md         # One page per class
-  OrderTrigger.md           # One page per trigger
-  .sfdoc-cache.json         # Incremental build cache (do not edit manually)
+  index.md                          # Home page — classes, triggers, and flows grouped by folder
+  AccountService.md                 # One page per class
+  OrderTrigger.md                   # One page per trigger
+  Account_Onboarding_Flow.md        # One page per flow
+  .sfdoc-cache.json                 # Incremental build cache (do not edit manually)
 ```
 
 ### HTML
 
 ```
 site/
-  index.html                # Home page with sidebar navigation
+  index.html                        # Home page with sidebar navigation
   AccountService.html
   OrderTrigger.html
+  Account_Onboarding_Flow.html
 ```
 
 Markdown and HTML outputs default to separate directories (`docs/` and `site/`) so both formats can coexist without overwriting each other.
@@ -236,7 +238,20 @@ Markdown and HTML outputs default to separate directories (`docs/` and `site/`) 
 | Properties     | Name, type, description table                                     |
 | Methods        | Signature, description, parameter table, return value, exceptions |
 | Usage examples | Apex code snippets                                                |
-| See Also       | Cross-links to related classes and triggers                       |
+| See Also       | Cross-links to related classes, triggers, and flows               |
+
+### Flow pages additionally include
+
+| Section          | Details                                                              |
+| ---------------- | -------------------------------------------------------------------- |
+| Process type     | AutoLaunchedFlow, Flow, Workflow, etc.                               |
+| Business process | Plain-English explanation of the business logic for admins           |
+| Entry criteria   | When/how the flow is triggered                                       |
+| Variables        | Input and output variables with types                                |
+| Record ops       | Objects the flow reads, creates, updates, or deletes                 |
+| Action calls     | Invocable actions, Apex actions, email alerts, etc.                  |
+| Key decisions    | Major branching conditions                                           |
+| Admin notes      | Operational considerations for admins                                |
 
 ## Example workflow
 
@@ -274,11 +289,13 @@ src/
   cli.rs              clap CLI definitions
   config.rs           API key storage and resolution
   providers.rs        Provider enum and per-provider defaults
-  scanner.rs          FileScanner trait, ApexScanner, TriggerScanner
+  scanner.rs          FileScanner trait, ApexScanner, TriggerScanner, FlowScanner
   parser.rs           Regex-based Apex class structural parser
   trigger_parser.rs   Apex trigger structural parser
+  flow_parser.rs      Salesforce Flow XML structural parser (quick-xml)
   prompt.rs           AI prompt construction for classes
   trigger_prompt.rs   AI prompt construction for triggers
+  flow_prompt.rs      AI prompt construction for flows
   gemini.rs           Google Gemini API client
   openai_compat.rs    OpenAI-compatible client (Groq, OpenAI, Ollama)
   retry.rs            Retry logic with exponential backoff
@@ -298,7 +315,7 @@ cargo build
 cargo test
 
 # Run with a local project
-cargo run -- generate --source-dir /path/to/sf-project/force-app/main/default/classes --verbose
+cargo run -- generate --source-dir /path/to/sf-project/force-app/main/default --verbose
 ```
 
 All parser and renderer logic is unit-tested. To add a new metadata type, implement the `FileScanner` trait in `scanner.rs`, add a corresponding parser and prompt module, extend `types.rs` with the new metadata and documentation structs, and wire it up in `main.rs`.

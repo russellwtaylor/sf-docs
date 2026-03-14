@@ -209,6 +209,7 @@ fn full_pipeline_writes_markdown_output() {
             .iter()
             .map(|m| m.trigger_name.clone())
             .collect(),
+        flow_names: vec![],
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -254,6 +255,7 @@ fn full_pipeline_writes_markdown_output() {
         &sfdoc::cli::OutputFormat::Markdown,
         &class_contexts,
         &trigger_contexts,
+        &[],
     )
     .unwrap();
 
@@ -286,6 +288,7 @@ fn markdown_class_page_contains_expected_sections() {
     let all_names = Arc::new(AllNames {
         class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
         trigger_names: vec![],
+        flow_names: vec![],
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -303,6 +306,7 @@ fn markdown_class_page_contains_expected_sections() {
         output_dir,
         &sfdoc::cli::OutputFormat::Markdown,
         &class_contexts,
+        &[],
         &[],
     )
     .unwrap();
@@ -332,6 +336,7 @@ fn markdown_index_groups_by_folder() {
     let all_names = Arc::new(AllNames {
         class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
         trigger_names: vec![],
+        flow_names: vec![],
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -353,7 +358,7 @@ fn markdown_index_groups_by_folder() {
         })
         .collect();
 
-    let index = renderer::render_index(&class_contexts, &[]);
+    let index = renderer::render_index(&class_contexts, &[], &[]);
 
     // Both classes should be linked
     assert!(index.contains("[AccountService](AccountService.md)"));
@@ -388,6 +393,7 @@ fn full_pipeline_writes_html_output() {
     let all_names = Arc::new(AllNames {
         class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
         trigger_names: vec![],
+        flow_names: vec![],
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -404,6 +410,7 @@ fn full_pipeline_writes_html_output() {
         output_dir,
         &sfdoc::cli::OutputFormat::Html,
         &class_contexts,
+        &[],
         &[],
     )
     .unwrap();
@@ -430,6 +437,7 @@ fn html_page_contains_sidebar_and_content() {
     let all_names = Arc::new(AllNames {
         class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
         trigger_names: vec![],
+        flow_names: vec![],
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -446,6 +454,7 @@ fn html_page_contains_sidebar_and_content() {
         tmp.path(),
         &sfdoc::cli::OutputFormat::Html,
         &class_contexts,
+        &[],
         &[],
     )
     .unwrap();
@@ -797,6 +806,7 @@ async fn e2e_scan_parse_ai_render_markdown() {
             .iter()
             .map(|m| m.trigger_name.clone())
             .collect(),
+        flow_names: vec![],
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -844,6 +854,7 @@ async fn e2e_scan_parse_ai_render_markdown() {
         &sfdoc::cli::OutputFormat::Markdown,
         &class_contexts,
         &trigger_contexts,
+        &[],
     )
     .unwrap();
 

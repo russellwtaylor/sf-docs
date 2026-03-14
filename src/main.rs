@@ -1,4 +1,6 @@
-use sfdoc::{cache, cli, config, gemini, openai_compat, parser, providers, renderer, scanner};
+use sfdoc::{
+    cache, cli, config, flow_parser, gemini, openai_compat, parser, providers, renderer, scanner,
+};
 use sfdoc::{trigger_parser, types};
 
 use anyhow::{Context, Result};
@@ -15,8 +17,8 @@ use config::{delete_api_key, has_stored_key, resolve_api_key, save_api_key};
 use gemini::GeminiClient;
 use openai_compat::OpenAiCompatClient;
 use providers::Provider;
-use scanner::{ApexScanner, FileScanner, TriggerScanner};
-use types::{AllNames, ApexFile, ClassDocumentation, TriggerDocumentation};
+use scanner::{ApexScanner, FileScanner, FlowScanner, TriggerScanner};
+use types::{AllNames, ApexFile, ClassDocumentation, FlowDocumentation, TriggerDocumentation};
 
 /// Unified client enum for dispatch without dynamic dispatch overhead.
 enum DocClient {
@@ -44,6 +46,17 @@ impl DocClient {
         match self {
             DocClient::Gemini(c) => c.document_trigger(file, metadata).await,
             DocClient::OpenAiCompat(c) => c.document_trigger(file, metadata).await,
+        }
+    }
+
+    async fn document_flow(
+        &self,
+        file: &ApexFile,
+        metadata: &types::FlowMetadata,
+    ) -> Result<FlowDocumentation> {
+        match self {
+            DocClient::Gemini(c) => c.document_flow(file, metadata).await,
+            DocClient::OpenAiCompat(c) => c.document_flow(file, metadata).await,
         }
     }
 }
@@ -107,7 +120,15 @@ async fn main() -> Result<()> {
                 println!("Found {} Apex trigger file(s)", trigger_files.len());
             }
 
-            // Parse classes and triggers in parallel using rayon.
+            // Scan for .flow-meta.xml files (non-fatal if none found)
+            let flow_files = FlowScanner.scan(&args.source_dir).with_context(|| {
+                format!("Failed to scan flows in {}", args.source_dir.display())
+            })?;
+            if !flow_files.is_empty() {
+                println!("Found {} Flow file(s)", flow_files.len());
+            }
+
+            // Parse classes, triggers, and flows in parallel using rayon.
             let class_meta: Vec<_> = files
                 .par_iter()
                 .map(|f| parser::parse_apex_class(&f.raw_source))
@@ -116,12 +137,24 @@ async fn main() -> Result<()> {
                 .par_iter()
                 .map(|f| trigger_parser::parse_apex_trigger(&f.raw_source))
                 .collect::<Result<_>>()?;
+            let flow_meta: Vec<_> = flow_files
+                .par_iter()
+                .map(|f| {
+                    let api_name = f
+                        .filename
+                        .strip_suffix(".flow-meta.xml")
+                        .unwrap_or(&f.filename);
+                    flow_parser::parse_flow(api_name, &f.raw_source)
+                })
+                .collect::<Result<_>>()?;
 
             // Wrap in Arc so task closures share the data without cloning raw_source.
             let files = Arc::new(files);
             let class_meta = Arc::new(class_meta);
             let trigger_files = Arc::new(trigger_files);
             let trigger_meta = Arc::new(trigger_meta);
+            let flow_files = Arc::new(flow_files);
+            let flow_meta = Arc::new(flow_meta);
 
             // Shared cross-linking index
             let all_names = Arc::new(AllNames {
@@ -130,6 +163,7 @@ async fn main() -> Result<()> {
                     .iter()
                     .map(|m| m.trigger_name.clone())
                     .collect(),
+                flow_names: flow_meta.iter().map(|m| m.api_name.clone()).collect(),
             });
 
             // Load incremental build cache (empty if --force or first run)
@@ -145,6 +179,10 @@ async fn main() -> Result<()> {
                 .map(|f| cache::hash_source(&f.raw_source))
                 .collect();
             let trigger_hashes: Vec<String> = trigger_files
+                .par_iter()
+                .map(|f| cache::hash_source(&f.raw_source))
+                .collect();
+            let flow_hashes: Vec<String> = flow_files
                 .par_iter()
                 .map(|f| cache::hash_source(&f.raw_source))
                 .collect();
@@ -171,13 +209,24 @@ async fn main() -> Result<()> {
                 }
             }
 
-            let skipped =
-                (files.len() - class_work.len()) + (trigger_files.len() - trigger_work.len());
+            let mut flow_work: Vec<usize> = Vec::new();
+            let mut flow_docs: Vec<Option<FlowDocumentation>> = vec![None; flow_files.len()];
+            for (i, (f, h)) in flow_files.iter().zip(flow_hashes.iter()).enumerate() {
+                if let Some(e) = cache.get_flow_if_fresh(&f.path.to_string_lossy(), h, &model) {
+                    flow_docs[i] = Some(e.documentation.clone());
+                } else {
+                    flow_work.push(i);
+                }
+            }
+
+            let skipped = (files.len() - class_work.len())
+                + (trigger_files.len() - trigger_work.len())
+                + (flow_files.len() - flow_work.len());
             if skipped > 0 {
                 println!("{skipped} file(s) up-to-date — skipping API calls");
             }
 
-            if !class_work.is_empty() || !trigger_work.is_empty() {
+            if !class_work.is_empty() || !trigger_work.is_empty() || !flow_work.is_empty() {
                 let api_key = resolve_api_key(provider)?;
                 let client = match provider {
                     Provider::Gemini => DocClient::Gemini(Arc::new(GeminiClient::new(
@@ -195,7 +244,7 @@ async fn main() -> Result<()> {
                 };
                 let client = Arc::new(client);
 
-                let total_work = (class_work.len() + trigger_work.len()) as u64;
+                let total_work = (class_work.len() + trigger_work.len() + flow_work.len()) as u64;
                 let pb = Arc::new(ProgressBar::new(total_work));
                 pb.set_style(
                     ProgressStyle::with_template(
@@ -210,6 +259,7 @@ async fn main() -> Result<()> {
                 enum WorkResult {
                     Class(usize, ClassDocumentation),
                     Trigger(usize, TriggerDocumentation),
+                    Flow(usize, FlowDocumentation),
                 }
 
                 let mut tasks: JoinSet<Result<WorkResult>> = JoinSet::new();
@@ -240,6 +290,20 @@ async fn main() -> Result<()> {
                     });
                 }
 
+                for &idx in &flow_work {
+                    let client = Arc::clone(&client);
+                    let flow_files = Arc::clone(&flow_files);
+                    let flow_meta = Arc::clone(&flow_meta);
+                    let pb_task = Arc::clone(&pb);
+                    tasks.spawn(async move {
+                        let doc = client
+                            .document_flow(&flow_files[idx], &flow_meta[idx])
+                            .await?;
+                        pb_task.inc(1);
+                        Ok(WorkResult::Flow(idx, doc))
+                    });
+                }
+
                 // Collect results as they complete (not in spawn order).
                 while let Some(res) = tasks.join_next().await {
                     match res?? {
@@ -258,6 +322,11 @@ async fn main() -> Result<()> {
                             );
                             trigger_docs[idx] = Some(doc);
                         }
+                        WorkResult::Flow(idx, doc) => {
+                            let key = flow_files[idx].path.to_string_lossy().into_owned();
+                            cache.update_flow(key, flow_hashes[idx].clone(), &model, doc.clone());
+                            flow_docs[idx] = Some(doc);
+                        }
                     }
                 }
 
@@ -269,6 +338,8 @@ async fn main() -> Result<()> {
             let class_meta = Arc::try_unwrap(class_meta).expect("no other Arc holders");
             let trigger_files = Arc::try_unwrap(trigger_files).expect("no other Arc holders");
             let trigger_meta = Arc::try_unwrap(trigger_meta).expect("no other Arc holders");
+            let flow_files = Arc::try_unwrap(flow_files).expect("no other Arc holders");
+            let flow_meta = Arc::try_unwrap(flow_meta).expect("no other Arc holders");
 
             let class_contexts: Vec<renderer::RenderContext> = files
                 .into_iter()
@@ -294,12 +365,25 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
+            let flow_contexts: Vec<renderer::FlowRenderContext> = flow_files
+                .into_iter()
+                .zip(flow_meta)
+                .zip(flow_docs)
+                .map(|((file, meta), doc)| renderer::FlowRenderContext {
+                    folder: compute_folder(&file.path, &args.source_dir),
+                    metadata: meta,
+                    documentation: doc.expect("every flow must have documentation"),
+                    all_names: Arc::clone(&all_names),
+                })
+                .collect();
+
             // Render and write output
             renderer::write_output(
                 &output_dir,
                 &args.format,
                 &class_contexts,
                 &trigger_contexts,
+                &flow_contexts,
             )?;
             println!("Documentation written to {}", output_dir.display());
 

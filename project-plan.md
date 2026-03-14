@@ -50,7 +50,7 @@ todos:
       status: done
     - id: flows
       content: "Phase 16: Salesforce Flow documentation — XML scanner, structural parser, AI prompt, flow renderer"
-      status: pending
+      status: done
     - id: validation-rules
       content: "Phase 17: Validation Rule documentation — XML scanner/parser, formula explanation, per-object grouping"
       status: pending

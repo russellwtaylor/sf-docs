@@ -51,6 +51,7 @@ pub struct PropertyMetadata {
 pub struct AllNames {
     pub class_names: Vec<String>,
     pub trigger_names: Vec<String>,
+    pub flow_names: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -144,4 +145,59 @@ pub struct ParamDocumentation {
 pub struct PropertyDocumentation {
     pub name: String,
     pub description: String,
+}
+
+// ---------------------------------------------------------------------------
+// Flow types
+// ---------------------------------------------------------------------------
+
+/// Structural metadata extracted from a Salesforce Flow XML file.
+#[derive(Debug, Clone, Default)]
+pub struct FlowMetadata {
+    /// API name derived from the filename (e.g. `"My_Flow"` from `My_Flow.flow-meta.xml`).
+    pub api_name: String,
+    pub label: String,
+    pub process_type: String,
+    pub description: String,
+    pub variables: Vec<FlowVariable>,
+    pub decisions: usize,
+    pub loops: usize,
+    pub screens: usize,
+    pub record_operations: Vec<FlowRecordOperation>,
+    pub action_calls: Vec<FlowActionCall>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct FlowVariable {
+    pub name: String,
+    pub data_type: String,
+    pub is_input: bool,
+    pub is_output: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct FlowRecordOperation {
+    /// One of: `lookup`, `create`, `update`, `delete`.
+    pub operation: String,
+    pub object: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct FlowActionCall {
+    pub name: String,
+    pub action_type: String,
+}
+
+/// AI-generated documentation for a Salesforce Flow.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct FlowDocumentation {
+    pub api_name: String,
+    pub label: String,
+    pub summary: String,
+    pub description: String,
+    pub business_process: String,
+    pub entry_criteria: String,
+    pub key_decisions: Vec<String>,
+    pub admin_notes: Vec<String>,
+    pub relationships: Vec<String>,
 }
