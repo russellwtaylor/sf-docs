@@ -3,13 +3,19 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::types::{ClassDocumentation, ClassMetadata};
+use crate::cli::OutputFormat;
+use crate::types::{AllNames, ClassDocumentation, ClassMetadata, TriggerDocumentation, TriggerMetadata};
 
 pub struct RenderContext {
     pub metadata: ClassMetadata,
     pub documentation: ClassDocumentation,
-    /// Names of all classes in the project (for cross-linking)
-    pub all_class_names: Arc<Vec<String>>,
+    pub all_names: Arc<AllNames>,
+}
+
+pub struct TriggerRenderContext {
+    pub metadata: TriggerMetadata,
+    pub documentation: TriggerDocumentation,
+    pub all_names: Arc<AllNames>,
 }
 
 // ---------------------------------------------------------------------------
@@ -19,7 +25,10 @@ pub struct RenderContext {
 pub fn render_class_page(ctx: &RenderContext) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
-    let known: HashSet<&str> = ctx.all_class_names.iter().map(|s| s.as_str()).collect();
+    let known: HashSet<&str> = ctx.all_names.class_names.iter()
+        .chain(ctx.all_names.trigger_names.iter())
+        .map(|s| s.as_str())
+        .collect();
 
     let mut out = String::new();
 
@@ -155,23 +164,102 @@ pub fn render_class_page(ctx: &RenderContext) -> String {
     out
 }
 
-pub fn render_index(contexts: &[RenderContext]) -> String {
+pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
+    let doc = &ctx.documentation;
+    let meta = &ctx.metadata;
+    let known: HashSet<&str> = ctx.all_names.class_names.iter()
+        .chain(ctx.all_names.trigger_names.iter())
+        .map(|s| s.as_str())
+        .collect();
+
+    let mut out = String::new();
+
+    out.push_str(&format!("# {}\n\n", doc.trigger_name));
+
+    // Badges: trigger event list
+    let events_str = meta.events.iter().map(|e| format!("`{}`", e.as_str())).collect::<Vec<_>>().join(" · ");
+    out.push_str(&format!("`trigger` · `on {}` · {}\n\n", doc.sobject, events_str));
+
+    out.push_str(&format!("{}\n\n", doc.summary));
+
+    // ToC
+    out.push_str("## Table of Contents\n\n");
+    out.push_str("- [Description](#description)\n");
+    if !doc.events.is_empty() { out.push_str("- [Event Handlers](#event-handlers)\n"); }
+    if !doc.handler_classes.is_empty() { out.push_str("- [Handler Classes](#handler-classes)\n"); }
+    if !doc.usage_notes.is_empty() { out.push_str("- [Usage Notes](#usage-notes)\n"); }
+    out.push('\n');
+
+    out.push_str("## Description\n\n");
+    out.push_str(&doc.description);
+    out.push_str("\n\n");
+
+    if !doc.events.is_empty() {
+        out.push_str("## Event Handlers\n\n");
+        out.push_str("| Event | Description |\n");
+        out.push_str("|-------|-------------|\n");
+        for ev in &doc.events {
+            out.push_str(&format!("| `{}` | {} |\n", ev.event, ev.description));
+        }
+        out.push('\n');
+    }
+
+    if !doc.handler_classes.is_empty() {
+        out.push_str("## Handler Classes\n\n");
+        for cls in &doc.handler_classes {
+            if known.contains(cls.as_str()) {
+                out.push_str(&format!("- [{cls}]({cls}.md)\n"));
+            } else {
+                out.push_str(&format!("- `{cls}`\n"));
+            }
+        }
+        out.push('\n');
+    }
+
+    if !doc.usage_notes.is_empty() {
+        out.push_str("## Usage Notes\n\n");
+        for note in &doc.usage_notes {
+            out.push_str(&format!("- {note}\n"));
+        }
+        out.push('\n');
+    }
+
+    let see_also: Vec<String> = doc.relationships.iter().filter_map(|rel| {
+        known.iter()
+            .find(|&&name| rel.contains(name))
+            .map(|&name| format!("[{name}]({name}.md) — {rel}"))
+    }).collect();
+
+    if !see_also.is_empty() {
+        out.push_str("## See Also\n\n");
+        for link in see_also {
+            out.push_str(&format!("- {link}\n"));
+        }
+        out.push('\n');
+    }
+
+    out
+}
+
+pub fn render_index(
+    class_contexts: &[RenderContext],
+    trigger_contexts: &[TriggerRenderContext],
+) -> String {
     let mut out = String::new();
     out.push_str("# Apex Documentation Index\n\n");
     out.push_str(&format!(
-        "Generated documentation for {} class(es).\n\n",
-        contexts.len()
+        "Generated documentation for {} class(es) and {} trigger(s).\n\n",
+        class_contexts.len(),
+        trigger_contexts.len(),
     ));
 
-    // Group by folder (first segment of path relative to source dir)
-    // For simplicity in this version, list alphabetically
-    let mut sorted: Vec<&RenderContext> = contexts.iter().collect();
-    sorted.sort_by(|a, b| a.documentation.class_name.cmp(&b.documentation.class_name));
+    let mut sorted_classes: Vec<&RenderContext> = class_contexts.iter().collect();
+    sorted_classes.sort_by(|a, b| a.documentation.class_name.cmp(&b.documentation.class_name));
 
     out.push_str("## Classes\n\n");
     out.push_str("| Class | Summary |\n");
     out.push_str("|-------|---------|\n");
-    for ctx in &sorted {
+    for ctx in &sorted_classes {
         out.push_str(&format!(
             "| [{}]({}.md) | {} |\n",
             ctx.documentation.class_name,
@@ -181,22 +269,51 @@ pub fn render_index(contexts: &[RenderContext]) -> String {
     }
     out.push('\n');
 
+    if !trigger_contexts.is_empty() {
+        let mut sorted_triggers: Vec<&TriggerRenderContext> = trigger_contexts.iter().collect();
+        sorted_triggers.sort_by(|a, b| a.documentation.trigger_name.cmp(&b.documentation.trigger_name));
+
+        out.push_str("## Triggers\n\n");
+        out.push_str("| Trigger | SObject | Summary |\n");
+        out.push_str("|---------|---------|--------|\n");
+        for ctx in &sorted_triggers {
+            out.push_str(&format!(
+                "| [{}]({}.md) | `{}` | {} |\n",
+                ctx.documentation.trigger_name,
+                ctx.documentation.trigger_name,
+                ctx.documentation.sobject,
+                ctx.documentation.summary,
+            ));
+        }
+        out.push('\n');
+    }
+
     out
 }
 
-pub fn write_output(output_dir: &Path, contexts: &[RenderContext]) -> Result<()> {
-    std::fs::create_dir_all(output_dir)?;
-
-    // Write individual class pages. Use the parser's class name (not the AI's)
-    // to avoid path traversal via unexpected characters in AI output.
-    for ctx in contexts {
-        let page = render_class_page(ctx);
-        let file_name = format!("{}.md", ctx.metadata.class_name);
-        std::fs::write(output_dir.join(&file_name), page)?;
+pub fn write_output(
+    output_dir: &Path,
+    format: &OutputFormat,
+    class_contexts: &[RenderContext],
+    trigger_contexts: &[TriggerRenderContext],
+) -> Result<()> {
+    if *format == OutputFormat::Html {
+        return crate::html_renderer::write_html_output(output_dir, class_contexts, trigger_contexts);
     }
 
-    // Write index
-    let index = render_index(contexts);
+    std::fs::create_dir_all(output_dir)?;
+
+    for ctx in class_contexts {
+        let page = render_class_page(ctx);
+        std::fs::write(output_dir.join(format!("{}.md", ctx.metadata.class_name)), page)?;
+    }
+
+    for ctx in trigger_contexts {
+        let page = render_trigger_page(ctx);
+        std::fs::write(output_dir.join(format!("{}.md", ctx.metadata.trigger_name)), page)?;
+    }
+
+    let index = render_index(class_contexts, trigger_contexts);
     std::fs::write(output_dir.join("index.md"), index)?;
 
     Ok(())
@@ -250,7 +367,7 @@ fn render_toc(doc: &ClassDocumentation) -> String {
 mod tests {
     use super::*;
     use crate::types::{
-        ClassDocumentation, ClassMetadata, MethodDocumentation, ParamDocumentation,
+        AllNames, ClassDocumentation, ClassMetadata, MethodDocumentation, ParamDocumentation,
         PropertyDocumentation,
     };
     use std::sync::Arc;
@@ -304,7 +421,10 @@ mod tests {
                 usage_examples: vec!["```apex\nAccountService svc = new AccountService();\nsvc.processAccounts(accounts);\n```".to_string()],
                 relationships: vec!["AccountRepository is used for data access".to_string()],
             },
-            all_class_names: Arc::new(vec!["AccountService".to_string(), "AccountRepository".to_string()]),
+            all_names: Arc::new(AllNames {
+                class_names: vec!["AccountService".to_string(), "AccountRepository".to_string()],
+                trigger_names: vec![],
+            }),
         }
     }
 
@@ -350,7 +470,7 @@ mod tests {
     #[test]
     fn index_contains_all_classes() {
         let ctx = sample_context();
-        let index = render_index(&[ctx]);
+        let index = render_index(&[ctx], &[]);
         assert!(index.contains("# Apex Documentation Index"));
         assert!(index.contains("[AccountService](AccountService.md)"));
         assert!(index.contains("Handles account processing operations."));
@@ -376,7 +496,7 @@ mod tests {
     fn write_output_creates_files() {
         let tmp = tempfile::TempDir::new().unwrap();
         let ctx = sample_context();
-        write_output(tmp.path(), &[ctx]).unwrap();
+        write_output(tmp.path(), &crate::cli::OutputFormat::Markdown, &[ctx], &[]).unwrap();
         assert!(tmp.path().join("AccountService.md").exists());
         assert!(tmp.path().join("index.md").exists());
     }

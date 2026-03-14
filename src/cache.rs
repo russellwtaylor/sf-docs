@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::types::ClassDocumentation;
+use crate::types::{ClassDocumentation, TriggerDocumentation};
 
 const CACHE_FILE: &str = ".sfdoc-cache.json";
 
@@ -15,6 +15,17 @@ const CACHE_FILE: &str = ".sfdoc-cache.json";
 #[derive(Serialize, Deserialize, Default)]
 pub struct Cache {
     entries: HashMap<String, CacheEntry>,
+    /// Trigger entries are in a separate map so the field can be absent in
+    /// cache files written before trigger support was added.
+    #[serde(default)]
+    trigger_entries: HashMap<String, TriggerCacheEntry>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct TriggerCacheEntry {
+    pub hash: String,
+    pub model: String,
+    pub documentation: TriggerDocumentation,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -55,7 +66,7 @@ impl Cache {
             .filter(|e| e.hash == hash && e.model == model)
     }
 
-    /// Insert or update an entry after a successful API call.
+    /// Insert or update a class entry after a successful API call.
     pub fn update(
         &mut self,
         key: String,
@@ -64,6 +75,29 @@ impl Cache {
         documentation: ClassDocumentation,
     ) {
         self.entries.insert(key, CacheEntry { hash, model, documentation });
+    }
+
+    /// Returns the cached trigger entry if hash and model both match.
+    pub fn get_trigger_if_fresh<'a>(
+        &'a self,
+        key: &str,
+        hash: &str,
+        model: &str,
+    ) -> Option<&'a TriggerCacheEntry> {
+        self.trigger_entries
+            .get(key)
+            .filter(|e| e.hash == hash && e.model == model)
+    }
+
+    /// Insert or update a trigger entry after a successful API call.
+    pub fn update_trigger(
+        &mut self,
+        key: String,
+        hash: String,
+        model: String,
+        documentation: TriggerDocumentation,
+    ) {
+        self.trigger_entries.insert(key, TriggerCacheEntry { hash, model, documentation });
     }
 }
 

@@ -7,7 +7,8 @@ use tokio::sync::Semaphore;
 
 use crate::prompt::{build_prompt, SYSTEM_PROMPT};
 use crate::retry::{self, MAX_RETRIES};
-use crate::types::{ApexFile, ClassDocumentation, ClassMetadata};
+use crate::trigger_prompt::{build_trigger_prompt, TRIGGER_SYSTEM_PROMPT};
+use crate::types::{ApexFile, ClassDocumentation, ClassMetadata, TriggerDocumentation, TriggerMetadata};
 
 // ---------------------------------------------------------------------------
 // OpenAI-compatible API shapes (Groq, OpenAI, Ollama)
@@ -148,6 +149,74 @@ impl OpenAiCompatClient {
                         )
                     },
                 )?;
+
+                return Ok(doc);
+            }
+
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
+
+            if status.as_u16() == 429 && attempt < MAX_RETRIES {
+                retry::sleep_for_retry(&body, attempt, &self.provider_name).await;
+                attempt += 1;
+                continue;
+            }
+
+            anyhow::bail!("{} API error {status}: {body}", self.provider_name);
+        }
+    }
+
+    pub async fn document_trigger(
+        &self,
+        file: &ApexFile,
+        metadata: &TriggerMetadata,
+    ) -> Result<TriggerDocumentation> {
+        let _permit = self.semaphore.acquire().await?;
+
+        let request = ChatRequest {
+            model: self.model.clone(),
+            messages: vec![
+                Message { role: "system".to_string(), content: TRIGGER_SYSTEM_PROMPT.to_string() },
+                Message { role: "user".to_string(), content: build_trigger_prompt(file, metadata) },
+            ],
+            response_format: ResponseFormat { format_type: "json_object".to_string() },
+            temperature: 0.2,
+        };
+
+        let url = format!("{}/chat/completions", self.base_url);
+        let mut attempt = 0u32;
+        loop {
+            let response = self
+                .client
+                .post(&url)
+                .bearer_auth(&self.api_key)
+                .json(&request)
+                .send()
+                .await
+                .with_context(|| format!("Failed to send request to {} API", self.provider_name))?;
+
+            if response.status().is_success() {
+                let chat_response: ChatResponse = response
+                    .json()
+                    .await
+                    .with_context(|| format!("Failed to deserialize {} response", self.provider_name))?;
+
+                let raw_json = chat_response
+                    .choices
+                    .into_iter()
+                    .next()
+                    .map(|c| c.message.content)
+                    .with_context(|| format!("{} returned an empty response", self.provider_name))?;
+
+                let doc: TriggerDocumentation = serde_json::from_str(&raw_json).with_context(|| {
+                    format!(
+                        "Failed to parse {} JSON for trigger '{}':\n{}",
+                        self.provider_name, metadata.trigger_name, raw_json
+                    )
+                })?;
 
                 return Ok(doc);
             }

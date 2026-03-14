@@ -31,10 +31,10 @@ todos:
       status: done
     - id: triggers
       content: "Phase 10: Extend FileScanner trait to support Apex Triggers (.trigger files)"
-      status: pending
+      status: done
     - id: html-output
       content: "Phase 11: HTML output mode — render a self-contained static site (no external dependencies)"
-      status: pending
+      status: done
     - id: namespace-grouping
       content: "Phase 12: Group index.md by namespace/folder structure instead of flat alphabetical list"
       status: pending
