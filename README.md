@@ -139,7 +139,13 @@ Generate a self-contained static site instead of Markdown:
 sfdoc generate --format html
 ```
 
-Output is written to `docs/` with an `index.html` and one page per class or trigger. No external dependencies — works fully offline and can be deployed to any static host.
+HTML output is written to `site/` by default (separate from the Markdown `docs/` directory). Override with `--output`:
+
+```bash
+sfdoc generate --format html --output public
+```
+
+No external dependencies — works fully offline and can be deployed to any static host.
 
 ### Incremental builds
 
@@ -178,7 +184,8 @@ sfdoc generate [OPTIONS]
 Options:
   --source-dir <PATH>    Path to Apex source directory
                          [default: force-app/main/default/classes]
-  --output <PATH>        Output directory for generated files [default: docs]
+  --output <PATH>        Output directory for generated files
+                         [default: docs (markdown) | site (html)]
   --provider <PROVIDER>  AI provider [default: gemini]
                          [possible values: gemini, groq, openai, ollama]
   --model <MODEL>        Model override (uses provider default if omitted)
@@ -202,7 +209,7 @@ Options:
 
 ```
 docs/
-  index.md                  # Home page — classes and triggers with summaries
+  index.md                  # Home page — classes and triggers grouped by folder
   AccountService.md         # One page per class
   OrderTrigger.md           # One page per trigger
   .sfdoc-cache.json         # Incremental build cache (do not edit manually)
@@ -211,11 +218,13 @@ docs/
 ### HTML
 
 ```
-docs/
+site/
   index.html                # Home page with sidebar navigation
   AccountService.html
   OrderTrigger.html
 ```
+
+Markdown and HTML outputs default to separate directories (`docs/` and `site/`) so both formats can coexist without overwriting each other.
 
 ### What each page contains
 

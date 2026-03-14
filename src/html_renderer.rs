@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::renderer::{RenderContext, TriggerRenderContext};
@@ -20,6 +21,7 @@ a:hover{text-decoration:underline}
 .sidebar li a{display:block;padding:3px 16px;font-size:13px;color:#24292e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sidebar li a:hover{background:#e1e4e8;text-decoration:none}
 .sidebar li a.active{background:#0366d6;color:#fff;border-radius:0}
+.sidebar-folder{font-size:10px;font-weight:600;color:#959da5;text-transform:uppercase;letter-spacing:.4px;padding:6px 16px 1px;margin-top:4px}
 .content{flex:1;padding:32px 48px;max-width:900px;min-width:0}
 h1{font-size:26px;margin-bottom:8px;line-height:1.3}
 h2{font-size:18px;margin:28px 0 10px;padding-bottom:6px;border-bottom:1px solid #e1e4e8}
@@ -87,17 +89,18 @@ pub fn write_html_output(
 ) -> Result<()> {
     std::fs::create_dir_all(output_dir)?;
 
-    let class_names: Vec<&str> = class_contexts
+    // (name, folder) pairs — used for sidebar grouping and cross-link generation.
+    let class_items: Vec<(&str, &str)> = class_contexts
         .iter()
-        .map(|c| c.metadata.class_name.as_str())
+        .map(|c| (c.metadata.class_name.as_str(), c.folder.as_str()))
         .collect();
-    let trigger_names: Vec<&str> = trigger_contexts
+    let trigger_items: Vec<(&str, &str)> = trigger_contexts
         .iter()
-        .map(|c| c.metadata.trigger_name.as_str())
+        .map(|c| (c.metadata.trigger_name.as_str(), c.folder.as_str()))
         .collect();
 
     for ctx in class_contexts {
-        let page = render_class_page(ctx, &class_names, &trigger_names);
+        let page = render_class_page(ctx, &class_items, &trigger_items);
         std::fs::write(
             output_dir.join(format!("{}.html", ctx.metadata.class_name)),
             page,
@@ -105,7 +108,7 @@ pub fn write_html_output(
     }
 
     for ctx in trigger_contexts {
-        let page = render_trigger_page(ctx, &class_names, &trigger_names);
+        let page = render_trigger_page(ctx, &class_items, &trigger_items);
         std::fs::write(
             output_dir.join(format!("{}.html", ctx.metadata.trigger_name)),
             page,
@@ -115,8 +118,8 @@ pub fn write_html_output(
     let index = render_index(
         class_contexts,
         trigger_contexts,
-        &class_names,
-        &trigger_names,
+        &class_items,
+        &trigger_items,
     );
     std::fs::write(output_dir.join("index.html"), index)?;
 
@@ -127,7 +130,13 @@ pub fn write_html_output(
 // Page renderers
 // ---------------------------------------------------------------------------
 
-fn render_class_page(ctx: &RenderContext, class_names: &[&str], trigger_names: &[&str]) -> String {
+fn render_class_page(
+    ctx: &RenderContext,
+    class_items: &[(&str, &str)],
+    trigger_items: &[(&str, &str)],
+) -> String {
+    let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
+    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.class_name;
@@ -310,16 +319,18 @@ fn render_class_page(ctx: &RenderContext, class_names: &[&str], trigger_names: &
         "sfdoc",
         &body,
         active,
-        class_names,
-        trigger_names,
+        class_items,
+        trigger_items,
     )
 }
 
 fn render_trigger_page(
     ctx: &TriggerRenderContext,
-    class_names: &[&str],
-    trigger_names: &[&str],
+    class_items: &[(&str, &str)],
+    trigger_items: &[(&str, &str)],
 ) -> String {
+    let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
+    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.trigger_name;
@@ -428,16 +439,16 @@ fn render_trigger_page(
         "sfdoc",
         &body,
         active,
-        class_names,
-        trigger_names,
+        class_items,
+        trigger_items,
     )
 }
 
 fn render_index(
     class_contexts: &[RenderContext],
     trigger_contexts: &[TriggerRenderContext],
-    class_names: &[&str],
-    trigger_names: &[&str],
+    class_items: &[(&str, &str)],
+    trigger_items: &[(&str, &str)],
 ) -> String {
     let mut body = String::new();
     body.push_str("<h1>Apex Documentation</h1>\n");
@@ -448,40 +459,74 @@ fn render_index(
     ));
 
     if !class_contexts.is_empty() {
-        body.push_str("<h2>Classes</h2>\n");
-        body.push_str("<table><thead><tr><th>Class</th><th>Summary</th></tr></thead><tbody>\n");
-        let mut sorted_classes: Vec<&RenderContext> = class_contexts.iter().collect();
-        sorted_classes.sort_by(|a, b| a.documentation.class_name.cmp(&b.documentation.class_name));
-        for ctx in sorted_classes {
-            body.push_str(&format!(
-                "<tr><td><a href=\"{}.html\">{}</a></td><td>{}</td></tr>\n",
-                escape(&ctx.metadata.class_name),
-                escape(&ctx.documentation.class_name),
-                escape(&ctx.documentation.summary),
-            ));
+        // Group classes by folder.
+        let mut class_by_folder: BTreeMap<&str, Vec<&RenderContext>> = BTreeMap::new();
+        for ctx in class_contexts {
+            class_by_folder
+                .entry(ctx.folder.as_str())
+                .or_default()
+                .push(ctx);
         }
-        body.push_str("</tbody></table>\n");
+        for group in class_by_folder.values_mut() {
+            group.sort_by(|a, b| a.documentation.class_name.cmp(&b.documentation.class_name));
+        }
+
+        body.push_str("<h2>Classes</h2>\n");
+        let multi_folder = class_by_folder.len() > 1;
+        for (folder, classes) in &class_by_folder {
+            if multi_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                body.push_str(&format!("<h3>{}</h3>\n", escape(label)));
+            }
+            body.push_str("<table><thead><tr><th>Class</th><th>Summary</th></tr></thead><tbody>\n");
+            for ctx in classes {
+                body.push_str(&format!(
+                    "<tr><td><a href=\"{}.html\">{}</a></td><td>{}</td></tr>\n",
+                    escape(&ctx.metadata.class_name),
+                    escape(&ctx.documentation.class_name),
+                    escape(&ctx.documentation.summary),
+                ));
+            }
+            body.push_str("</tbody></table>\n");
+        }
     }
 
     if !trigger_contexts.is_empty() {
-        body.push_str("<h2>Triggers</h2>\n");
-        body.push_str("<table><thead><tr><th>Trigger</th><th>SObject</th><th>Summary</th></tr></thead><tbody>\n");
-        let mut sorted_triggers: Vec<&TriggerRenderContext> = trigger_contexts.iter().collect();
-        sorted_triggers.sort_by(|a, b| {
-            a.documentation
-                .trigger_name
-                .cmp(&b.documentation.trigger_name)
-        });
-        for ctx in sorted_triggers {
-            body.push_str(&format!(
-                "<tr><td><a href=\"{}.html\">{}</a></td><td><code>{}</code></td><td>{}</td></tr>\n",
-                escape(&ctx.metadata.trigger_name),
-                escape(&ctx.documentation.trigger_name),
-                escape(&ctx.documentation.sobject),
-                escape(&ctx.documentation.summary),
-            ));
+        // Group triggers by folder.
+        let mut trigger_by_folder: BTreeMap<&str, Vec<&TriggerRenderContext>> = BTreeMap::new();
+        for ctx in trigger_contexts {
+            trigger_by_folder
+                .entry(ctx.folder.as_str())
+                .or_default()
+                .push(ctx);
         }
-        body.push_str("</tbody></table>\n");
+        for group in trigger_by_folder.values_mut() {
+            group.sort_by(|a, b| {
+                a.documentation
+                    .trigger_name
+                    .cmp(&b.documentation.trigger_name)
+            });
+        }
+
+        body.push_str("<h2>Triggers</h2>\n");
+        let multi_folder = trigger_by_folder.len() > 1;
+        for (folder, triggers) in &trigger_by_folder {
+            if multi_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                body.push_str(&format!("<h3>{}</h3>\n", escape(label)));
+            }
+            body.push_str("<table><thead><tr><th>Trigger</th><th>SObject</th><th>Summary</th></tr></thead><tbody>\n");
+            for ctx in triggers {
+                body.push_str(&format!(
+                    "<tr><td><a href=\"{}.html\">{}</a></td><td><code>{}</code></td><td>{}</td></tr>\n",
+                    escape(&ctx.metadata.trigger_name),
+                    escape(&ctx.documentation.trigger_name),
+                    escape(&ctx.documentation.sobject),
+                    escape(&ctx.documentation.summary),
+                ));
+            }
+            body.push_str("</tbody></table>\n");
+        }
     }
 
     wrap_page(
@@ -489,8 +534,8 @@ fn render_index(
         "sfdoc",
         &body,
         "Overview",
-        class_names,
-        trigger_names,
+        class_items,
+        trigger_items,
     )
 }
 
@@ -503,10 +548,10 @@ fn wrap_page(
     brand: &str,
     body: &str,
     active: &str,
-    class_names: &[&str],
-    trigger_names: &[&str],
+    class_items: &[(&str, &str)],
+    trigger_items: &[(&str, &str)],
 ) -> String {
-    let sidebar = render_sidebar(class_names, trigger_names, active);
+    let sidebar = render_sidebar(class_items, trigger_items, active);
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">
@@ -529,47 +574,90 @@ fn wrap_page(
     )
 }
 
-fn render_sidebar(class_names: &[&str], trigger_names: &[&str], active: &str) -> String {
+fn render_sidebar(
+    class_items: &[(&str, &str)],
+    trigger_items: &[(&str, &str)],
+    active: &str,
+) -> String {
     let mut s = String::new();
     s.push_str("<nav class=\"sidebar\">\n");
     s.push_str("<a class=\"sidebar-brand\" href=\"index.html\">sfdoc</a>\n");
 
-    if !class_names.is_empty() {
+    if !class_items.is_empty() {
+        // Group by folder (BTreeMap gives alphabetical folder order).
+        let mut by_folder: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for &(name, folder) in class_items {
+            by_folder.entry(folder).or_default().push(name);
+        }
+        for names in by_folder.values_mut() {
+            names.sort_unstable();
+        }
+
         s.push_str("<div class=\"sidebar-section\">\n");
         s.push_str("<div class=\"sidebar-heading\">Classes</div>\n");
-        s.push_str("<ul>\n");
-        for name in class_names {
-            let cls = if *name == active {
-                " class=\"active\""
-            } else {
-                ""
-            };
-            s.push_str(&format!(
-                "<li><a href=\"{}.html\"{cls}>{}</a></li>\n",
-                name,
-                escape(name)
-            ));
+        let multi_folder = by_folder.len() > 1;
+        for (folder, names) in &by_folder {
+            if multi_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                s.push_str(&format!(
+                    "<div class=\"sidebar-folder\">{}</div>\n",
+                    escape(label)
+                ));
+            }
+            s.push_str("<ul>\n");
+            for name in names {
+                let cls = if *name == active {
+                    " class=\"active\""
+                } else {
+                    ""
+                };
+                s.push_str(&format!(
+                    "<li><a href=\"{}.html\"{cls}>{}</a></li>\n",
+                    name,
+                    escape(name)
+                ));
+            }
+            s.push_str("</ul>\n");
         }
-        s.push_str("</ul>\n</div>\n");
+        s.push_str("</div>\n");
     }
 
-    if !trigger_names.is_empty() {
+    if !trigger_items.is_empty() {
+        let mut by_folder: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for &(name, folder) in trigger_items {
+            by_folder.entry(folder).or_default().push(name);
+        }
+        for names in by_folder.values_mut() {
+            names.sort_unstable();
+        }
+
         s.push_str("<div class=\"sidebar-section\">\n");
         s.push_str("<div class=\"sidebar-heading\">Triggers</div>\n");
-        s.push_str("<ul>\n");
-        for name in trigger_names {
-            let cls = if *name == active {
-                " class=\"active\""
-            } else {
-                ""
-            };
-            s.push_str(&format!(
-                "<li><a href=\"{}.html\"{cls}>{}</a></li>\n",
-                name,
-                escape(name)
-            ));
+        let multi_folder = by_folder.len() > 1;
+        for (folder, names) in &by_folder {
+            if multi_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                s.push_str(&format!(
+                    "<div class=\"sidebar-folder\">{}</div>\n",
+                    escape(label)
+                ));
+            }
+            s.push_str("<ul>\n");
+            for name in names {
+                let cls = if *name == active {
+                    " class=\"active\""
+                } else {
+                    ""
+                };
+                s.push_str(&format!(
+                    "<li><a href=\"{}.html\"{cls}>{}</a></li>\n",
+                    name,
+                    escape(name)
+                ));
+            }
+            s.push_str("</ul>\n");
         }
-        s.push_str("</ul>\n</div>\n");
+        s.push_str("</div>\n");
     }
 
     s.push_str("</nav>\n");

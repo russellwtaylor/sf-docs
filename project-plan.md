@@ -44,10 +44,10 @@ todos:
       status: done
     - id: namespace-grouping
       content: "Phase 14: Group index by namespace/folder structure instead of flat alphabetical list"
-      status: pending
+      status: done
     - id: e2e-test
       content: "Phase 15: End-to-end integration tests — fixture .cls files, mock HTTP server, full pipeline assertions"
-      status: pending
+      status: done
     - id: flows
       content: "Phase 16: Salesforce Flow documentation — XML scanner, structural parser, AI prompt, flow renderer"
       status: pending
@@ -247,25 +247,19 @@ sfdoc/
 - **`cache.update` takes `&str`** — removes one redundant `String` allocation per file processed
 - **Scanner `filter_entry`** — prunes known noise directories early in directory traversal
 
+### Phase 13: Namespace / Folder Grouping in Index ✅
+
+- `folder: String` added to `RenderContext` and `TriggerRenderContext` — derived at build time from the relative path between `--source-dir` and each file's parent directory
+- Markdown index groups classes and triggers by folder under `###` subsections, sorted alphabetically; single-folder projects render flat (no extra heading)
+- HTML index groups with `<h3>` headings per folder group
+- HTML sidebar groups entries by folder with subtle uppercase folder labels; single-folder projects remain flat
+- Markdown output defaults to `docs/`, HTML output defaults to `site/` — both formats coexist without overwriting each other; `--output` overrides the default for either format
+
 ---
 
 ## Upcoming Phases
 
-### Phase 13: Namespace / Folder Grouping in Index
-
-**Goal:** Replace the flat alphabetical class table in `index.md`/`index.html` with a grouped view organised by the subfolder structure under `--source-dir`.
-
-**Design:**
-- Derive the group name from the relative path segment between `--source-dir` and the file (e.g. `services/`, `controllers/`, `models/`)
-- Files directly under `--source-dir` fall into an "Uncategorised" or top-level group
-- Groups sorted alphabetically; files within each group sorted alphabetically
-- Applies to both Markdown and HTML renderers
-
-**Impact:** Large projects with hundreds of classes become significantly easier to navigate.
-
----
-
-### Phase 14: End-to-End Integration Tests
+### Phase 15: End-to-End Integration Tests
 
 **Goal:** Provide a full-pipeline integration test suite that catches regressions without requiring a live AI API.
 
@@ -279,7 +273,7 @@ sfdoc/
 
 ---
 
-### Phase 15: Salesforce Flow Documentation
+### Phase 16: Salesforce Flow Documentation
 
 **Goal:** Generate AI documentation for Salesforce Flows (`.flow-meta.xml` files), making the tool useful beyond Apex.
 
@@ -313,7 +307,7 @@ With no flags, scans for `.cls`, `.trigger`, and `.flow-meta.xml` files automati
 
 ---
 
-### Phase 16: Validation Rule Documentation
+### Phase 17: Validation Rule Documentation
 
 **Goal:** Generate AI documentation for Salesforce Validation Rules, giving admins and developers a plain-English explanation of each rule's formula and business intent.
 

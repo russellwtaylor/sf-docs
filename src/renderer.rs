@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -12,12 +12,17 @@ pub struct RenderContext {
     pub metadata: ClassMetadata,
     pub documentation: ClassDocumentation,
     pub all_names: Arc<AllNames>,
+    /// Relative path from the source directory to this file's parent directory.
+    /// Used to group the index by namespace/folder (e.g. `"classes"`, `"classes/account"`).
+    pub folder: String,
 }
 
 pub struct TriggerRenderContext {
     pub metadata: TriggerMetadata,
     pub documentation: TriggerDocumentation,
     pub all_names: Arc<AllNames>,
+    /// Relative path from the source directory to this file's parent directory.
+    pub folder: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -280,41 +285,75 @@ pub fn render_index(
         trigger_contexts.len(),
     ));
 
-    let mut sorted_classes: Vec<&RenderContext> = class_contexts.iter().collect();
-    sorted_classes.sort_by(|a, b| a.documentation.class_name.cmp(&b.documentation.class_name));
+    // Group classes by folder, sorted alphabetically within each group.
+    let mut class_by_folder: BTreeMap<&str, Vec<&RenderContext>> = BTreeMap::new();
+    for ctx in class_contexts {
+        class_by_folder
+            .entry(ctx.folder.as_str())
+            .or_default()
+            .push(ctx);
+    }
+    for group in class_by_folder.values_mut() {
+        group.sort_by(|a, b| a.documentation.class_name.cmp(&b.documentation.class_name));
+    }
 
     out.push_str("## Classes\n\n");
-    out.push_str("| Class | Summary |\n");
-    out.push_str("|-------|---------|\n");
-    for ctx in &sorted_classes {
-        out.push_str(&format!(
-            "| [{}]({}.md) | {} |\n",
-            ctx.documentation.class_name, ctx.documentation.class_name, ctx.documentation.summary
-        ));
-    }
-    out.push('\n');
-
-    if !trigger_contexts.is_empty() {
-        let mut sorted_triggers: Vec<&TriggerRenderContext> = trigger_contexts.iter().collect();
-        sorted_triggers.sort_by(|a, b| {
-            a.documentation
-                .trigger_name
-                .cmp(&b.documentation.trigger_name)
-        });
-
-        out.push_str("## Triggers\n\n");
-        out.push_str("| Trigger | SObject | Summary |\n");
-        out.push_str("|---------|---------|--------|\n");
-        for ctx in &sorted_triggers {
+    let multi_class_folder = class_by_folder.len() > 1;
+    for (folder, classes) in &class_by_folder {
+        if multi_class_folder {
+            let label = if folder.is_empty() { "(root)" } else { folder };
+            out.push_str(&format!("### {label}\n\n"));
+        }
+        out.push_str("| Class | Summary |\n");
+        out.push_str("|-------|---------|\n");
+        for ctx in classes {
             out.push_str(&format!(
-                "| [{}]({}.md) | `{}` | {} |\n",
-                ctx.documentation.trigger_name,
-                ctx.documentation.trigger_name,
-                ctx.documentation.sobject,
-                ctx.documentation.summary,
+                "| [{}]({}.md) | {} |\n",
+                ctx.documentation.class_name,
+                ctx.documentation.class_name,
+                ctx.documentation.summary
             ));
         }
         out.push('\n');
+    }
+
+    if !trigger_contexts.is_empty() {
+        // Group triggers by folder, sorted within each group.
+        let mut trigger_by_folder: BTreeMap<&str, Vec<&TriggerRenderContext>> = BTreeMap::new();
+        for ctx in trigger_contexts {
+            trigger_by_folder
+                .entry(ctx.folder.as_str())
+                .or_default()
+                .push(ctx);
+        }
+        for group in trigger_by_folder.values_mut() {
+            group.sort_by(|a, b| {
+                a.documentation
+                    .trigger_name
+                    .cmp(&b.documentation.trigger_name)
+            });
+        }
+
+        out.push_str("## Triggers\n\n");
+        let multi_trigger_folder = trigger_by_folder.len() > 1;
+        for (folder, triggers) in &trigger_by_folder {
+            if multi_trigger_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                out.push_str(&format!("### {label}\n\n"));
+            }
+            out.push_str("| Trigger | SObject | Summary |\n");
+            out.push_str("|---------|---------|--------|\n");
+            for ctx in triggers {
+                out.push_str(&format!(
+                    "| [{}]({}.md) | `{}` | {} |\n",
+                    ctx.documentation.trigger_name,
+                    ctx.documentation.trigger_name,
+                    ctx.documentation.sobject,
+                    ctx.documentation.summary,
+                ));
+            }
+            out.push('\n');
+        }
     }
 
     out
@@ -464,6 +503,7 @@ mod tests {
                 class_names: vec!["AccountService".to_string(), "AccountRepository".to_string()],
                 trigger_names: vec![],
             }),
+            folder: "classes".to_string(),
         }
     }
 
