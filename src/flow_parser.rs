@@ -151,12 +151,10 @@ pub fn parse_flow(api_name: &str, source: &str) -> Result<FlowMetadata> {
                         }
                     }
                     // Record operation object
-                    (gp, "object")
-                        if matches!(
-                            gp,
-                            "recordLookups" | "recordCreates" | "recordUpdates" | "recordDeletes"
-                        ) =>
-                    {
+                    (
+                        "recordLookups" | "recordCreates" | "recordUpdates" | "recordDeletes",
+                        "object",
+                    ) => {
                         if let Some(op) = &mut current_record_op {
                             op.object = text;
                         }
