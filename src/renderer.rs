@@ -37,6 +37,32 @@ pub struct FlowRenderContext {
 // Public API
 // ---------------------------------------------------------------------------
 
+/// Returns the relative markdown link path from a page of `from_type` to a page named `name`.
+///
+/// `from_type` is one of `"class"`, `"trigger"`, or `"flow"`.
+/// The function inspects `all_names` to determine which type `name` belongs to.
+fn cross_link_md(name: &str, all_names: &AllNames, from_type: &str) -> String {
+    let to_type = if all_names.class_names.iter().any(|n| n == name) {
+        "class"
+    } else if all_names.trigger_names.iter().any(|n| n == name) {
+        "trigger"
+    } else {
+        "flow"
+    };
+
+    let type_dir = match to_type {
+        "class" => "classes",
+        "trigger" => "triggers",
+        _ => "flows",
+    };
+
+    if to_type == from_type {
+        format!("{name}.md")
+    } else {
+        format!("../{type_dir}/{name}.md")
+    }
+}
+
 pub fn render_class_page(ctx: &RenderContext) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
@@ -165,10 +191,10 @@ pub fn render_class_page(ctx: &RenderContext) -> String {
         .iter()
         .filter_map(|rel| {
             // Try to find a known class name in the relationship string
-            known
-                .iter()
-                .find(|&&name| rel.contains(name))
-                .map(|&name| format!("[{}]({}.md) — {}", name, name, rel))
+            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+                let link = cross_link_md(name, &ctx.all_names, "class");
+                format!("[{}]({}) — {}", name, link, rel)
+            })
         })
         .collect();
 
@@ -245,7 +271,8 @@ pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
         out.push_str("## Handler Classes\n\n");
         for cls in &doc.handler_classes {
             if known.contains(cls.as_str()) {
-                out.push_str(&format!("- [{cls}]({cls}.md)\n"));
+                let link = cross_link_md(cls, &ctx.all_names, "trigger");
+                out.push_str(&format!("- [{cls}]({link})\n"));
             } else {
                 out.push_str(&format!("- `{cls}`\n"));
             }
@@ -265,10 +292,10 @@ pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
         .relationships
         .iter()
         .filter_map(|rel| {
-            known
-                .iter()
-                .find(|&&name| rel.contains(name))
-                .map(|&name| format!("[{name}]({name}.md) — {rel}"))
+            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+                let link = cross_link_md(name, &ctx.all_names, "trigger");
+                format!("[{name}]({link}) — {rel}")
+            })
         })
         .collect();
 
@@ -424,10 +451,10 @@ pub fn render_flow_page(ctx: &FlowRenderContext) -> String {
         .relationships
         .iter()
         .filter_map(|rel| {
-            known
-                .iter()
-                .find(|&&name| rel.contains(name))
-                .map(|&name| format!("[{name}]({name}.md) — {rel}"))
+            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+                let link = cross_link_md(name, &ctx.all_names, "flow");
+                format!("[{name}]({link}) — {rel}")
+            })
         })
         .collect();
 
@@ -479,7 +506,7 @@ pub fn render_index(
         out.push_str("|-------|---------|\n");
         for ctx in classes {
             out.push_str(&format!(
-                "| [{}]({}.md) | {} |\n",
+                "| [{}](classes/{}.md) | {} |\n",
                 ctx.documentation.class_name,
                 ctx.documentation.class_name,
                 ctx.documentation.summary
@@ -516,7 +543,7 @@ pub fn render_index(
             out.push_str("|---------|---------|--------|\n");
             for ctx in triggers {
                 out.push_str(&format!(
-                    "| [{}]({}.md) | `{}` | {} |\n",
+                    "| [{}](triggers/{}.md) | `{}` | {} |\n",
                     ctx.documentation.trigger_name,
                     ctx.documentation.trigger_name,
                     ctx.documentation.sobject,
@@ -551,7 +578,7 @@ pub fn render_index(
             out.push_str("|------|--------------|--------|\n");
             for ctx in flows {
                 out.push_str(&format!(
-                    "| [{}]({}.md) | `{}` | {} |\n",
+                    "| [{}](flows/{}.md) | `{}` | {} |\n",
                     ctx.documentation.label,
                     ctx.metadata.api_name,
                     ctx.metadata.process_type,
@@ -581,12 +608,25 @@ pub fn write_output(
         );
     }
 
+    let classes_dir = output_dir.join("classes");
+    let triggers_dir = output_dir.join("triggers");
+    let flows_dir = output_dir.join("flows");
+
     std::fs::create_dir_all(output_dir)?;
+    if !class_contexts.is_empty() {
+        std::fs::create_dir_all(&classes_dir)?;
+    }
+    if !trigger_contexts.is_empty() {
+        std::fs::create_dir_all(&triggers_dir)?;
+    }
+    if !flow_contexts.is_empty() {
+        std::fs::create_dir_all(&flows_dir)?;
+    }
 
     for ctx in class_contexts {
         let page = render_class_page(ctx);
         std::fs::write(
-            output_dir.join(format!("{}.md", ctx.metadata.class_name)),
+            classes_dir.join(format!("{}.md", ctx.metadata.class_name)),
             page,
         )?;
     }
@@ -594,7 +634,7 @@ pub fn write_output(
     for ctx in trigger_contexts {
         let page = render_trigger_page(ctx);
         std::fs::write(
-            output_dir.join(format!("{}.md", ctx.metadata.trigger_name)),
+            triggers_dir.join(format!("{}.md", ctx.metadata.trigger_name)),
             page,
         )?;
     }
@@ -602,7 +642,7 @@ pub fn write_output(
     for ctx in flow_contexts {
         let page = render_flow_page(ctx);
         std::fs::write(
-            output_dir.join(format!("{}.md", ctx.metadata.api_name)),
+            flows_dir.join(format!("{}.md", ctx.metadata.api_name)),
             page,
         )?;
     }
@@ -753,6 +793,7 @@ mod tests {
         let ctx = sample_context();
         let page = render_class_page(&ctx);
         assert!(page.contains("## See Also"));
+        // AccountRepository is also a class, so from a class page the link is same-dir
         assert!(page.contains("[AccountRepository](AccountRepository.md)"));
     }
 
@@ -768,7 +809,7 @@ mod tests {
         let ctx = sample_context();
         let index = render_index(&[ctx], &[], &[]);
         assert!(index.contains("# Apex Documentation Index"));
-        assert!(index.contains("[AccountService](AccountService.md)"));
+        assert!(index.contains("[AccountService](classes/AccountService.md)"));
         assert!(index.contains("Handles account processing operations."));
     }
 
@@ -800,7 +841,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        assert!(tmp.path().join("AccountService.md").exists());
+        assert!(tmp.path().join("classes/AccountService.md").exists());
         assert!(tmp.path().join("index.md").exists());
     }
 }

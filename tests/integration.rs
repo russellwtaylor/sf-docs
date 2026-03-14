@@ -261,16 +261,16 @@ fn full_pipeline_writes_markdown_output() {
 
     // Every class and trigger gets its own page
     assert!(
-        output_dir.join("AccountService.md").exists(),
-        "AccountService.md missing"
+        output_dir.join("classes/AccountService.md").exists(),
+        "classes/AccountService.md missing"
     );
     assert!(
-        output_dir.join("OrderService.md").exists(),
-        "OrderService.md missing"
+        output_dir.join("classes/OrderService.md").exists(),
+        "classes/OrderService.md missing"
     );
     assert!(
-        output_dir.join("AccountTrigger.md").exists(),
-        "AccountTrigger.md missing"
+        output_dir.join("triggers/AccountTrigger.md").exists(),
+        "triggers/AccountTrigger.md missing"
     );
     assert!(output_dir.join("index.md").exists(), "index.md missing");
 }
@@ -311,7 +311,7 @@ fn markdown_class_page_contains_expected_sections() {
     )
     .unwrap();
 
-    let content = std::fs::read_to_string(output_dir.join("AccountService.md")).unwrap();
+    let content = std::fs::read_to_string(output_dir.join("classes/AccountService.md")).unwrap();
     assert!(content.contains("# AccountService"), "missing title");
     assert!(
         content.contains("## Description"),
@@ -360,9 +360,9 @@ fn markdown_index_groups_by_folder() {
 
     let index = renderer::render_index(&class_contexts, &[], &[]);
 
-    // Both classes should be linked
-    assert!(index.contains("[AccountService](AccountService.md)"));
-    assert!(index.contains("[OrderService](OrderService.md)"));
+    // Both classes should be linked with type-prefixed paths
+    assert!(index.contains("[AccountService](classes/AccountService.md)"));
+    assert!(index.contains("[OrderService](classes/OrderService.md)"));
 
     // Multi-folder project → folder headings
     assert!(
@@ -417,12 +417,12 @@ fn full_pipeline_writes_html_output() {
 
     assert!(output_dir.join("index.html").exists(), "index.html missing");
     assert!(
-        output_dir.join("AccountService.html").exists(),
-        "AccountService.html missing"
+        output_dir.join("classes/AccountService.html").exists(),
+        "classes/AccountService.html missing"
     );
     assert!(
-        output_dir.join("OrderService.html").exists(),
-        "OrderService.html missing"
+        output_dir.join("classes/OrderService.html").exists(),
+        "classes/OrderService.html missing"
     );
 }
 
@@ -459,7 +459,7 @@ fn html_page_contains_sidebar_and_content() {
     )
     .unwrap();
 
-    let html = std::fs::read_to_string(tmp.path().join("AccountService.html")).unwrap();
+    let html = std::fs::read_to_string(tmp.path().join("classes/AccountService.html")).unwrap();
     assert!(html.contains("<nav"), "missing nav sidebar");
     assert!(
         html.contains("AccountService"),
@@ -859,15 +859,16 @@ async fn e2e_scan_parse_ai_render_markdown() {
     .unwrap();
 
     // Assert
-    assert!(tmp.path().join("AccountService.md").exists());
-    assert!(tmp.path().join("OrderService.md").exists());
-    assert!(tmp.path().join("AccountTrigger.md").exists());
+    assert!(tmp.path().join("classes/AccountService.md").exists());
+    assert!(tmp.path().join("classes/OrderService.md").exists());
+    assert!(tmp.path().join("triggers/AccountTrigger.md").exists());
     assert!(tmp.path().join("index.md").exists());
 
     let index = std::fs::read_to_string(tmp.path().join("index.md")).unwrap();
     assert!(index.contains("AccountService"));
     assert!(index.contains("AccountTrigger"));
 
-    let account_page = std::fs::read_to_string(tmp.path().join("AccountService.md")).unwrap();
+    let account_page =
+        std::fs::read_to_string(tmp.path().join("classes/AccountService.md")).unwrap();
     assert!(account_page.contains("Summary for AccountService"));
 }

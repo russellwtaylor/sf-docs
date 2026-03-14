@@ -88,7 +88,20 @@ pub fn write_html_output(
     trigger_contexts: &[TriggerRenderContext],
     flow_contexts: &[FlowRenderContext],
 ) -> Result<()> {
+    let classes_dir = output_dir.join("classes");
+    let triggers_dir = output_dir.join("triggers");
+    let flows_dir = output_dir.join("flows");
+
     std::fs::create_dir_all(output_dir)?;
+    if !class_contexts.is_empty() {
+        std::fs::create_dir_all(&classes_dir)?;
+    }
+    if !trigger_contexts.is_empty() {
+        std::fs::create_dir_all(&triggers_dir)?;
+    }
+    if !flow_contexts.is_empty() {
+        std::fs::create_dir_all(&flows_dir)?;
+    }
 
     // (name, folder) pairs — used for sidebar grouping and cross-link generation.
     let class_items: Vec<(&str, &str)> = class_contexts
@@ -107,7 +120,7 @@ pub fn write_html_output(
     for ctx in class_contexts {
         let page = render_class_page(ctx, &class_items, &trigger_items, &flow_items);
         std::fs::write(
-            output_dir.join(format!("{}.html", ctx.metadata.class_name)),
+            classes_dir.join(format!("{}.html", ctx.metadata.class_name)),
             page,
         )?;
     }
@@ -115,7 +128,7 @@ pub fn write_html_output(
     for ctx in trigger_contexts {
         let page = render_trigger_page(ctx, &class_items, &trigger_items, &flow_items);
         std::fs::write(
-            output_dir.join(format!("{}.html", ctx.metadata.trigger_name)),
+            triggers_dir.join(format!("{}.html", ctx.metadata.trigger_name)),
             page,
         )?;
     }
@@ -123,7 +136,7 @@ pub fn write_html_output(
     for ctx in flow_contexts {
         let page = render_flow_page(ctx, &class_items, &trigger_items, &flow_items);
         std::fs::write(
-            output_dir.join(format!("{}.html", ctx.metadata.api_name)),
+            flows_dir.join(format!("{}.html", ctx.metadata.api_name)),
             page,
         )?;
     }
@@ -301,8 +314,7 @@ fn render_class_page(
                 .find(|&&name| rel.contains(name))
                 .map(|&name| {
                     format!(
-                        "<a href=\"{}.html\">{}</a> — {}",
-                        name,
+                        "<a href=\"{name}.html\">{}</a> — {}",
                         escape(name),
                         escape(rel)
                     )
@@ -313,8 +325,7 @@ fn render_class_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"{}.html\">{}</a> — {}",
-                                name,
+                                "<a href=\"../triggers/{name}.html\">{}</a> — {}",
                                 escape(name),
                                 escape(rel)
                             )
@@ -326,8 +337,7 @@ fn render_class_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"{}.html\">{}</a> — {}",
-                                name,
+                                "<a href=\"../flows/{name}.html\">{}</a> — {}",
                                 escape(name),
                                 escape(rel)
                             )
@@ -349,6 +359,7 @@ fn render_class_page(
         "sfdoc",
         &body,
         active,
+        "../",
         class_items,
         trigger_items,
         flow_items,
@@ -409,7 +420,7 @@ fn render_trigger_page(
         for cls in &doc.handler_classes {
             if class_names.contains(&cls.as_str()) {
                 body.push_str(&format!(
-                    "<li><a href=\"{}.html\">{}</a></li>\n",
+                    "<li><a href=\"../classes/{}.html\">{}</a></li>\n",
                     escape(cls),
                     escape(cls)
                 ));
@@ -437,8 +448,7 @@ fn render_trigger_page(
                 .find(|&&name| rel.contains(name))
                 .map(|&name| {
                     format!(
-                        "<a href=\"{}.html\">{}</a> — {}",
-                        name,
+                        "<a href=\"../classes/{name}.html\">{}</a> — {}",
                         escape(name),
                         escape(rel)
                     )
@@ -449,8 +459,7 @@ fn render_trigger_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"{}.html\">{}</a> — {}",
-                                name,
+                                "<a href=\"{name}.html\">{}</a> — {}",
                                 escape(name),
                                 escape(rel)
                             )
@@ -462,8 +471,7 @@ fn render_trigger_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"{}.html\">{}</a> — {}",
-                                name,
+                                "<a href=\"../flows/{name}.html\">{}</a> — {}",
                                 escape(name),
                                 escape(rel)
                             )
@@ -485,6 +493,7 @@ fn render_trigger_page(
         "sfdoc",
         &body,
         active,
+        "../",
         class_items,
         trigger_items,
         flow_items,
@@ -615,8 +624,7 @@ fn render_flow_page(
                 .find(|&&name| rel.contains(name))
                 .map(|&name| {
                     format!(
-                        "<a href=\"{}.html\">{}</a> — {}",
-                        name,
+                        "<a href=\"../classes/{name}.html\">{}</a> — {}",
                         escape(name),
                         escape(rel)
                     )
@@ -627,8 +635,7 @@ fn render_flow_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"{}.html\">{}</a> — {}",
-                                name,
+                                "<a href=\"../triggers/{name}.html\">{}</a> — {}",
                                 escape(name),
                                 escape(rel)
                             )
@@ -640,8 +647,7 @@ fn render_flow_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"{}.html\">{}</a> — {}",
-                                name,
+                                "<a href=\"{name}.html\">{}</a> — {}",
                                 escape(name),
                                 escape(rel)
                             )
@@ -663,6 +669,7 @@ fn render_flow_page(
         "sfdoc",
         &body,
         active,
+        "../",
         class_items,
         trigger_items,
         flow_items,
@@ -709,7 +716,7 @@ fn render_index(
             body.push_str("<table><thead><tr><th>Class</th><th>Summary</th></tr></thead><tbody>\n");
             for ctx in classes {
                 body.push_str(&format!(
-                    "<tr><td><a href=\"{}.html\">{}</a></td><td>{}</td></tr>\n",
+                    "<tr><td><a href=\"classes/{}.html\">{}</a></td><td>{}</td></tr>\n",
                     escape(&ctx.metadata.class_name),
                     escape(&ctx.documentation.class_name),
                     escape(&ctx.documentation.summary),
@@ -746,7 +753,7 @@ fn render_index(
             body.push_str("<table><thead><tr><th>Trigger</th><th>SObject</th><th>Summary</th></tr></thead><tbody>\n");
             for ctx in triggers {
                 body.push_str(&format!(
-                    "<tr><td><a href=\"{}.html\">{}</a></td><td><code>{}</code></td><td>{}</td></tr>\n",
+                    "<tr><td><a href=\"triggers/{}.html\">{}</a></td><td><code>{}</code></td><td>{}</td></tr>\n",
                     escape(&ctx.metadata.trigger_name),
                     escape(&ctx.documentation.trigger_name),
                     escape(&ctx.documentation.sobject),
@@ -780,7 +787,7 @@ fn render_index(
             body.push_str("<table><thead><tr><th>Flow</th><th>Process Type</th><th>Summary</th></tr></thead><tbody>\n");
             for ctx in flows {
                 body.push_str(&format!(
-                    "<tr><td><a href=\"{}.html\">{}</a></td><td><code>{}</code></td><td>{}</td></tr>\n",
+                    "<tr><td><a href=\"flows/{}.html\">{}</a></td><td><code>{}</code></td><td>{}</td></tr>\n",
                     escape(&ctx.metadata.api_name),
                     escape(&ctx.documentation.label),
                     escape(&ctx.metadata.process_type),
@@ -796,6 +803,7 @@ fn render_index(
         "sfdoc",
         &body,
         "Overview",
+        "",
         class_items,
         trigger_items,
         flow_items,
@@ -806,16 +814,18 @@ fn render_index(
 // Helpers
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn wrap_page(
     title: &str,
     brand: &str,
     body: &str,
     active: &str,
+    up_prefix: &str,
     class_items: &[(&str, &str)],
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
 ) -> String {
-    let sidebar = render_sidebar(class_items, trigger_items, flow_items, active);
+    let sidebar = render_sidebar(class_items, trigger_items, flow_items, active, up_prefix);
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">
@@ -843,10 +853,13 @@ fn render_sidebar(
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
     active: &str,
+    up_prefix: &str,
 ) -> String {
     let mut s = String::new();
     s.push_str("<nav class=\"sidebar\">\n");
-    s.push_str("<a class=\"sidebar-brand\" href=\"index.html\">sfdoc</a>\n");
+    s.push_str(&format!(
+        "<a class=\"sidebar-brand\" href=\"{up_prefix}index.html\">sfdoc</a>\n"
+    ));
 
     if !class_items.is_empty() {
         // Group by folder (BTreeMap gives alphabetical folder order).
@@ -877,8 +890,7 @@ fn render_sidebar(
                     ""
                 };
                 s.push_str(&format!(
-                    "<li><a href=\"{}.html\"{cls}>{}</a></li>\n",
-                    name,
+                    "<li><a href=\"{up_prefix}classes/{name}.html\"{cls}>{}</a></li>\n",
                     escape(name)
                 ));
             }
@@ -915,8 +927,7 @@ fn render_sidebar(
                     ""
                 };
                 s.push_str(&format!(
-                    "<li><a href=\"{}.html\"{cls}>{}</a></li>\n",
-                    name,
+                    "<li><a href=\"{up_prefix}triggers/{name}.html\"{cls}>{}</a></li>\n",
                     escape(name)
                 ));
             }
@@ -953,8 +964,7 @@ fn render_sidebar(
                     ""
                 };
                 s.push_str(&format!(
-                    "<li><a href=\"{}.html\"{cls}>{}</a></li>\n",
-                    name,
+                    "<li><a href=\"{up_prefix}flows/{name}.html\"{cls}>{}</a></li>\n",
                     escape(name)
                 ));
             }
