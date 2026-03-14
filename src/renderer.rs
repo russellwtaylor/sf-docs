@@ -45,13 +45,19 @@ pub fn render_class_page(ctx: &RenderContext) -> String {
         out.push_str("| Name | Type | Description |\n");
         out.push_str("|------|------|-------------|\n");
         for prop in &doc.properties {
-            // Find type from metadata
+            // Find type and static flag from metadata
             let prop_type = meta
                 .properties
                 .iter()
                 .find(|p| p.name == prop.name)
-                .map(|p| p.property_type.as_str())
-                .unwrap_or("—");
+                .map(|p| {
+                    if p.is_static {
+                        format!("static {}", p.property_type)
+                    } else {
+                        p.property_type.clone()
+                    }
+                })
+                .unwrap_or_else(|| "—".to_string());
             out.push_str(&format!(
                 "| `{}` | `{}` | {} |\n",
                 prop.name, prop_type, prop.description
@@ -75,12 +81,14 @@ pub fn render_class_page(ctx: &RenderContext) -> String {
                         .iter()
                         .map(|p| format!("{} {}", p.param_type, p.name))
                         .collect();
+                    let static_kw = if m.is_static { "static " } else { "" };
                     format!(
-                        "{} {} {}({})",
+                        "{} {}{}({}): {}",
                         m.access_modifier,
-                        m.return_type,
+                        static_kw,
                         m.name,
-                        params.join(", ")
+                        params.join(", "),
+                        m.return_type,
                     )
                 })
                 .unwrap_or_else(|| method_doc.name.clone());
@@ -262,14 +270,12 @@ mod tests {
                         param_type: "List<Account>".to_string(),
                         name: "accounts".to_string(),
                     }],
-                    existing_comment: None,
                 }],
                 properties: vec![crate::types::PropertyMetadata {
                     name: "repo".to_string(),
                     access_modifier: "private".to_string(),
                     property_type: "AccountRepository".to_string(),
                     is_static: false,
-                    existing_comment: None,
                 }],
                 existing_comments: vec![],
                 references: vec!["AccountRepository".to_string()],
@@ -345,6 +351,22 @@ mod tests {
         assert!(index.contains("# Apex Documentation Index"));
         assert!(index.contains("[AccountService](AccountService.md)"));
         assert!(index.contains("Handles account processing operations."));
+    }
+
+    #[test]
+    fn static_method_shows_static_keyword() {
+        let mut ctx = sample_context();
+        ctx.metadata.methods[0].is_static = true;
+        let page = render_class_page(&ctx);
+        assert!(page.contains("static processAccounts"));
+    }
+
+    #[test]
+    fn static_property_shows_static_keyword() {
+        let mut ctx = sample_context();
+        ctx.metadata.properties[0].is_static = true;
+        let page = render_class_page(&ctx);
+        assert!(page.contains("static AccountRepository"));
     }
 
     #[test]
