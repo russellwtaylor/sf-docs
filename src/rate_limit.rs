@@ -40,9 +40,7 @@ impl RpmLimiter {
             // Sleep until the oldest in-window timestamp ages out, freeing a slot.
             let oldest = *window.front().unwrap();
             let elapsed = now.saturating_duration_since(oldest);
-            let wait = Duration::from_secs(60)
-                .saturating_sub(elapsed)
-                + Duration::from_millis(1);
+            let wait = Duration::from_secs(60).saturating_sub(elapsed) + Duration::from_millis(1);
             drop(window); // Release lock before sleeping so other tasks can check.
             tokio::time::sleep(wait).await;
         }
@@ -93,7 +91,11 @@ mod tests {
         limiter.acquire().await;
 
         let window = limiter.window.lock().await;
-        assert_eq!(window.len(), 2, "window should contain only the two new timestamps");
+        assert_eq!(
+            window.len(),
+            2,
+            "window should contain only the two new timestamps"
+        );
         // All entries should be recent (after the time advance).
         for t in window.iter() {
             // After a 61-second advance, new entries recorded via Instant::now()

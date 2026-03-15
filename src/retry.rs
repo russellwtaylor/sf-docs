@@ -118,10 +118,7 @@ mod tests {
     #[test]
     fn parse_retry_after_header_parses_integer_seconds() {
         let mut headers = HeaderMap::new();
-        headers.insert(
-            reqwest::header::RETRY_AFTER,
-            "30".parse().unwrap(),
-        );
+        headers.insert(reqwest::header::RETRY_AFTER, "30".parse().unwrap());
         assert_eq!(parse_retry_after_header(&headers), Some(31));
     }
 
@@ -161,7 +158,10 @@ mod tests {
     fn retry_delay_body_hint_malformed_falls_back_to_backoff() {
         // "retry in" present but no number before "s" — should fall through to backoff.
         let d = retry_delay_secs(None, "retry in the future sometime", 0);
-        assert!(d >= 2 && d <= 5, "delay {d} should be in backoff range [2, 5]");
+        assert!(
+            d >= 2 && d <= 5,
+            "delay {d} should be in backoff range [2, 5]"
+        );
     }
 
     #[test]
@@ -188,7 +188,10 @@ mod tests {
         for attempt in 0..5 {
             for _ in 0..50 {
                 let d = retry_delay_secs(None, "no hint", attempt);
-                assert!(d > 0, "backoff delay should never be zero (attempt {attempt})");
+                assert!(
+                    d > 0,
+                    "backoff delay should never be zero (attempt {attempt})"
+                );
             }
         }
     }
