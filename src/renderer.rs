@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use crate::cli::OutputFormat;
 use crate::types::{
-    AllNames, ClassDocumentation, ClassMetadata, TriggerDocumentation, TriggerMetadata,
+    AllNames, ClassDocumentation, ClassMetadata, FlowDocumentation, FlowMetadata,
+    TriggerDocumentation, TriggerMetadata,
 };
 
 pub struct RenderContext {
@@ -25,9 +26,42 @@ pub struct TriggerRenderContext {
     pub folder: String,
 }
 
+pub struct FlowRenderContext {
+    pub metadata: FlowMetadata,
+    pub documentation: FlowDocumentation,
+    pub all_names: Arc<AllNames>,
+    pub folder: String,
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+/// Returns the relative markdown link path from a page of `from_type` to a page named `name`.
+///
+/// `from_type` is one of `"class"`, `"trigger"`, or `"flow"`.
+/// The function inspects `all_names` to determine which type `name` belongs to.
+fn cross_link_md(name: &str, all_names: &AllNames, from_type: &str) -> String {
+    let to_type = if all_names.class_names.iter().any(|n| n == name) {
+        "class"
+    } else if all_names.trigger_names.iter().any(|n| n == name) {
+        "trigger"
+    } else {
+        "flow"
+    };
+
+    let type_dir = match to_type {
+        "class" => "classes",
+        "trigger" => "triggers",
+        _ => "flows",
+    };
+
+    if to_type == from_type {
+        format!("{name}.md")
+    } else {
+        format!("../{type_dir}/{name}.md")
+    }
+}
 
 pub fn render_class_page(ctx: &RenderContext) -> String {
     let doc = &ctx.documentation;
@@ -37,6 +71,7 @@ pub fn render_class_page(ctx: &RenderContext) -> String {
         .class_names
         .iter()
         .chain(ctx.all_names.trigger_names.iter())
+        .chain(ctx.all_names.flow_names.iter())
         .map(|s| s.as_str())
         .collect();
 
@@ -156,10 +191,10 @@ pub fn render_class_page(ctx: &RenderContext) -> String {
         .iter()
         .filter_map(|rel| {
             // Try to find a known class name in the relationship string
-            known
-                .iter()
-                .find(|&&name| rel.contains(name))
-                .map(|&name| format!("[{}]({}.md) — {}", name, name, rel))
+            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+                let link = cross_link_md(name, &ctx.all_names, "class");
+                format!("[{}]({}) — {}", name, link, rel)
+            })
         })
         .collect();
 
@@ -182,6 +217,7 @@ pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
         .class_names
         .iter()
         .chain(ctx.all_names.trigger_names.iter())
+        .chain(ctx.all_names.flow_names.iter())
         .map(|s| s.as_str())
         .collect();
 
@@ -235,7 +271,8 @@ pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
         out.push_str("## Handler Classes\n\n");
         for cls in &doc.handler_classes {
             if known.contains(cls.as_str()) {
-                out.push_str(&format!("- [{cls}]({cls}.md)\n"));
+                let link = cross_link_md(cls, &ctx.all_names, "trigger");
+                out.push_str(&format!("- [{cls}]({link})\n"));
             } else {
                 out.push_str(&format!("- `{cls}`\n"));
             }
@@ -255,10 +292,169 @@ pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
         .relationships
         .iter()
         .filter_map(|rel| {
-            known
-                .iter()
-                .find(|&&name| rel.contains(name))
-                .map(|&name| format!("[{name}]({name}.md) — {rel}"))
+            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+                let link = cross_link_md(name, &ctx.all_names, "trigger");
+                format!("[{name}]({link}) — {rel}")
+            })
+        })
+        .collect();
+
+    if !see_also.is_empty() {
+        out.push_str("## See Also\n\n");
+        for link in see_also {
+            out.push_str(&format!("- {link}\n"));
+        }
+        out.push('\n');
+    }
+
+    out
+}
+
+pub fn render_flow_page(ctx: &FlowRenderContext) -> String {
+    let doc = &ctx.documentation;
+    let meta = &ctx.metadata;
+    let known: HashSet<&str> = ctx
+        .all_names
+        .class_names
+        .iter()
+        .chain(ctx.all_names.trigger_names.iter())
+        .chain(ctx.all_names.flow_names.iter())
+        .map(|s| s.as_str())
+        .collect();
+
+    let mut out = String::new();
+
+    // Title + subtitle
+    out.push_str(&format!("# {}\n\n", doc.label));
+    out.push_str(&format!("`flow` · `{}`\n\n", meta.process_type));
+
+    // Summary
+    out.push_str(&format!("{}\n\n", doc.summary));
+
+    // Table of Contents
+    out.push_str("## Table of Contents\n\n");
+    out.push_str("- [Description](#description)\n");
+    out.push_str("- [Business Process](#business-process)\n");
+    out.push_str("- [Entry Criteria](#entry-criteria)\n");
+    if !meta.variables.is_empty() {
+        out.push_str("- [Variables](#variables)\n");
+    }
+    if !meta.record_operations.is_empty() {
+        out.push_str("- [Record Operations](#record-operations)\n");
+    }
+    if !meta.action_calls.is_empty() {
+        out.push_str("- [Action Calls](#action-calls)\n");
+    }
+    if meta.decisions > 0 || meta.loops > 0 || meta.screens > 0 {
+        out.push_str("- [Element Counts](#element-counts)\n");
+    }
+    if !doc.key_decisions.is_empty() {
+        out.push_str("- [Key Decisions](#key-decisions)\n");
+    }
+    if !doc.admin_notes.is_empty() {
+        out.push_str("- [Admin Notes](#admin-notes)\n");
+    }
+    out.push('\n');
+
+    // Description
+    out.push_str("## Description\n\n");
+    out.push_str(&doc.description);
+    out.push_str("\n\n");
+
+    // Business Process
+    out.push_str("## Business Process\n\n");
+    out.push_str(&doc.business_process);
+    out.push_str("\n\n");
+
+    // Entry Criteria
+    out.push_str("## Entry Criteria\n\n");
+    out.push_str(&doc.entry_criteria);
+    out.push_str("\n\n");
+
+    // Variables table
+    if !meta.variables.is_empty() {
+        out.push_str("## Variables\n\n");
+        out.push_str("| Name | Type | Direction |\n");
+        out.push_str("|------|------|-----------|\n");
+        for v in &meta.variables {
+            let direction = match (v.is_input, v.is_output) {
+                (true, true) => "Input / Output",
+                (true, false) => "Input",
+                (false, true) => "Output",
+                (false, false) => "Internal",
+            };
+            out.push_str(&format!(
+                "| `{}` | `{}` | {} |\n",
+                v.name, v.data_type, direction
+            ));
+        }
+        out.push('\n');
+    }
+
+    // Record Operations table
+    if !meta.record_operations.is_empty() {
+        out.push_str("## Record Operations\n\n");
+        out.push_str("| Operation | Object |\n");
+        out.push_str("|-----------|--------|\n");
+        for op in &meta.record_operations {
+            out.push_str(&format!("| {} | `{}` |\n", op.operation, op.object));
+        }
+        out.push('\n');
+    }
+
+    // Action Calls table
+    if !meta.action_calls.is_empty() {
+        out.push_str("## Action Calls\n\n");
+        out.push_str("| Action | Type |\n");
+        out.push_str("|--------|------|\n");
+        for action in &meta.action_calls {
+            out.push_str(&format!("| `{}` | {} |\n", action.name, action.action_type));
+        }
+        out.push('\n');
+    }
+
+    // Element Counts
+    if meta.decisions > 0 || meta.loops > 0 || meta.screens > 0 {
+        out.push_str("## Element Counts\n\n");
+        if meta.decisions > 0 {
+            out.push_str(&format!("- Decisions: {}\n", meta.decisions));
+        }
+        if meta.loops > 0 {
+            out.push_str(&format!("- Loops: {}\n", meta.loops));
+        }
+        if meta.screens > 0 {
+            out.push_str(&format!("- Screens: {}\n", meta.screens));
+        }
+        out.push('\n');
+    }
+
+    // Key Decisions
+    if !doc.key_decisions.is_empty() {
+        out.push_str("## Key Decisions\n\n");
+        for d in &doc.key_decisions {
+            out.push_str(&format!("- {d}\n"));
+        }
+        out.push('\n');
+    }
+
+    // Admin Notes
+    if !doc.admin_notes.is_empty() {
+        out.push_str("## Admin Notes\n\n");
+        for note in &doc.admin_notes {
+            out.push_str(&format!("- {note}\n"));
+        }
+        out.push('\n');
+    }
+
+    // See Also (cross-linked relationships)
+    let see_also: Vec<String> = doc
+        .relationships
+        .iter()
+        .filter_map(|rel| {
+            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+                let link = cross_link_md(name, &ctx.all_names, "flow");
+                format!("[{name}]({link}) — {rel}")
+            })
         })
         .collect();
 
@@ -276,13 +472,15 @@ pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
 pub fn render_index(
     class_contexts: &[RenderContext],
     trigger_contexts: &[TriggerRenderContext],
+    flow_contexts: &[FlowRenderContext],
 ) -> String {
     let mut out = String::new();
     out.push_str("# Apex Documentation Index\n\n");
     out.push_str(&format!(
-        "Generated documentation for {} class(es) and {} trigger(s).\n\n",
+        "Generated documentation for {} class(es), {} trigger(s), and {} flow(s).\n\n",
         class_contexts.len(),
         trigger_contexts.len(),
+        flow_contexts.len(),
     ));
 
     // Group classes by folder, sorted alphabetically within each group.
@@ -308,7 +506,7 @@ pub fn render_index(
         out.push_str("|-------|---------|\n");
         for ctx in classes {
             out.push_str(&format!(
-                "| [{}]({}.md) | {} |\n",
+                "| [{}](classes/{}.md) | {} |\n",
                 ctx.documentation.class_name,
                 ctx.documentation.class_name,
                 ctx.documentation.summary
@@ -345,10 +543,45 @@ pub fn render_index(
             out.push_str("|---------|---------|--------|\n");
             for ctx in triggers {
                 out.push_str(&format!(
-                    "| [{}]({}.md) | `{}` | {} |\n",
+                    "| [{}](triggers/{}.md) | `{}` | {} |\n",
                     ctx.documentation.trigger_name,
                     ctx.documentation.trigger_name,
                     ctx.documentation.sobject,
+                    ctx.documentation.summary,
+                ));
+            }
+            out.push('\n');
+        }
+    }
+
+    if !flow_contexts.is_empty() {
+        // Group flows by folder, sorted within each group.
+        let mut flow_by_folder: BTreeMap<&str, Vec<&FlowRenderContext>> = BTreeMap::new();
+        for ctx in flow_contexts {
+            flow_by_folder
+                .entry(ctx.folder.as_str())
+                .or_default()
+                .push(ctx);
+        }
+        for group in flow_by_folder.values_mut() {
+            group.sort_by(|a, b| a.documentation.label.cmp(&b.documentation.label));
+        }
+
+        out.push_str("## Flows\n\n");
+        let multi_flow_folder = flow_by_folder.len() > 1;
+        for (folder, flows) in &flow_by_folder {
+            if multi_flow_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                out.push_str(&format!("### {label}\n\n"));
+            }
+            out.push_str("| Flow | Process Type | Summary |\n");
+            out.push_str("|------|--------------|--------|\n");
+            for ctx in flows {
+                out.push_str(&format!(
+                    "| [{}](flows/{}.md) | `{}` | {} |\n",
+                    ctx.documentation.label,
+                    ctx.metadata.api_name,
+                    ctx.metadata.process_type,
                     ctx.documentation.summary,
                 ));
             }
@@ -364,21 +597,39 @@ pub fn write_output(
     format: &OutputFormat,
     class_contexts: &[RenderContext],
     trigger_contexts: &[TriggerRenderContext],
+    flow_contexts: &[FlowRenderContext],
 ) -> Result<()> {
     if *format == OutputFormat::Html {
         return crate::html_renderer::write_html_output(
             output_dir,
             class_contexts,
             trigger_contexts,
+            flow_contexts,
         );
     }
 
+    let classes_dir = output_dir.join("classes");
+    let triggers_dir = output_dir.join("triggers");
+    let flows_dir = output_dir.join("flows");
+
     std::fs::create_dir_all(output_dir)?;
+    if !class_contexts.is_empty() {
+        std::fs::create_dir_all(&classes_dir)?;
+    }
+    if !trigger_contexts.is_empty() {
+        std::fs::create_dir_all(&triggers_dir)?;
+    }
+    if !flow_contexts.is_empty() {
+        std::fs::create_dir_all(&flows_dir)?;
+    }
 
     for ctx in class_contexts {
         let page = render_class_page(ctx);
         std::fs::write(
-            output_dir.join(format!("{}.md", ctx.metadata.class_name)),
+            classes_dir.join(format!(
+                "{}.md",
+                sanitize_filename(&ctx.metadata.class_name)
+            )),
             page,
         )?;
     }
@@ -386,12 +637,23 @@ pub fn write_output(
     for ctx in trigger_contexts {
         let page = render_trigger_page(ctx);
         std::fs::write(
-            output_dir.join(format!("{}.md", ctx.metadata.trigger_name)),
+            triggers_dir.join(format!(
+                "{}.md",
+                sanitize_filename(&ctx.metadata.trigger_name)
+            )),
             page,
         )?;
     }
 
-    let index = render_index(class_contexts, trigger_contexts);
+    for ctx in flow_contexts {
+        let page = render_flow_page(ctx);
+        std::fs::write(
+            flows_dir.join(format!("{}.md", sanitize_filename(&ctx.metadata.api_name))),
+            page,
+        )?;
+    }
+
+    let index = render_index(class_contexts, trigger_contexts, flow_contexts);
     std::fs::write(output_dir.join("index.md"), index)?;
 
     Ok(())
@@ -400,6 +662,14 @@ pub fn write_output(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Strips any path separators or traversal components from a name used as
+/// an output filename. Only keeps `[a-zA-Z0-9_.-]` characters.
+pub fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, '_' | '.' | '-'))
+        .collect()
+}
 
 fn render_badges(meta: &ClassMetadata) -> String {
     let mut badges = vec![format!("`{}`", meta.access_modifier)];
@@ -502,6 +772,7 @@ mod tests {
             all_names: Arc::new(AllNames {
                 class_names: vec!["AccountService".to_string(), "AccountRepository".to_string()],
                 trigger_names: vec![],
+                flow_names: vec![],
             }),
             folder: "classes".to_string(),
         }
@@ -536,6 +807,7 @@ mod tests {
         let ctx = sample_context();
         let page = render_class_page(&ctx);
         assert!(page.contains("## See Also"));
+        // AccountRepository is also a class, so from a class page the link is same-dir
         assert!(page.contains("[AccountRepository](AccountRepository.md)"));
     }
 
@@ -549,9 +821,9 @@ mod tests {
     #[test]
     fn index_contains_all_classes() {
         let ctx = sample_context();
-        let index = render_index(&[ctx], &[]);
+        let index = render_index(&[ctx], &[], &[]);
         assert!(index.contains("# Apex Documentation Index"));
-        assert!(index.contains("[AccountService](AccountService.md)"));
+        assert!(index.contains("[AccountService](classes/AccountService.md)"));
         assert!(index.contains("Handles account processing operations."));
     }
 
@@ -575,8 +847,15 @@ mod tests {
     fn write_output_creates_files() {
         let tmp = tempfile::TempDir::new().unwrap();
         let ctx = sample_context();
-        write_output(tmp.path(), &crate::cli::OutputFormat::Markdown, &[ctx], &[]).unwrap();
-        assert!(tmp.path().join("AccountService.md").exists());
+        write_output(
+            tmp.path(),
+            &crate::cli::OutputFormat::Markdown,
+            &[ctx],
+            &[],
+            &[],
+        )
+        .unwrap();
+        assert!(tmp.path().join("classes/AccountService.md").exists());
         assert!(tmp.path().join("index.md").exists());
     }
 }

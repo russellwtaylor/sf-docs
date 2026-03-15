@@ -13,6 +13,9 @@ pub struct ApexScanner;
 /// Scans a directory tree for Apex trigger files (`.trigger`).
 pub struct TriggerScanner;
 
+/// Scans a directory tree for Salesforce Flow files (`.flow-meta.xml`).
+pub struct FlowScanner;
+
 /// Returns `true` if WalkDir should descend into (or keep) this entry.
 /// Prunes common noise directories to reduce unnecessary syscalls.
 fn should_visit(entry: &walkdir::DirEntry) -> bool {
@@ -95,6 +98,38 @@ impl FileScanner for TriggerScanner {
             });
         }
 
+        files.sort_by(|a, b| a.filename.cmp(&b.filename));
+        Ok(files)
+    }
+}
+
+impl FileScanner for FlowScanner {
+    fn scan(&self, source_dir: &Path) -> Result<Vec<ApexFile>> {
+        let mut files = Vec::new();
+        for entry in WalkDir::new(source_dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_entry(should_visit)
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let file_name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+            if !file_name.ends_with(".flow-meta.xml") {
+                continue;
+            }
+            let raw_source = std::fs::read_to_string(path)?;
+            files.push(ApexFile {
+                path: path.to_path_buf(),
+                filename: file_name,
+                raw_source,
+            });
+        }
         files.sort_by(|a, b| a.filename.cmp(&b.filename));
         Ok(files)
     }

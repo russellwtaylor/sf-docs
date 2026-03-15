@@ -26,8 +26,8 @@ regex = "1"
 sha2 = "0.10"
 rpassword = "7"
 keyring = "2"
+quick-xml = "0.36"
 
 [dev-dependencies]
 tempfile = "3"
 httpmock = "0.7"
-tokio = { version = "1", features = ["full"] }
