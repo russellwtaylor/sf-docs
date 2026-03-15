@@ -1,6 +1,6 @@
 # sfdoc
 
-> AI-powered documentation for Salesforce projects — Apex classes, triggers, Flows, and validation rules turned into rich, interlinked Markdown or HTML in seconds.
+> AI-powered documentation for Salesforce projects — Apex classes, triggers, Flows, validation rules, custom objects, and Lightning Web Components turned into rich, interlinked Markdown or HTML in seconds.
 
 `sfdoc` is a Rust CLI tool that scans your SFDX project, extracts structural metadata from your Salesforce source files, and uses an AI provider of your choice to generate professional wiki-style documentation. It ships with an incremental build cache so that only changed files ever hit the API.
 
@@ -15,7 +15,7 @@ SFDX project → scan → parse → AI provider → Markdown / HTML output
 
 ## Features
 
-- Discovers `.cls`, `.trigger`, `.flow-meta.xml`, and `.validationRule-meta.xml` files recursively
+- Discovers `.cls`, `.trigger`, `.flow-meta.xml`, `.validationRule-meta.xml`, `.object-meta.xml`, and `.js-meta.xml` (LWC) files recursively
 - Extracts structural metadata (class signatures, methods, properties, ApexDoc comments, trigger events, flow elements, validation formulas) without a full AST
 - Generates rich documentation pages with summaries, parameter tables, usage examples, and cross-links
 - Outputs interlinked **Markdown** pages or a self-contained **HTML** site with sidebar navigation
@@ -108,7 +108,7 @@ Run from the root of your Salesforce project:
 sfdoc generate
 ```
 
-This recursively scans `--source-dir` (default: `force-app/main/default`) for `.cls`, `.trigger`, `.flow-meta.xml`, and `.validationRule-meta.xml` files, then writes Markdown output to `docs/`.
+This recursively scans `--source-dir` (default: `force-app/main/default`) for `.cls`, `.trigger`, `.flow-meta.xml`, `.validationRule-meta.xml`, `.object-meta.xml`, and `.js-meta.xml` (LWC) files, then writes Markdown output to `docs/`.
 
 ## Usage
 
@@ -218,6 +218,10 @@ docs/
     Account_Onboarding_Flow.md                  # One page per flow
   validation-rules/
     Require_Start_Date.md                       # One page per validation rule
+  objects/
+    Account.md                                  # One page per custom object
+  lwc/
+    myComponent.md                              # One page per LWC component
   .sfdoc-cache.json                             # Incremental build cache (do not edit manually)
 ```
 
@@ -234,6 +238,10 @@ site/
     Account_Onboarding_Flow.html
   validation-rules/
     Require_Start_Date.html
+  objects/
+    Account.html
+  lwc/
+    myComponent.html
 ```
 
 Markdown and HTML outputs default to separate directories (`docs/` and `site/`) so both formats can coexist without overwriting each other.
@@ -248,7 +256,7 @@ Markdown and HTML outputs default to separate directories (`docs/` and `site/`) 
 | Properties     | Name, type, description table                                     |
 | Methods        | Signature, description, parameter table, return value, exceptions |
 | Usage examples | Apex code snippets                                                |
-| See Also       | Cross-links to related classes, triggers, flows, and validation rules |
+| See Also       | Cross-links to related classes, triggers, flows, validation rules, objects, and LWC components |
 
 ### Flow pages additionally include
 
@@ -274,6 +282,14 @@ Markdown and HTML outputs default to separate directories (`docs/` and `site/`) 
 | Formula explanation   | Step-by-step walkthrough of each function and condition          |
 | Error message         | The message shown to the user, with the display field if set     |
 | Edge cases            | Noteworthy exceptions or gotchas in the formula logic            |
+
+### LWC component pages additionally include
+
+| Section     | Details                                                                    |
+| ----------- | -------------------------------------------------------------------------- |
+| Public API  | Table of `@api` properties and methods with kind (property/method) column  |
+| Slots       | Named and anonymous (default) slots exposed by the component               |
+| Usage Notes | AI-generated guidance on how to use the component                          |
 
 ## Example workflow
 
@@ -316,10 +332,14 @@ src/
   trigger_parser.rs             Apex trigger structural parser
   flow_parser.rs                Salesforce Flow XML structural parser
   validation_rule_parser.rs     Salesforce Validation Rule XML structural parser
+  object_parser.rs              Custom Object XML structural parser
+  lwc_parser.rs                 LWC @api/slot/component-reference parser
   prompt.rs                     AI prompt construction for classes
   trigger_prompt.rs             AI prompt construction for triggers
   flow_prompt.rs                AI prompt construction for flows
   validation_rule_prompt.rs     AI prompt construction for validation rules
+  object_prompt.rs              AI prompt construction for custom objects
+  lwc_prompt.rs                 AI prompt construction for LWC components
   gemini.rs                     Google Gemini API client
   openai_compat.rs              OpenAI-compatible client (Groq, OpenAI, Ollama)
   retry.rs                      Retry logic with exponential backoff

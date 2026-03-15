@@ -1,6 +1,6 @@
 use sfdoc::{
-    cache, cli, config, flow_parser, gemini, object_parser, openai_compat, parser, providers,
-    renderer, scanner, validation_rule_parser,
+    cache, cli, config, flow_parser, gemini, lwc_parser, object_parser, openai_compat, parser,
+    providers, renderer, scanner, validation_rule_parser,
 };
 use sfdoc::{trigger_parser, types};
 
@@ -19,11 +19,12 @@ use gemini::GeminiClient;
 use openai_compat::OpenAiCompatClient;
 use providers::Provider;
 use scanner::{
-    ApexScanner, FileScanner, FlowScanner, ObjectScanner, TriggerScanner, ValidationRuleScanner,
+    ApexScanner, FileScanner, FlowScanner, LwcScanner, ObjectScanner, TriggerScanner,
+    ValidationRuleScanner,
 };
 use types::{
-    AllNames, ApexFile, ClassDocumentation, FlowDocumentation, ObjectDocumentation,
-    TriggerDocumentation, ValidationRuleDocumentation,
+    AllNames, ApexFile, ClassDocumentation, FlowDocumentation, LwcDocumentation,
+    ObjectDocumentation, TriggerDocumentation, ValidationRuleDocumentation,
 };
 
 /// Unified client enum for dispatch without dynamic dispatch overhead.
@@ -87,6 +88,17 @@ impl DocClient {
             DocClient::OpenAiCompat(c) => c.document_object(file, metadata).await,
         }
     }
+
+    async fn document_lwc(
+        &self,
+        file: &ApexFile,
+        metadata: &types::LwcMetadata,
+    ) -> Result<LwcDocumentation> {
+        match self {
+            DocClient::Gemini(c) => c.document_lwc(file, metadata).await,
+            DocClient::OpenAiCompat(c) => c.document_lwc(file, metadata).await,
+        }
+    }
 }
 
 #[tokio::main]
@@ -145,6 +157,9 @@ async fn main() -> Result<()> {
             let object_files = ObjectScanner.scan(&args.source_dir).with_context(|| {
                 format!("Failed to scan objects in {}", args.source_dir.display())
             })?;
+            let lwc_files = LwcScanner
+                .scan(&args.source_dir)
+                .with_context(|| format!("Failed to scan LWC in {}", args.source_dir.display()))?;
 
             // Require at least one file of any supported type.
             if files.is_empty()
@@ -152,9 +167,10 @@ async fn main() -> Result<()> {
                 && flow_files.is_empty()
                 && vr_files.is_empty()
                 && object_files.is_empty()
+                && lwc_files.is_empty()
             {
                 anyhow::bail!(
-                    "No supported source files found in {} (expected .cls, .trigger, .flow-meta.xml, .validationRule-meta.xml, or .object-meta.xml)",
+                    "No supported source files found in {} (expected .cls, .trigger, .flow-meta.xml, .validationRule-meta.xml, .object-meta.xml, or .js-meta.xml)",
                     args.source_dir.display()
                 );
             }
@@ -178,6 +194,9 @@ async fn main() -> Result<()> {
             }
             if !object_files.is_empty() {
                 println!("Found {} Object file(s)", object_files.len());
+            }
+            if !lwc_files.is_empty() {
+                println!("Found {} LWC component(s)", lwc_files.len());
             }
 
             // Parse classes, triggers, and flows in parallel using rayon.
@@ -207,6 +226,10 @@ async fn main() -> Result<()> {
                 .par_iter()
                 .map(|f| object_parser::parse_object(&f.path, &f.raw_source))
                 .collect::<Result<_>>()?;
+            let lwc_meta: Vec<_> = lwc_files
+                .par_iter()
+                .map(|f| lwc_parser::parse_lwc(&f.path, &f.raw_source))
+                .collect::<Result<_>>()?;
 
             // Wrap in Arc so task closures share the data without cloning raw_source.
             let files = Arc::new(files);
@@ -219,6 +242,8 @@ async fn main() -> Result<()> {
             let vr_meta = Arc::new(vr_meta);
             let object_files = Arc::new(object_files);
             let object_meta = Arc::new(object_meta);
+            let lwc_files = Arc::new(lwc_files);
+            let lwc_meta = Arc::new(lwc_meta);
 
             // Shared cross-linking index
             let all_names = Arc::new(AllNames {
@@ -230,6 +255,7 @@ async fn main() -> Result<()> {
                 flow_names: flow_meta.iter().map(|m| m.api_name.clone()).collect(),
                 validation_rule_names: vr_meta.iter().map(|m| m.rule_name.clone()).collect(),
                 object_names: object_meta.iter().map(|m| m.object_name.clone()).collect(),
+                lwc_names: lwc_meta.iter().map(|m| m.component_name.clone()).collect(),
             });
 
             // Load incremental build cache (empty if --force or first run)
@@ -257,6 +283,10 @@ async fn main() -> Result<()> {
                 .map(|f| cache::hash_source(&f.raw_source))
                 .collect();
             let object_hashes: Vec<String> = object_files
+                .par_iter()
+                .map(|f| cache::hash_source(&f.raw_source))
+                .collect();
+            let lwc_hashes: Vec<String> = lwc_files
                 .par_iter()
                 .map(|f| cache::hash_source(&f.raw_source))
                 .collect();
@@ -315,11 +345,22 @@ async fn main() -> Result<()> {
                 }
             }
 
+            let mut lwc_work: Vec<usize> = Vec::new();
+            let mut lwc_docs: Vec<Option<LwcDocumentation>> = vec![None; lwc_files.len()];
+            for (i, (f, h)) in lwc_files.iter().zip(lwc_hashes.iter()).enumerate() {
+                if let Some(e) = cache.get_lwc_if_fresh(&f.path.to_string_lossy(), h, &model) {
+                    lwc_docs[i] = Some(e.documentation.clone());
+                } else {
+                    lwc_work.push(i);
+                }
+            }
+
             let skipped = (files.len() - class_work.len())
                 + (trigger_files.len() - trigger_work.len())
                 + (flow_files.len() - flow_work.len())
                 + (vr_files.len() - vr_work.len())
-                + (object_files.len() - object_work.len());
+                + (object_files.len() - object_work.len())
+                + (lwc_files.len() - lwc_work.len());
             if skipped > 0 {
                 println!("{skipped} file(s) up-to-date — skipping API calls");
             }
@@ -329,6 +370,7 @@ async fn main() -> Result<()> {
                 || !flow_work.is_empty()
                 || !vr_work.is_empty()
                 || !object_work.is_empty()
+                || !lwc_work.is_empty()
             {
                 let api_key = resolve_api_key(provider)?;
                 let client = match provider {
@@ -351,7 +393,8 @@ async fn main() -> Result<()> {
                     + trigger_work.len()
                     + flow_work.len()
                     + vr_work.len()
-                    + object_work.len()) as u64;
+                    + object_work.len()
+                    + lwc_work.len()) as u64;
                 let pb = Arc::new(ProgressBar::new(total_work));
                 if let Ok(style) = ProgressStyle::with_template(
                     "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
@@ -367,6 +410,7 @@ async fn main() -> Result<()> {
                     Flow(usize, FlowDocumentation),
                     ValidationRule(usize, ValidationRuleDocumentation),
                     Object(usize, ObjectDocumentation),
+                    Lwc(usize, LwcDocumentation),
                 }
 
                 let mut tasks: JoinSet<Result<WorkResult>> = JoinSet::new();
@@ -440,6 +484,18 @@ async fn main() -> Result<()> {
                     });
                 }
 
+                for &idx in &lwc_work {
+                    let client = Arc::clone(&client);
+                    let lwc_files = Arc::clone(&lwc_files);
+                    let lwc_meta = Arc::clone(&lwc_meta);
+                    let pb_task = Arc::clone(&pb);
+                    tasks.spawn(async move {
+                        let doc = client.document_lwc(&lwc_files[idx], &lwc_meta[idx]).await?;
+                        pb_task.inc(1);
+                        Ok(WorkResult::Lwc(idx, doc))
+                    });
+                }
+
                 // Collect results as they complete (not in spawn order).
                 while let Some(res) = tasks.join_next().await {
                     match res {
@@ -496,6 +552,11 @@ async fn main() -> Result<()> {
                                 );
                                 object_docs[idx] = Some(doc);
                             }
+                            WorkResult::Lwc(idx, doc) => {
+                                let key = lwc_files[idx].path.to_string_lossy().into_owned();
+                                cache.update_lwc(key, lwc_hashes[idx].clone(), &model, doc.clone());
+                                lwc_docs[idx] = Some(doc);
+                            }
                         },
                     }
                 }
@@ -532,6 +593,8 @@ async fn main() -> Result<()> {
             let object_files =
                 Arc::try_unwrap(object_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
             let object_meta = Arc::try_unwrap(object_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let lwc_files = Arc::try_unwrap(lwc_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let lwc_meta = Arc::try_unwrap(lwc_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
 
             let class_contexts: Vec<renderer::RenderContext> = files
                 .into_iter()
@@ -603,6 +666,20 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
+            let lwc_contexts: Vec<renderer::LwcRenderContext> = lwc_files
+                .into_iter()
+                .zip(lwc_meta)
+                .zip(lwc_docs)
+                .filter_map(|((file, meta), doc)| {
+                    doc.map(|d| renderer::LwcRenderContext {
+                        folder: compute_folder(&file.path, &args.source_dir),
+                        metadata: meta,
+                        documentation: d,
+                        all_names: Arc::clone(&all_names),
+                    })
+                })
+                .collect();
+
             // Render and write output
             renderer::write_output(
                 &output_dir,
@@ -612,6 +689,7 @@ async fn main() -> Result<()> {
                 &flow_contexts,
                 &vr_contexts,
                 &object_contexts,
+                &lwc_contexts,
             )?;
             println!("Documentation written to {}", output_dir.display());
 

@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use crate::cli::OutputFormat;
 use crate::types::{
-    AllNames, ClassDocumentation, ClassMetadata, FlowDocumentation, FlowMetadata,
-    ObjectDocumentation, ObjectMetadata, TriggerDocumentation, TriggerMetadata,
+    AllNames, ClassDocumentation, ClassMetadata, FlowDocumentation, FlowMetadata, LwcDocumentation,
+    LwcMetadata, ObjectDocumentation, ObjectMetadata, TriggerDocumentation, TriggerMetadata,
     ValidationRuleDocumentation, ValidationRuleMetadata,
 };
 
@@ -49,6 +49,13 @@ pub struct ObjectRenderContext {
     pub folder: String,
 }
 
+pub struct LwcRenderContext {
+    pub metadata: LwcMetadata,
+    pub documentation: LwcDocumentation,
+    pub all_names: Arc<AllNames>,
+    pub folder: String,
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -68,6 +75,8 @@ fn cross_link_md(name: &str, all_names: &AllNames, from_type: &str) -> String {
         "validation_rule"
     } else if all_names.object_names.iter().any(|n| n == name) {
         "object"
+    } else if all_names.lwc_names.iter().any(|n| n == name) {
+        "lwc"
     } else {
         // Unknown name — no link generated (caller filters via `known` set).
         return format!("{name}.md");
@@ -78,6 +87,7 @@ fn cross_link_md(name: &str, all_names: &AllNames, from_type: &str) -> String {
         "trigger" => "triggers",
         "flow" => "flows",
         "object" => "objects",
+        "lwc" => "lwc",
         _ => "validation-rules",
     };
 
@@ -708,22 +718,133 @@ pub fn render_object_page(ctx: &ObjectRenderContext) -> String {
     out
 }
 
+pub fn render_lwc_page(ctx: &LwcRenderContext) -> String {
+    let doc = &ctx.documentation;
+    let meta = &ctx.metadata;
+    let known: std::collections::HashSet<&str> = ctx
+        .all_names
+        .class_names
+        .iter()
+        .chain(ctx.all_names.trigger_names.iter())
+        .chain(ctx.all_names.flow_names.iter())
+        .chain(ctx.all_names.lwc_names.iter())
+        .map(|s| s.as_str())
+        .collect();
+
+    let mut out = String::new();
+
+    // Title + subtitle
+    out.push_str(&format!("# {}\n\n", meta.component_name));
+    out.push_str("`lwc` · `Lightning Web Component`\n\n");
+
+    // Summary
+    out.push_str(&format!("{}\n\n", doc.summary));
+
+    // Table of Contents
+    out.push_str("## Table of Contents\n\n");
+    out.push_str("- [Description](#description)\n");
+    if !doc.api_props.is_empty() {
+        out.push_str("- [Public API](#public-api)\n");
+    }
+    if !meta.slots.is_empty() {
+        out.push_str("- [Slots](#slots)\n");
+    }
+    if !doc.usage_notes.is_empty() {
+        out.push_str("- [Usage Notes](#usage-notes)\n");
+    }
+    out.push('\n');
+
+    // Description
+    out.push_str("## Description\n\n");
+    out.push_str(&doc.description);
+    out.push_str("\n\n");
+
+    // Public API table
+    if !doc.api_props.is_empty() {
+        out.push_str("## Public API\n\n");
+        out.push_str("| Name | Kind | Description |\n");
+        out.push_str("|------|------|-------------|\n");
+        for prop_doc in &doc.api_props {
+            let kind = meta
+                .api_props
+                .iter()
+                .find(|p| p.name == prop_doc.name)
+                .map(|p| if p.is_method { "method" } else { "property" })
+                .unwrap_or("property");
+            out.push_str(&format!(
+                "| `{}` | {} | {} |\n",
+                prop_doc.name, kind, prop_doc.description
+            ));
+        }
+        out.push('\n');
+    }
+
+    // Slots
+    if !meta.slots.is_empty() {
+        out.push_str("## Slots\n\n");
+        out.push_str("| Slot | Description |\n");
+        out.push_str("|------|-------------|\n");
+        for slot in &meta.slots {
+            let label = if slot == "default" {
+                "_(default)_".to_string()
+            } else {
+                format!("`{slot}`")
+            };
+            out.push_str(&format!("| {label} | |\n"));
+        }
+        out.push('\n');
+    }
+
+    // Usage Notes
+    if !doc.usage_notes.is_empty() {
+        out.push_str("## Usage Notes\n\n");
+        for note in &doc.usage_notes {
+            out.push_str(&format!("- {note}\n"));
+        }
+        out.push('\n');
+    }
+
+    // See Also (cross-linked relationships)
+    let see_also: Vec<String> = doc
+        .relationships
+        .iter()
+        .filter_map(|rel| {
+            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+                let link = cross_link_md(name, &ctx.all_names, "lwc");
+                format!("[{name}]({link}) — {rel}")
+            })
+        })
+        .collect();
+
+    if !see_also.is_empty() {
+        out.push_str("## See Also\n\n");
+        for link in see_also {
+            out.push_str(&format!("- {link}\n"));
+        }
+        out.push('\n');
+    }
+
+    out
+}
+
 pub fn render_index(
     class_contexts: &[RenderContext],
     trigger_contexts: &[TriggerRenderContext],
     flow_contexts: &[FlowRenderContext],
     validation_rule_contexts: &[ValidationRuleRenderContext],
     object_contexts: &[ObjectRenderContext],
+    lwc_contexts: &[LwcRenderContext],
 ) -> String {
     let mut out = String::new();
     out.push_str("# Apex Documentation Index\n\n");
     out.push_str(&format!(
-        "Generated documentation for {} class(es), {} trigger(s), {} flow(s), {} validation rule(s), and {} object(s).\n\n",
+        "Generated documentation for {} class(es), {} trigger(s), {} flow(s), {} validation rule(s), {} object(s), and {} LWC component(s).\n\n",
         class_contexts.len(),
         trigger_contexts.len(),
         flow_contexts.len(),
         validation_rule_contexts.len(),
         object_contexts.len(),
+        lwc_contexts.len(),
     ));
 
     // Group classes by folder, sorted alphabetically within each group.
@@ -898,9 +1019,44 @@ pub fn render_index(
         out.push('\n');
     }
 
+    if !lwc_contexts.is_empty() {
+        let mut lwc_by_folder: BTreeMap<&str, Vec<&LwcRenderContext>> = BTreeMap::new();
+        for ctx in lwc_contexts {
+            lwc_by_folder
+                .entry(ctx.folder.as_str())
+                .or_default()
+                .push(ctx);
+        }
+        for group in lwc_by_folder.values_mut() {
+            group.sort_by(|a, b| a.metadata.component_name.cmp(&b.metadata.component_name));
+        }
+
+        out.push_str("## Lightning Web Components\n\n");
+        let multi_lwc_folder = lwc_by_folder.len() > 1;
+        for (folder, components) in &lwc_by_folder {
+            if multi_lwc_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                out.push_str(&format!("### {label}\n\n"));
+            }
+            out.push_str("| Component | @api Props | Summary |\n");
+            out.push_str("|-----------|------------|---------|\n");
+            for ctx in components {
+                out.push_str(&format!(
+                    "| [{}](lwc/{}.md) | {} | {} |\n",
+                    ctx.metadata.component_name,
+                    sanitize_filename(&ctx.metadata.component_name),
+                    ctx.metadata.api_props.len(),
+                    ctx.documentation.summary,
+                ));
+            }
+            out.push('\n');
+        }
+    }
+
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn write_output(
     output_dir: &Path,
     format: &OutputFormat,
@@ -909,6 +1065,7 @@ pub fn write_output(
     flow_contexts: &[FlowRenderContext],
     validation_rule_contexts: &[ValidationRuleRenderContext],
     object_contexts: &[ObjectRenderContext],
+    lwc_contexts: &[LwcRenderContext],
 ) -> Result<()> {
     if *format == OutputFormat::Html {
         return crate::html_renderer::write_html_output(
@@ -918,6 +1075,7 @@ pub fn write_output(
             flow_contexts,
             validation_rule_contexts,
             object_contexts,
+            lwc_contexts,
         );
     }
 
@@ -926,6 +1084,7 @@ pub fn write_output(
     let flows_dir = output_dir.join("flows");
     let vr_dir = output_dir.join("validation-rules");
     let objects_dir = output_dir.join("objects");
+    let lwc_dir = output_dir.join("lwc");
 
     std::fs::create_dir_all(output_dir)?;
     if !class_contexts.is_empty() {
@@ -942,6 +1101,9 @@ pub fn write_output(
     }
     if !object_contexts.is_empty() {
         std::fs::create_dir_all(&objects_dir)?;
+    }
+    if !lwc_contexts.is_empty() {
+        std::fs::create_dir_all(&lwc_dir)?;
     }
 
     for ctx in class_contexts {
@@ -993,12 +1155,24 @@ pub fn write_output(
         )?;
     }
 
+    for ctx in lwc_contexts {
+        let page = render_lwc_page(ctx);
+        std::fs::write(
+            lwc_dir.join(format!(
+                "{}.md",
+                sanitize_filename(&ctx.metadata.component_name)
+            )),
+            page,
+        )?;
+    }
+
     let index = render_index(
         class_contexts,
         trigger_contexts,
         flow_contexts,
         validation_rule_contexts,
         object_contexts,
+        lwc_contexts,
     );
     std::fs::write(output_dir.join("index.md"), index)?;
 
@@ -1121,6 +1295,7 @@ mod tests {
                 flow_names: vec![],
                 validation_rule_names: vec![],
                 object_names: vec![],
+                lwc_names: vec![],
             }),
             folder: "classes".to_string(),
         }
@@ -1169,7 +1344,7 @@ mod tests {
     #[test]
     fn index_contains_all_classes() {
         let ctx = sample_context();
-        let index = render_index(&[ctx], &[], &[], &[], &[]);
+        let index = render_index(&[ctx], &[], &[], &[], &[], &[]);
         assert!(index.contains("# Apex Documentation Index"));
         assert!(index.contains("[AccountService](classes/AccountService.md)"));
         assert!(index.contains("Handles account processing operations."));
@@ -1199,6 +1374,7 @@ mod tests {
             tmp.path(),
             &crate::cli::OutputFormat::Markdown,
             &[ctx],
+            &[],
             &[],
             &[],
             &[],

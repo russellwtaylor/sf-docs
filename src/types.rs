@@ -54,6 +54,7 @@ pub struct AllNames {
     pub flow_names: Vec<String>,
     pub validation_rule_names: Vec<String>,
     pub object_names: Vec<String>,
+    pub lwc_names: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -269,5 +270,47 @@ pub struct ValidationRuleDocumentation {
     pub what_protects: String,
     pub formula_explanation: String,
     pub edge_cases: Vec<String>,
+    pub relationships: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// LWC types
+// ---------------------------------------------------------------------------
+
+/// A single `@api`-decorated property or method on a Lightning Web Component.
+#[derive(Debug, Clone, Default)]
+pub struct LwcApiProp {
+    pub name: String,
+    /// `true` if this is an `@api` method rather than a property.
+    pub is_method: bool,
+}
+
+/// Structural metadata extracted from a Lightning Web Component.
+#[derive(Debug, Clone, Default)]
+pub struct LwcMetadata {
+    pub component_name: String,
+    /// All `@api` properties and methods exposed by the component.
+    pub api_props: Vec<LwcApiProp>,
+    /// Slot names declared in the HTML template (`"default"` for anonymous slots).
+    pub slots: Vec<String>,
+    /// camelCase names of child `<c-*>` components referenced in the template.
+    pub referenced_components: Vec<String>,
+}
+
+/// AI-generated documentation for a Lightning Web Component property or method.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct LwcPropDocumentation {
+    pub name: String,
+    pub description: String,
+}
+
+/// AI-generated documentation for a Lightning Web Component.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct LwcDocumentation {
+    pub component_name: String,
+    pub summary: String,
+    pub description: String,
+    pub api_props: Vec<LwcPropDocumentation>,
+    pub usage_notes: Vec<String>,
     pub relationships: Vec<String>,
 }
