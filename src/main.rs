@@ -1,6 +1,6 @@
 use sfdoc::{
-    cache, cli, config, flow_parser, gemini, openai_compat, parser, providers, renderer, scanner,
-    validation_rule_parser,
+    cache, cli, config, flow_parser, gemini, object_parser, openai_compat, parser, providers,
+    renderer, scanner, validation_rule_parser,
 };
 use sfdoc::{trigger_parser, types};
 
@@ -18,10 +18,12 @@ use config::{delete_api_key, has_stored_key, resolve_api_key, save_api_key};
 use gemini::GeminiClient;
 use openai_compat::OpenAiCompatClient;
 use providers::Provider;
-use scanner::{ApexScanner, FileScanner, FlowScanner, TriggerScanner, ValidationRuleScanner};
+use scanner::{
+    ApexScanner, FileScanner, FlowScanner, ObjectScanner, TriggerScanner, ValidationRuleScanner,
+};
 use types::{
-    AllNames, ApexFile, ClassDocumentation, FlowDocumentation, TriggerDocumentation,
-    ValidationRuleDocumentation,
+    AllNames, ApexFile, ClassDocumentation, FlowDocumentation, ObjectDocumentation,
+    TriggerDocumentation, ValidationRuleDocumentation,
 };
 
 /// Unified client enum for dispatch without dynamic dispatch overhead.
@@ -72,6 +74,17 @@ impl DocClient {
         match self {
             DocClient::Gemini(c) => c.document_validation_rule(file, metadata).await,
             DocClient::OpenAiCompat(c) => c.document_validation_rule(file, metadata).await,
+        }
+    }
+
+    async fn document_object(
+        &self,
+        file: &ApexFile,
+        metadata: &types::ObjectMetadata,
+    ) -> Result<ObjectDocumentation> {
+        match self {
+            DocClient::Gemini(c) => c.document_object(file, metadata).await,
+            DocClient::OpenAiCompat(c) => c.document_object(file, metadata).await,
         }
     }
 }
@@ -129,15 +142,19 @@ async fn main() -> Result<()> {
                         args.source_dir.display()
                     )
                 })?;
+            let object_files = ObjectScanner.scan(&args.source_dir).with_context(|| {
+                format!("Failed to scan objects in {}", args.source_dir.display())
+            })?;
 
             // Require at least one file of any supported type.
             if files.is_empty()
                 && trigger_files.is_empty()
                 && flow_files.is_empty()
                 && vr_files.is_empty()
+                && object_files.is_empty()
             {
                 anyhow::bail!(
-                    "No supported source files found in {} (expected .cls, .trigger, .flow-meta.xml, or .validationRule-meta.xml)",
+                    "No supported source files found in {} (expected .cls, .trigger, .flow-meta.xml, .validationRule-meta.xml, or .object-meta.xml)",
                     args.source_dir.display()
                 );
             }
@@ -158,6 +175,9 @@ async fn main() -> Result<()> {
             }
             if !vr_files.is_empty() {
                 println!("Found {} Validation Rule file(s)", vr_files.len());
+            }
+            if !object_files.is_empty() {
+                println!("Found {} Object file(s)", object_files.len());
             }
 
             // Parse classes, triggers, and flows in parallel using rayon.
@@ -183,6 +203,10 @@ async fn main() -> Result<()> {
                 .par_iter()
                 .map(|f| validation_rule_parser::parse_validation_rule(&f.path, &f.raw_source))
                 .collect::<Result<_>>()?;
+            let object_meta: Vec<_> = object_files
+                .par_iter()
+                .map(|f| object_parser::parse_object(&f.path, &f.raw_source))
+                .collect::<Result<_>>()?;
 
             // Wrap in Arc so task closures share the data without cloning raw_source.
             let files = Arc::new(files);
@@ -193,6 +217,8 @@ async fn main() -> Result<()> {
             let flow_meta = Arc::new(flow_meta);
             let vr_files = Arc::new(vr_files);
             let vr_meta = Arc::new(vr_meta);
+            let object_files = Arc::new(object_files);
+            let object_meta = Arc::new(object_meta);
 
             // Shared cross-linking index
             let all_names = Arc::new(AllNames {
@@ -203,6 +229,7 @@ async fn main() -> Result<()> {
                     .collect(),
                 flow_names: flow_meta.iter().map(|m| m.api_name.clone()).collect(),
                 validation_rule_names: vr_meta.iter().map(|m| m.rule_name.clone()).collect(),
+                object_names: object_meta.iter().map(|m| m.object_name.clone()).collect(),
             });
 
             // Load incremental build cache (empty if --force or first run)
@@ -226,6 +253,10 @@ async fn main() -> Result<()> {
                 .map(|f| cache::hash_source(&f.raw_source))
                 .collect();
             let vr_hashes: Vec<String> = vr_files
+                .par_iter()
+                .map(|f| cache::hash_source(&f.raw_source))
+                .collect();
+            let object_hashes: Vec<String> = object_files
                 .par_iter()
                 .map(|f| cache::hash_source(&f.raw_source))
                 .collect();
@@ -274,10 +305,21 @@ async fn main() -> Result<()> {
                 }
             }
 
+            let mut object_work: Vec<usize> = Vec::new();
+            let mut object_docs: Vec<Option<ObjectDocumentation>> = vec![None; object_files.len()];
+            for (i, (f, h)) in object_files.iter().zip(object_hashes.iter()).enumerate() {
+                if let Some(e) = cache.get_object_if_fresh(&f.path.to_string_lossy(), h, &model) {
+                    object_docs[i] = Some(e.documentation.clone());
+                } else {
+                    object_work.push(i);
+                }
+            }
+
             let skipped = (files.len() - class_work.len())
                 + (trigger_files.len() - trigger_work.len())
                 + (flow_files.len() - flow_work.len())
-                + (vr_files.len() - vr_work.len());
+                + (vr_files.len() - vr_work.len())
+                + (object_files.len() - object_work.len());
             if skipped > 0 {
                 println!("{skipped} file(s) up-to-date — skipping API calls");
             }
@@ -286,6 +328,7 @@ async fn main() -> Result<()> {
                 || !trigger_work.is_empty()
                 || !flow_work.is_empty()
                 || !vr_work.is_empty()
+                || !object_work.is_empty()
             {
                 let api_key = resolve_api_key(provider)?;
                 let client = match provider {
@@ -304,9 +347,11 @@ async fn main() -> Result<()> {
                 };
                 let client = Arc::new(client);
 
-                let total_work =
-                    (class_work.len() + trigger_work.len() + flow_work.len() + vr_work.len())
-                        as u64;
+                let total_work = (class_work.len()
+                    + trigger_work.len()
+                    + flow_work.len()
+                    + vr_work.len()
+                    + object_work.len()) as u64;
                 let pb = Arc::new(ProgressBar::new(total_work));
                 if let Ok(style) = ProgressStyle::with_template(
                     "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
@@ -321,6 +366,7 @@ async fn main() -> Result<()> {
                     Trigger(usize, TriggerDocumentation),
                     Flow(usize, FlowDocumentation),
                     ValidationRule(usize, ValidationRuleDocumentation),
+                    Object(usize, ObjectDocumentation),
                 }
 
                 let mut tasks: JoinSet<Result<WorkResult>> = JoinSet::new();
@@ -380,6 +426,20 @@ async fn main() -> Result<()> {
                     });
                 }
 
+                for &idx in &object_work {
+                    let client = Arc::clone(&client);
+                    let object_files = Arc::clone(&object_files);
+                    let object_meta = Arc::clone(&object_meta);
+                    let pb_task = Arc::clone(&pb);
+                    tasks.spawn(async move {
+                        let doc = client
+                            .document_object(&object_files[idx], &object_meta[idx])
+                            .await?;
+                        pb_task.inc(1);
+                        Ok(WorkResult::Object(idx, doc))
+                    });
+                }
+
                 // Collect results as they complete (not in spawn order).
                 while let Some(res) = tasks.join_next().await {
                     match res {
@@ -426,6 +486,16 @@ async fn main() -> Result<()> {
                                 );
                                 vr_docs[idx] = Some(doc);
                             }
+                            WorkResult::Object(idx, doc) => {
+                                let key = object_files[idx].path.to_string_lossy().into_owned();
+                                cache.update_object(
+                                    key,
+                                    object_hashes[idx].clone(),
+                                    &model,
+                                    doc.clone(),
+                                );
+                                object_docs[idx] = Some(doc);
+                            }
                         },
                     }
                 }
@@ -459,6 +529,9 @@ async fn main() -> Result<()> {
             let flow_meta = Arc::try_unwrap(flow_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
             let vr_files = Arc::try_unwrap(vr_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
             let vr_meta = Arc::try_unwrap(vr_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let object_files =
+                Arc::try_unwrap(object_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let object_meta = Arc::try_unwrap(object_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
 
             let class_contexts: Vec<renderer::RenderContext> = files
                 .into_iter()
@@ -516,6 +589,20 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
+            let object_contexts: Vec<renderer::ObjectRenderContext> = object_files
+                .into_iter()
+                .zip(object_meta)
+                .zip(object_docs)
+                .filter_map(|((file, meta), doc)| {
+                    doc.map(|d| renderer::ObjectRenderContext {
+                        folder: compute_folder(&file.path, &args.source_dir),
+                        metadata: meta,
+                        documentation: d,
+                        all_names: Arc::clone(&all_names),
+                    })
+                })
+                .collect();
+
             // Render and write output
             renderer::write_output(
                 &output_dir,
@@ -524,6 +611,7 @@ async fn main() -> Result<()> {
                 &trigger_contexts,
                 &flow_contexts,
                 &vr_contexts,
+                &object_contexts,
             )?;
             println!("Documentation written to {}", output_dir.display());
 

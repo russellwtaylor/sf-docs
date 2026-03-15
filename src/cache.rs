@@ -6,7 +6,8 @@ use std::fmt::Write;
 use std::path::Path;
 
 use crate::types::{
-    ClassDocumentation, FlowDocumentation, TriggerDocumentation, ValidationRuleDocumentation,
+    ClassDocumentation, FlowDocumentation, ObjectDocumentation, TriggerDocumentation,
+    ValidationRuleDocumentation,
 };
 
 const CACHE_FILE: &str = ".sfdoc-cache.json";
@@ -30,6 +31,10 @@ pub struct Cache {
     /// cache files written before validation rule support was added.
     #[serde(default)]
     validation_rule_entries: HashMap<String, ValidationRuleCacheEntry>,
+    /// Object entries are in a separate map so the field can be absent in
+    /// cache files written before object support was added.
+    #[serde(default)]
+    object_entries: HashMap<String, ObjectCacheEntry>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -51,6 +56,13 @@ pub struct ValidationRuleCacheEntry {
     pub hash: String,
     pub model: String,
     pub documentation: ValidationRuleDocumentation,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ObjectCacheEntry {
+    pub hash: String,
+    pub model: String,
+    pub documentation: ObjectDocumentation,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -210,6 +222,36 @@ impl Cache {
         self.validation_rule_entries.insert(
             key,
             ValidationRuleCacheEntry {
+                hash,
+                model: model.to_owned(),
+                documentation,
+            },
+        );
+    }
+
+    /// Returns the cached object entry if hash and model both match.
+    pub fn get_object_if_fresh<'a>(
+        &'a self,
+        key: &str,
+        hash: &str,
+        model: &str,
+    ) -> Option<&'a ObjectCacheEntry> {
+        self.object_entries
+            .get(key)
+            .filter(|e| e.hash == hash && e.model == model)
+    }
+
+    /// Insert or update an object entry after a successful API call.
+    pub fn update_object(
+        &mut self,
+        key: String,
+        hash: String,
+        model: &str,
+        documentation: ObjectDocumentation,
+    ) {
+        self.object_entries.insert(
+            key,
+            ObjectCacheEntry {
                 hash,
                 model: model.to_owned(),
                 documentation,
