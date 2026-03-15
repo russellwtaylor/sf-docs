@@ -1,10 +1,10 @@
 ---
 name: sfdoc CLI Tool
 overview: >
-  Build `sfdoc`, a Rust CLI tool that scans Salesforce project directories
-  for Apex, trigger, Flow, validation-rule, custom object, LWC, and other
-  metadata source files, uses an AI provider to generate rich documentation,
-  and outputs interlinked wiki-style Markdown or self-contained HTML pages.
+    Build `sfdoc`, a Rust CLI tool that scans Salesforce project directories
+    for Apex, trigger, Flow, validation-rule, custom object, LWC, and other
+    metadata source files, uses an AI provider to generate rich documentation,
+    and outputs interlinked wiki-style Markdown or self-contained HTML pages.
 todos:
     - id: scaffold
       content: "Phase 1: Scaffold Rust project (Cargo.toml, module structure, clap CLI definitions)"
@@ -56,10 +56,10 @@ todos:
       status: done
     - id: custom-objects
       content: "Phase 18: Custom Object documentation — object/field metadata, link validation rules, flows, Apex"
-      status: pending
+      status: done
     - id: lwc
       content: "Phase 19: Lightning Web Components — scanner, parser (@api, structure), AI prompt, renderer, cross-link to Apex"
-      status: pending
+      status: done
     - id: apex-interfaces
       content: "Phase 20: Apex interface support — distinguish interface vs class in parser, index section, implementors list"
       status: pending
@@ -89,8 +89,8 @@ stay up to date automatically through incremental builds.
 
 ```mermaid
 flowchart LR
-    CLI["CLI Layer\n(clap)"] --> Scanner["File Scanners\n(ApexScanner · TriggerScanner)"]
-    Scanner --> Parser["Parsers\n(parser · trigger_parser)"]
+    CLI["CLI Layer\n(clap)"] --> Scanner["File Scanners\n(Apex · Trigger · Flow · VR · Object · LWC)"]
+    Scanner --> Parser["Parsers\n(parser · trigger_parser · flow_parser\nvalidation_rule_parser · object_parser · lwc_parser)"]
     Parser --> Cache["Incremental Cache\n(SHA-256 hashing)"]
     Cache -->|stale files only| AI["AI Providers\n(Gemini · Groq · OpenAI · Ollama)"]
     AI --> Renderer["Renderers\n(Markdown · HTML)"]
@@ -101,9 +101,11 @@ flowchart LR
         Trg[".trigger files"]
         Flw[".flow-meta.xml"]
         VR[".validationRule-meta.xml"]
+        Obj[".object-meta.xml"]
+        LWC[".js-meta.xml"]
     end
 
-    Cls & Trg & Flw & VR --> Scanner
+    Cls & Trg & Flw & VR & Obj & LWC --> Scanner
 ```
 
 ---
@@ -123,10 +125,14 @@ sfdoc/
     trigger_parser.rs             # Apex trigger structural parser
     flow_parser.rs                # Salesforce Flow XML structural parser (quick-xml)
     validation_rule_parser.rs     # Salesforce Validation Rule XML structural parser
+    object_parser.rs              # Custom Object XML structural parser
+    lwc_parser.rs                 # LWC @api/slot/component-ref parser (regex-based)
     prompt.rs                     # AI prompt construction for Apex classes
     trigger_prompt.rs             # AI prompt construction for Apex triggers
     flow_prompt.rs                # AI prompt construction for Flows
     validation_rule_prompt.rs     # AI prompt construction for Validation Rules
+    object_prompt.rs              # AI prompt construction for Custom Objects
+    lwc_prompt.rs                 # AI prompt construction for LWC components
     gemini.rs                     # Google Gemini API client
     openai_compat.rs              # OpenAI-compatible client (Groq, OpenAI, Ollama)
     retry.rs                      # Exponential backoff with Retry-After header support
@@ -142,20 +148,20 @@ sfdoc/
 
 ## Key Dependencies
 
-| Crate | Purpose |
-|-------|---------|
-| `clap` (derive) | CLI argument parsing |
-| `tokio` | Async runtime for concurrent API calls |
-| `reqwest` | HTTP client for AI provider APIs |
-| `serde` / `serde_json` | JSON serialization |
-| `walkdir` | Recursive directory traversal |
-| `rayon` | CPU-parallel file parsing |
-| `indicatif` | Terminal progress bars |
-| `sha2` | SHA-256 hashing for incremental cache |
-| `anyhow` | Ergonomic error handling |
-| `regex` | Apex structural parsing |
-| `keyring` | OS keychain integration |
-| `rpassword` | Masked terminal input for API key entry |
+| Crate                  | Purpose                                 |
+| ---------------------- | --------------------------------------- |
+| `clap` (derive)        | CLI argument parsing                    |
+| `tokio`                | Async runtime for concurrent API calls  |
+| `reqwest`              | HTTP client for AI provider APIs        |
+| `serde` / `serde_json` | JSON serialization                      |
+| `walkdir`              | Recursive directory traversal           |
+| `rayon`                | CPU-parallel file parsing               |
+| `indicatif`            | Terminal progress bars                  |
+| `sha2`                 | SHA-256 hashing for incremental cache   |
+| `anyhow`               | Ergonomic error handling                |
+| `regex`                | Apex structural parsing                 |
+| `keyring`              | OS keychain integration                 |
+| `rpassword`            | Masked terminal input for API key entry |
 
 ---
 
@@ -272,6 +278,27 @@ sfdoc/
 - `AllNames.validation_rule_names` added for full cross-linking across all four asset types
 - Cache support: `validation_rule_entries` map with hash + model invalidation, backward-compatible with old cache files
 
+### Phase 18: Custom Object Documentation ✅
+
+- `ObjectScanner` — discovers `*.object-meta.xml` under `objects/` subtrees using `walkdir`; sorted for deterministic output
+- `object_parser.rs` — streaming quick-xml parser extracting label, plural label, description, `deploymentStatus`, `enableHistory`, `enableReports` from the object file; also scans a sibling `fields/` directory to parse field files (type, label, description, required flag, lookup reference)
+- `ObjectMetadata`, `ObjectFieldMetadata`, `ObjectDocumentation`, `ObjectFieldDocumentation` types in `types.rs`
+- `object_prompt.rs` — AI prompt providing full field list with types and any existing descriptions, asking for: label, one-sentence summary, detailed description, per-field descriptions, usage notes, and relationships to Apex/Flows/Triggers
+- Renderer: object page with field table (name/type/required/description), usage notes, cross-linked See Also; index grouped by folder
+- Cross-linking: `AllNames.object_names` added; object pages link to Apex classes, triggers, flows, validation rules, and other objects
+- Cache: `object_entries` map with hash + model invalidation
+
+### Phase 19: Lightning Web Components (LWC) ✅
+
+- `LwcScanner` — discovers `*.js-meta.xml` files inside `lwc/` directories; reads sibling `.js` file as `raw_source` for hashing and AI prompting
+- `lwc_parser.rs` — regex-based parser using `OnceLock<Regex>` patterns; extracts `@api` properties and methods from JS source; reads sibling HTML template to extract named/anonymous slots and `<c-*>` component references (converted from kebab-case to camelCase)
+- `LwcMetadata`, `LwcApiProp`, `LwcDocumentation`, `LwcPropDocumentation` types in `types.rs`
+- `lwc_prompt.rs` — AI prompt including Public API table, Slots list, Referenced Components list, and truncated JS source; structured JSON schema for component_name, summary, description, api_props, usage_notes, relationships
+- Renderer: LWC page with Public API table (name/kind/description), Slots table, Usage Notes, cross-linked See Also; index section with folder grouping
+- HTML renderer: full HTML page for LWC with sidebar including "Components" section; cross-linking to/from Apex classes, triggers, flows, validation rules, and objects
+- `AllNames.lwc_names` added for cross-linking across all asset types
+- Cache: `lwc_entries` map with hash + model invalidation, backward-compatible
+
 ---
 
 ## Upcoming Phases
@@ -281,6 +308,7 @@ sfdoc/
 **Goal:** Provide a full-pipeline integration test suite that catches regressions without requiring a live AI API.
 
 **Design:**
+
 - `tests/fixtures/` — a curated set of realistic `.cls` and `.trigger` files covering edge cases: abstract classes, interfaces, inner classes, complex generics, full ApexDoc comments, no ApexDoc
 - Mock HTTP server (e.g. `wiremock` crate) returning canned JSON responses for each fixture
 - Integration tests assert on specific content in generated `.md` files: class names present, method sections rendered, cross-links correct, index entries accurate
@@ -298,28 +326,32 @@ sfdoc/
 Flows are stored as XML under `force-app/main/default/flows/`. A flow definition contains a label, process type (e.g. `AutoLaunchedFlow`, `Flow`, `Workflow`), optional description, and a graph of elements including variables, decisions, loops, assignments, screens (for screen flows), record operations, and action calls.
 
 **Design:**
+
 - `FlowScanner` — scans for `*.flow-meta.xml` files; skips non-flow XML
 - `flow_parser.rs` — XML parser (using the `quick-xml` crate) that extracts:
-  - Flow label, API name, process type, description
-  - Input/output variables (name, type, direction)
-  - Screen elements (for screen flows): field names and labels
-  - Decision elements: condition counts
-  - Record operations: object names and operation types (lookup, create, update, delete)
-  - Action calls: action names and types (invocable actions, Apex, email alerts, etc.)
+    - Flow label, API name, process type, description
+    - Input/output variables (name, type, direction)
+    - Screen elements (for screen flows): field names and labels
+    - Decision elements: condition counts
+    - Record operations: object names and operation types (lookup, create, update, delete)
+    - Action calls: action names and types (invocable actions, Apex, email alerts, etc.)
 - `FlowMetadata` and `FlowDocumentation` types in `types.rs`
 - `flow_prompt.rs` — AI prompt that sends the structural summary and asks for: plain-English description, explanation of the business process, entry criteria, key decision points, and considerations for administrators
 - Flow renderer template: process type badge, trigger/entry section, element summary table, AI description, usage notes
 - Flows included in index alongside classes and triggers, grouped by process type
 
 **Key implementation notes:**
+
 - `quick-xml` is a streaming parser; extract only needed elements rather than deserialising the full schema
 - Flow XML can be large (hundreds of elements); the prompt should send the structural summary, not the raw XML
 - Cross-links: if a flow calls an Apex action or references a class, link to that class's page
 
 **New CLI behaviour:**
+
 ```
 sfdoc generate --source-dir force-app/main/default
 ```
+
 With no flags, scans for `.cls`, `.trigger`, and `.flow-meta.xml` files automatically.
 
 ---
@@ -332,18 +364,20 @@ With no flags, scans for `.cls`, `.trigger`, and `.flow-meta.xml` files automati
 Validation rules are stored per-object under `force-app/main/default/objects/{ObjectName}/validationRules/{RuleName}.validationRule-meta.xml`. Each rule contains an `active` flag, optional `description`, an `errorConditionFormula` (Salesforce formula syntax that evaluates to `true` when the record is invalid), an optional `errorDisplayField`, and an `errorMessage` shown to the user.
 
 **Design:**
+
 - `ValidationRuleScanner` — walks the `objects/` subtree and collects all `*.validationRule-meta.xml` files, grouping by object name
 - `validation_rule_parser.rs` — XML parser that extracts:
-  - Rule name, active status, description
-  - Error condition formula (raw)
-  - Error display field, error message
-  - Parent object name (derived from directory structure)
+    - Rule name, active status, description
+    - Error condition formula (raw)
+    - Error display field, error message
+    - Parent object name (derived from directory structure)
 - `ValidationRuleMetadata` and `ValidationRuleDocumentation` types in `types.rs`
 - `validation_rule_prompt.rs` — AI prompt that sends the rule name, formula, error message, and object name, and asks for: plain-English explanation of when the rule fires, what it is protecting, and any edge cases in the formula
 - Renderer template per validation rule: active badge, formula block, error message, AI description
 - Per-object grouping in the index: all rules for `Account` listed under an Account section, etc.
 
 **Key implementation notes:**
+
 - Validation rules do not require the full Salesforce formula evaluator; the raw formula is sent to the AI for explanation
 - Inactive rules (`<active>false</active>`) should be flagged with an "Inactive" badge in the rendered output
 - The `errorConditionFormula` can span multiple lines and contain nested functions; render it in a code block
@@ -358,13 +392,14 @@ Validation rules are stored per-object under `force-app/main/default/objects/{Ob
 **Salesforce Object metadata overview:** Objects live under `force-app/main/default/objects/{ObjectName}/`. Each object has an `*.object-meta.xml` and a `fields/` directory with `*.field-meta.xml` files. Metadata includes label, description, field names, types, help text, and relationships.
 
 **Design:**
+
 - `ObjectScanner` — discovers object definitions and field metadata from the `objects/` subtree
 - `object_parser.rs` (or equivalent) — extract object name, label, description; per field: name, type, label, help text, reference target (for lookups)
 - `ObjectMetadata` and `ObjectDocumentation` types; optional AI pass for richer descriptions
 - One page per object: purpose, key fields table, then **Validation rules**, **Flows**, and **Apex** that reference this object (cross-links from the existing index/cache)
 - Index can group by object or list objects alongside classes/triggers/flows
 
-**Impact:** Single place to see “what is Account / MyObject__c?” and which automation touches it.
+**Impact:** Single place to see “what is Account / MyObject\_\_c?” and which automation touches it.
 
 ---
 
@@ -375,6 +410,7 @@ Validation rules are stored per-object under `force-app/main/default/objects/{Ob
 **SFDX layout:** `lwc/<componentName>/` contains `*.js`, `*.html`, `*.css`, and `*.xml` (meta). Public API is via `@api` properties and methods.
 
 **Design:**
+
 - `LwcScanner` — discovers LWC directories under `lwc/`, reads `*.js`, `*.html`, `*.xml`
 - `lwc_parser.rs` — extract component name, `@api` props, public methods, slots from JS/HTML; optional meta.xml for description
 - `LwcMetadata` and `LwcDocumentation` types
@@ -391,6 +427,7 @@ Validation rules are stored per-object under `force-app/main/default/objects/{Ob
 **Goal:** Treat Apex interfaces as first-class so “implementors” and “implements” relationships are easy to follow.
 
 **Design:**
+
 - In `parser.rs`: detect `interface` vs `class` in the declaration regex; set an `is_interface: bool` (or kind enum) on `ClassMetadata` (or introduce `InterfaceMetadata` if preferred)
 - Index: add an “Interfaces” section; on each interface page list all classes that `implements` it
 - Reuse existing class pipeline; no new scanner. Optional: link from class pages to “Implements: IMyService” with a link to the interface page
@@ -406,6 +443,7 @@ Validation rules are stored per-object under `force-app/main/default/objects/{Ob
 **SFDX:** `flexiPages/*.flexipage-meta.xml` (and similar for app/record pages).
 
 **Design:**
+
 - `FlexiPageScanner` — collect `*.flexipage-meta.xml` (and related page types)
 - `flexipage_parser.rs` — XML parser that extracts page type, label, and a simplified list of regions/components (e.g. LWC names, Flow names)
 - One page per FlexiPage: type, object (if record page), list of components with links to LWC/Flow docs
@@ -422,6 +460,7 @@ Validation rules are stored per-object under `force-app/main/default/objects/{Ob
 **SFDX:** `customMetadata/*.customMetadata-meta.xml` and object definitions for custom metadata types.
 
 **Design:**
+
 - Scanner/parser for custom metadata type definitions and, if desired, record files
 - Index or section listing types and records; optional one-line AI description per type
 - Lower priority unless the org relies heavily on custom metadata for config
@@ -435,6 +474,7 @@ Validation rules are stored per-object under `force-app/main/default/objects/{Ob
 **SFDX:** `aura/<componentName>/*.cmp`, `*.auradoc`, etc.
 
 **Design:**
+
 - `AuraScanner` and parser for component markup and docs
 - Same pattern as LWC: one page per component, public API, cross-links
 - Only worth adding if the project has substantial Aura usage

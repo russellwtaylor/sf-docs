@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::renderer::{
-    sanitize_filename, FlowRenderContext, ObjectRenderContext, RenderContext, TriggerRenderContext,
-    ValidationRuleRenderContext,
+    sanitize_filename, FlowRenderContext, LwcRenderContext, ObjectRenderContext, RenderContext,
+    TriggerRenderContext, ValidationRuleRenderContext,
 };
 
 // ---------------------------------------------------------------------------
@@ -92,12 +92,14 @@ pub fn write_html_output(
     flow_contexts: &[FlowRenderContext],
     validation_rule_contexts: &[ValidationRuleRenderContext],
     object_contexts: &[ObjectRenderContext],
+    lwc_contexts: &[LwcRenderContext],
 ) -> Result<()> {
     let classes_dir = output_dir.join("classes");
     let triggers_dir = output_dir.join("triggers");
     let flows_dir = output_dir.join("flows");
     let vr_dir = output_dir.join("validation-rules");
     let objects_dir = output_dir.join("objects");
+    let lwc_dir = output_dir.join("lwc");
 
     std::fs::create_dir_all(output_dir)?;
     if !class_contexts.is_empty() {
@@ -114,6 +116,9 @@ pub fn write_html_output(
     }
     if !object_contexts.is_empty() {
         std::fs::create_dir_all(&objects_dir)?;
+    }
+    if !lwc_contexts.is_empty() {
+        std::fs::create_dir_all(&lwc_dir)?;
     }
 
     // (name, folder) pairs — used for sidebar grouping and cross-link generation.
@@ -137,6 +142,10 @@ pub fn write_html_output(
         .iter()
         .map(|c| (c.metadata.object_name.as_str(), c.folder.as_str()))
         .collect();
+    let lwc_items: Vec<(&str, &str)> = lwc_contexts
+        .iter()
+        .map(|c| (c.metadata.component_name.as_str(), c.folder.as_str()))
+        .collect();
 
     for ctx in class_contexts {
         let page = render_class_page(
@@ -146,6 +155,7 @@ pub fn write_html_output(
             &flow_items,
             &vr_items,
             &obj_items,
+            &lwc_items,
         );
         std::fs::write(
             classes_dir.join(format!(
@@ -164,6 +174,7 @@ pub fn write_html_output(
             &flow_items,
             &vr_items,
             &obj_items,
+            &lwc_items,
         );
         std::fs::write(
             triggers_dir.join(format!(
@@ -182,6 +193,7 @@ pub fn write_html_output(
             &flow_items,
             &vr_items,
             &obj_items,
+            &lwc_items,
         );
         std::fs::write(
             flows_dir.join(format!(
@@ -200,6 +212,7 @@ pub fn write_html_output(
             &flow_items,
             &vr_items,
             &obj_items,
+            &lwc_items,
         );
         std::fs::write(
             vr_dir.join(format!(
@@ -218,11 +231,31 @@ pub fn write_html_output(
             &flow_items,
             &vr_items,
             &obj_items,
+            &lwc_items,
         );
         std::fs::write(
             objects_dir.join(format!(
                 "{}.html",
                 sanitize_filename(&ctx.metadata.object_name)
+            )),
+            page,
+        )?;
+    }
+
+    for ctx in lwc_contexts {
+        let page = render_lwc_page(
+            ctx,
+            &class_items,
+            &trigger_items,
+            &flow_items,
+            &vr_items,
+            &obj_items,
+            &lwc_items,
+        );
+        std::fs::write(
+            lwc_dir.join(format!(
+                "{}.html",
+                sanitize_filename(&ctx.metadata.component_name)
             )),
             page,
         )?;
@@ -234,6 +267,7 @@ pub fn write_html_output(
         flow_contexts,
         validation_rule_contexts,
         object_contexts,
+        lwc_contexts,
     );
     std::fs::write(output_dir.join("index.html"), index)?;
 
@@ -251,12 +285,14 @@ fn render_class_page(
     flow_items: &[(&str, &str)],
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
+    lwc_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
     let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
+    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.class_name;
@@ -457,6 +493,18 @@ fn render_class_page(
                             )
                         })
                 })
+                .or_else(|| {
+                    lwc_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../lwc/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
         })
         .collect();
 
@@ -479,6 +527,7 @@ fn render_class_page(
         flow_items,
         vr_items,
         obj_items,
+        lwc_items,
     )
 }
 
@@ -489,12 +538,14 @@ fn render_trigger_page(
     flow_items: &[(&str, &str)],
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
+    lwc_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
     let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
+    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.trigger_name;
@@ -621,6 +672,18 @@ fn render_trigger_page(
                             )
                         })
                 })
+                .or_else(|| {
+                    lwc_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../lwc/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
         })
         .collect();
 
@@ -643,6 +706,7 @@ fn render_trigger_page(
         flow_items,
         vr_items,
         obj_items,
+        lwc_items,
     )
 }
 
@@ -653,12 +717,14 @@ fn render_flow_page(
     flow_items: &[(&str, &str)],
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
+    lwc_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
     let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
+    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.api_name;
@@ -827,6 +893,18 @@ fn render_flow_page(
                             )
                         })
                 })
+                .or_else(|| {
+                    lwc_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../lwc/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
         })
         .collect();
 
@@ -849,6 +927,7 @@ fn render_flow_page(
         flow_items,
         vr_items,
         obj_items,
+        lwc_items,
     )
 }
 
@@ -859,12 +938,14 @@ fn render_validation_rule_page(
     flow_items: &[(&str, &str)],
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
+    lwc_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
     let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
+    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.rule_name;
@@ -986,6 +1067,18 @@ fn render_validation_rule_page(
                             )
                         })
                 })
+                .or_else(|| {
+                    lwc_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../lwc/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
         })
         .collect();
 
@@ -1008,6 +1101,7 @@ fn render_validation_rule_page(
         flow_items,
         vr_items,
         obj_items,
+        lwc_items,
     )
 }
 
@@ -1018,12 +1112,14 @@ fn render_object_page(
     flow_items: &[(&str, &str)],
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
+    lwc_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
     let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
+    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.object_name;
@@ -1163,6 +1259,18 @@ fn render_object_page(
                             )
                         })
                 })
+                .or_else(|| {
+                    lwc_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../lwc/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
         })
         .collect();
 
@@ -1185,6 +1293,182 @@ fn render_object_page(
         flow_items,
         vr_items,
         obj_items,
+        lwc_items,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_lwc_page(
+    ctx: &LwcRenderContext,
+    class_items: &[(&str, &str)],
+    trigger_items: &[(&str, &str)],
+    flow_items: &[(&str, &str)],
+    vr_items: &[(&str, &str)],
+    obj_items: &[(&str, &str)],
+    lwc_items: &[(&str, &str)],
+) -> String {
+    let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
+    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
+    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
+    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
+    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
+    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
+
+    let doc = &ctx.documentation;
+    let meta = &ctx.metadata;
+    let active = &meta.component_name;
+
+    let mut body = String::new();
+
+    body.push_str(&format!("<h1>{}</h1>\n", escape(&meta.component_name)));
+    body.push_str("<div class=\"badges\">\n");
+    body.push_str("<span class=\"badge\">lwc</span>\n");
+    body.push_str("</div>\n");
+
+    body.push_str(&format!(
+        "<p class=\"summary\">{}</p>\n",
+        escape(&doc.summary)
+    ));
+
+    body.push_str("<h2>Description</h2>\n");
+    body.push_str(&format!("<p>{}</p>\n", escape(&doc.description)));
+
+    if !doc.api_props.is_empty() {
+        body.push_str("<h2>Public API</h2>\n");
+        body.push_str("<table><thead><tr><th>Name</th><th>Kind</th><th>Description</th></tr></thead><tbody>\n");
+        for prop_doc in &doc.api_props {
+            let kind = meta
+                .api_props
+                .iter()
+                .find(|p| p.name == prop_doc.name)
+                .map(|p| if p.is_method { "method" } else { "property" })
+                .unwrap_or("property");
+            body.push_str(&format!(
+                "<tr><td><code>{}</code></td><td>{}</td><td>{}</td></tr>\n",
+                escape(&prop_doc.name),
+                escape(kind),
+                escape(&prop_doc.description),
+            ));
+        }
+        body.push_str("</tbody></table>\n");
+    }
+
+    if !meta.slots.is_empty() {
+        body.push_str("<h2>Slots</h2>\n");
+        body.push_str("<table><thead><tr><th>Slot</th></tr></thead><tbody>\n");
+        for slot in &meta.slots {
+            let label = if slot == "default" {
+                "<em>(default)</em>".to_string()
+            } else {
+                format!("<code>{}</code>", escape(slot))
+            };
+            body.push_str(&format!("<tr><td>{label}</td></tr>\n"));
+        }
+        body.push_str("</tbody></table>\n");
+    }
+
+    if !doc.usage_notes.is_empty() {
+        body.push_str("<h2>Usage Notes</h2>\n");
+        body.push_str("<ul>\n");
+        for note in &doc.usage_notes {
+            body.push_str(&format!("<li>{}</li>\n", escape(note)));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    if !doc.relationships.is_empty() {
+        body.push_str("<h2>See Also</h2>\n");
+        body.push_str("<ul>\n");
+        for rel in &doc.relationships {
+            let linked = class_names
+                .iter()
+                .find(|&&name| rel.contains(name))
+                .map(|&name| {
+                    let (_, folder) = class_items.iter().find(|&&(n, _)| n == name).unwrap();
+                    format!(
+                        "<a href=\"../classes/{folder}/{name}.html\">{rel}</a>",
+                        rel = escape(rel)
+                    )
+                })
+                .or_else(|| {
+                    trigger_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            let (_, folder) =
+                                trigger_items.iter().find(|&&(n, _)| n == name).unwrap();
+                            format!(
+                                "<a href=\"../triggers/{folder}/{name}.html\">{rel}</a>",
+                                rel = escape(rel)
+                            )
+                        })
+                })
+                .or_else(|| {
+                    flow_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            let (_, folder) = flow_items.iter().find(|&&(n, _)| n == name).unwrap();
+                            format!(
+                                "<a href=\"../flows/{folder}/{name}.html\">{rel}</a>",
+                                rel = escape(rel)
+                            )
+                        })
+                })
+                .or_else(|| {
+                    vr_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            let (_, folder) = vr_items.iter().find(|&&(n, _)| n == name).unwrap();
+                            format!(
+                                "<a href=\"../validation-rules/{folder}/{name}.html\">{rel}</a>",
+                                rel = escape(rel)
+                            )
+                        })
+                })
+                .or_else(|| {
+                    obj_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            let (_, folder) = obj_items.iter().find(|&&(n, _)| n == name).unwrap();
+                            format!(
+                                "<a href=\"../objects/{folder}/{name}.html\">{rel}</a>",
+                                rel = escape(rel)
+                            )
+                        })
+                })
+                .or_else(|| {
+                    lwc_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            let (_, folder) = lwc_items.iter().find(|&&(n, _)| n == name).unwrap();
+                            format!(
+                                "<a href=\"../lwc/{folder}/{name}.html\">{rel}</a>",
+                                rel = escape(rel)
+                            )
+                        })
+                })
+                .unwrap_or_else(|| escape(rel));
+            body.push_str(&format!("<li>{linked}</li>\n"));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    wrap_page(
+        &meta.component_name,
+        "sfdoc",
+        &body,
+        active,
+        "../",
+        class_items,
+        trigger_items,
+        flow_items,
+        vr_items,
+        obj_items,
+        lwc_items,
     )
 }
 
@@ -1194,6 +1478,7 @@ fn render_index(
     flow_contexts: &[FlowRenderContext],
     validation_rule_contexts: &[ValidationRuleRenderContext],
     object_contexts: &[ObjectRenderContext],
+    lwc_contexts: &[LwcRenderContext],
 ) -> String {
     let class_items: Vec<(&str, &str)> = class_contexts
         .iter()
@@ -1215,15 +1500,20 @@ fn render_index(
         .iter()
         .map(|c| (c.metadata.object_name.as_str(), c.folder.as_str()))
         .collect();
+    let lwc_items: Vec<(&str, &str)> = lwc_contexts
+        .iter()
+        .map(|c| (c.metadata.component_name.as_str(), c.folder.as_str()))
+        .collect();
     let mut body = String::new();
     body.push_str("<h1>Apex Documentation</h1>\n");
     body.push_str(&format!(
-        "<p class=\"summary\">Generated documentation for {} class(es), {} trigger(s), {} flow(s), {} validation rule(s), and {} object(s).</p>\n",
+        "<p class=\"summary\">Generated documentation for {} class(es), {} trigger(s), {} flow(s), {} validation rule(s), {} object(s), and {} LWC component(s).</p>\n",
         class_contexts.len(),
         trigger_contexts.len(),
         flow_contexts.len(),
         validation_rule_contexts.len(),
         object_contexts.len(),
+        lwc_contexts.len(),
     ));
 
     if !class_contexts.is_empty() {
@@ -1394,6 +1684,24 @@ fn render_index(
         body.push_str("</tbody></table>\n");
     }
 
+    if !lwc_contexts.is_empty() {
+        let mut lwc_sorted: Vec<&LwcRenderContext> = lwc_contexts.iter().collect();
+        lwc_sorted.sort_by(|a, b| a.metadata.component_name.cmp(&b.metadata.component_name));
+
+        body.push_str("<h2>Lightning Web Components</h2>\n");
+        body.push_str("<table><thead><tr><th>Component</th><th>@api Props</th><th>Summary</th></tr></thead><tbody>\n");
+        for ctx in lwc_sorted {
+            body.push_str(&format!(
+                "<tr><td><a href=\"lwc/{}.html\">{}</a></td><td>{}</td><td>{}</td></tr>\n",
+                escape(&ctx.metadata.component_name),
+                escape(&ctx.metadata.component_name),
+                ctx.metadata.api_props.len(),
+                escape(&ctx.documentation.summary),
+            ));
+        }
+        body.push_str("</tbody></table>\n");
+    }
+
     wrap_page(
         "Overview",
         "sfdoc",
@@ -1405,6 +1713,7 @@ fn render_index(
         &flow_items,
         &vr_items,
         &obj_items,
+        &lwc_items,
     )
 }
 
@@ -1424,6 +1733,7 @@ fn wrap_page(
     flow_items: &[(&str, &str)],
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
+    lwc_items: &[(&str, &str)],
 ) -> String {
     let sidebar = render_sidebar(
         class_items,
@@ -1431,6 +1741,7 @@ fn wrap_page(
         flow_items,
         vr_items,
         obj_items,
+        lwc_items,
         active,
         up_prefix,
     );
@@ -1456,12 +1767,14 @@ fn wrap_page(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_sidebar(
     class_items: &[(&str, &str)],
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
+    lwc_items: &[(&str, &str)],
     active: &str,
     up_prefix: &str,
 ) -> String {
@@ -1639,6 +1952,43 @@ fn render_sidebar(
             ));
         }
         s.push_str("</ul>\n");
+        s.push_str("</div>\n");
+    }
+
+    if !lwc_items.is_empty() {
+        let mut by_folder: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for &(name, folder) in lwc_items {
+            by_folder.entry(folder).or_default().push(name);
+        }
+        for names in by_folder.values_mut() {
+            names.sort_unstable();
+        }
+
+        s.push_str("<div class=\"sidebar-section\">\n");
+        s.push_str("<div class=\"sidebar-heading\">Components</div>\n");
+        let multi_folder = by_folder.len() > 1;
+        for (folder, names) in &by_folder {
+            if multi_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                s.push_str(&format!(
+                    "<div class=\"sidebar-folder\">{}</div>\n",
+                    escape(label)
+                ));
+            }
+            s.push_str("<ul>\n");
+            for name in names {
+                let cls = if *name == active {
+                    " class=\"active\""
+                } else {
+                    ""
+                };
+                s.push_str(&format!(
+                    "<li><a href=\"{up_prefix}lwc/{name}.html\"{cls}>{}</a></li>\n",
+                    escape(name)
+                ));
+            }
+            s.push_str("</ul>\n");
+        }
         s.push_str("</div>\n");
     }
 

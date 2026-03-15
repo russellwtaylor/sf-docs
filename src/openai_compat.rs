@@ -6,13 +6,14 @@ use std::time::Duration;
 use tokio::sync::Semaphore;
 
 use crate::flow_prompt::{build_flow_prompt, FLOW_SYSTEM_PROMPT};
+use crate::lwc_prompt::{build_lwc_prompt, LWC_SYSTEM_PROMPT};
 use crate::object_prompt::{build_object_prompt, OBJECT_SYSTEM_PROMPT};
 use crate::prompt::{build_prompt, SYSTEM_PROMPT};
 use crate::retry::{self, MAX_RETRIES};
 use crate::trigger_prompt::{build_trigger_prompt, TRIGGER_SYSTEM_PROMPT};
 use crate::types::{
-    ApexFile, ClassDocumentation, ClassMetadata, FlowDocumentation, FlowMetadata,
-    ObjectDocumentation, ObjectMetadata, TriggerDocumentation, TriggerMetadata,
+    ApexFile, ClassDocumentation, ClassMetadata, FlowDocumentation, FlowMetadata, LwcDocumentation,
+    LwcMetadata, ObjectDocumentation, ObjectMetadata, TriggerDocumentation, TriggerMetadata,
     ValidationRuleDocumentation, ValidationRuleMetadata,
 };
 use crate::validation_rule_prompt::{build_validation_rule_prompt, VALIDATION_RULE_SYSTEM_PROMPT};
@@ -554,6 +555,101 @@ impl OpenAiCompatClient {
                             self.provider_name, metadata.object_name, raw_json
                         )
                     })?;
+
+                return Ok(doc);
+            }
+
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
+
+            if retry::should_retry(status.as_u16()) && attempt < MAX_RETRIES {
+                retry::sleep_for_retry(&body, attempt, &self.provider_name).await;
+                attempt += 1;
+                continue;
+            }
+
+            anyhow::bail!("{} API error {status}: {body}", self.provider_name);
+        }
+    }
+
+    pub async fn document_lwc(
+        &self,
+        file: &ApexFile,
+        metadata: &LwcMetadata,
+    ) -> Result<LwcDocumentation> {
+        let _permit = self.semaphore.acquire().await?;
+
+        let request = ChatRequest {
+            model: self.model.clone(),
+            messages: vec![
+                Message {
+                    role: "system".to_string(),
+                    content: LWC_SYSTEM_PROMPT.to_string(),
+                },
+                Message {
+                    role: "user".to_string(),
+                    content: build_lwc_prompt(file, metadata),
+                },
+            ],
+            response_format: ResponseFormat {
+                format_type: "json_object".to_string(),
+            },
+            temperature: 0.2,
+        };
+
+        let url = format!("{}/chat/completions", self.base_url);
+        let mut attempt = 0u32;
+        loop {
+            let response = match self
+                .client
+                .post(&url)
+                .bearer_auth(&self.api_key)
+                .json(&request)
+                .send()
+                .await
+            {
+                Ok(r) => r,
+                Err(e) if retry::is_retryable_error(&e) && attempt < MAX_RETRIES => {
+                    eprintln!(
+                        "Network error calling {} API (attempt {}/{}): {e}",
+                        self.provider_name,
+                        attempt + 1,
+                        MAX_RETRIES
+                    );
+                    retry::sleep_for_retry("", attempt, &self.provider_name).await;
+                    attempt += 1;
+                    continue;
+                }
+                Err(e) => {
+                    return Err(e).with_context(|| {
+                        format!("Failed to send request to {} API", self.provider_name)
+                    })
+                }
+            };
+
+            if response.status().is_success() {
+                let chat_response: ChatResponse = response.json().await.with_context(|| {
+                    format!("Failed to deserialize {} response", self.provider_name)
+                })?;
+
+                let raw_json = chat_response
+                    .choices
+                    .into_iter()
+                    .next()
+                    .map(|c| c.message.content)
+                    .with_context(|| {
+                        format!("{} returned an empty response", self.provider_name)
+                    })?;
+
+                let doc: LwcDocumentation = serde_json::from_str(&raw_json).with_context(|| {
+                    format!(
+                        "Failed to parse {} JSON for LWC component '{}':\n{}",
+                        self.provider_name, metadata.component_name, raw_json
+                    )
+                })?;
 
                 return Ok(doc);
             }

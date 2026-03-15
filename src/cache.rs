@@ -6,8 +6,8 @@ use std::fmt::Write;
 use std::path::Path;
 
 use crate::types::{
-    ClassDocumentation, FlowDocumentation, ObjectDocumentation, TriggerDocumentation,
-    ValidationRuleDocumentation,
+    ClassDocumentation, FlowDocumentation, LwcDocumentation, ObjectDocumentation,
+    TriggerDocumentation, ValidationRuleDocumentation,
 };
 
 const CACHE_FILE: &str = ".sfdoc-cache.json";
@@ -35,6 +35,10 @@ pub struct Cache {
     /// cache files written before object support was added.
     #[serde(default)]
     object_entries: HashMap<String, ObjectCacheEntry>,
+    /// LWC entries are in a separate map so the field can be absent in
+    /// cache files written before LWC support was added.
+    #[serde(default)]
+    lwc_entries: HashMap<String, LwcCacheEntry>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -63,6 +67,13 @@ pub struct ObjectCacheEntry {
     pub hash: String,
     pub model: String,
     pub documentation: ObjectDocumentation,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct LwcCacheEntry {
+    pub hash: String,
+    pub model: String,
+    pub documentation: LwcDocumentation,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -252,6 +263,36 @@ impl Cache {
         self.object_entries.insert(
             key,
             ObjectCacheEntry {
+                hash,
+                model: model.to_owned(),
+                documentation,
+            },
+        );
+    }
+
+    /// Returns the cached LWC entry if hash and model both match.
+    pub fn get_lwc_if_fresh<'a>(
+        &'a self,
+        key: &str,
+        hash: &str,
+        model: &str,
+    ) -> Option<&'a LwcCacheEntry> {
+        self.lwc_entries
+            .get(key)
+            .filter(|e| e.hash == hash && e.model == model)
+    }
+
+    /// Insert or update an LWC entry after a successful API call.
+    pub fn update_lwc(
+        &mut self,
+        key: String,
+        hash: String,
+        model: &str,
+        documentation: LwcDocumentation,
+    ) {
+        self.lwc_entries.insert(
+            key,
+            LwcCacheEntry {
                 hash,
                 model: model.to_owned(),
                 documentation,
