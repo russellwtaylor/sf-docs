@@ -263,6 +263,7 @@ async fn main() -> Result<()> {
                 }
 
                 let mut tasks: JoinSet<Result<WorkResult>> = JoinSet::new();
+                let mut failures: Vec<String> = Vec::new();
 
                 for &idx in &class_work {
                     let client = Arc::clone(&client);
@@ -306,50 +307,91 @@ async fn main() -> Result<()> {
 
                 // Collect results as they complete (not in spawn order).
                 while let Some(res) = tasks.join_next().await {
-                    match res?? {
-                        WorkResult::Class(idx, doc) => {
-                            let key = files[idx].path.to_string_lossy().into_owned();
-                            cache.update(key, class_hashes[idx].clone(), &model, doc.clone());
-                            class_docs[idx] = Some(doc);
+                    match res {
+                        Err(join_err) => {
+                            failures.push(format!("task panicked: {join_err}"));
                         }
-                        WorkResult::Trigger(idx, doc) => {
-                            let key = trigger_files[idx].path.to_string_lossy().into_owned();
-                            cache.update_trigger(
-                                key,
-                                trigger_hashes[idx].clone(),
-                                &model,
-                                doc.clone(),
-                            );
-                            trigger_docs[idx] = Some(doc);
+                        Ok(Err(api_err)) => {
+                            failures.push(format!("{api_err:#}"));
+                            pb.inc(1);
                         }
-                        WorkResult::Flow(idx, doc) => {
-                            let key = flow_files[idx].path.to_string_lossy().into_owned();
-                            cache.update_flow(key, flow_hashes[idx].clone(), &model, doc.clone());
-                            flow_docs[idx] = Some(doc);
-                        }
+                        Ok(Ok(work_result)) => match work_result {
+                            WorkResult::Class(idx, doc) => {
+                                let key = files[idx].path.to_string_lossy().into_owned();
+                                cache.update(key, class_hashes[idx].clone(), &model, doc.clone());
+                                class_docs[idx] = Some(doc);
+                            }
+                            WorkResult::Trigger(idx, doc) => {
+                                let key = trigger_files[idx].path.to_string_lossy().into_owned();
+                                cache.update_trigger(
+                                    key,
+                                    trigger_hashes[idx].clone(),
+                                    &model,
+                                    doc.clone(),
+                                );
+                                trigger_docs[idx] = Some(doc);
+                            }
+                            WorkResult::Flow(idx, doc) => {
+                                let key = flow_files[idx].path.to_string_lossy().into_owned();
+                                cache.update_flow(
+                                    key,
+                                    flow_hashes[idx].clone(),
+                                    &model,
+                                    doc.clone(),
+                                );
+                                flow_docs[idx] = Some(doc);
+                            }
+                        },
                     }
                 }
 
                 pb.finish_with_message("Done");
+
+                if !failures.is_empty() {
+                    eprintln!(
+                        "{} file(s) failed to generate documentation:",
+                        failures.len()
+                    );
+                    for f in &failures {
+                        eprintln!("  - {f}");
+                    }
+                    // Save progress so the next run can skip successful files
+                    cache.save(&output_dir)?;
+                    anyhow::bail!("{} file(s) failed; partial cache saved", failures.len());
+                }
             }
 
             // Build render contexts (tasks are all done; Arc::try_unwrap reclaims the Vecs).
-            let files = Arc::try_unwrap(files).expect("no other Arc holders after tasks join");
-            let class_meta = Arc::try_unwrap(class_meta).expect("no other Arc holders");
-            let trigger_files = Arc::try_unwrap(trigger_files).expect("no other Arc holders");
-            let trigger_meta = Arc::try_unwrap(trigger_meta).expect("no other Arc holders");
-            let flow_files = Arc::try_unwrap(flow_files).expect("no other Arc holders");
-            let flow_meta = Arc::try_unwrap(flow_meta).expect("no other Arc holders");
+            let files = Arc::try_unwrap(files).map_err(|_| {
+                anyhow::anyhow!("unexpected Arc alias on files after tasks completed")
+            })?;
+            let class_meta = Arc::try_unwrap(class_meta).map_err(|_| {
+                anyhow::anyhow!("unexpected Arc alias on class_meta after tasks completed")
+            })?;
+            let trigger_files = Arc::try_unwrap(trigger_files).map_err(|_| {
+                anyhow::anyhow!("unexpected Arc alias on trigger_files after tasks completed")
+            })?;
+            let trigger_meta = Arc::try_unwrap(trigger_meta).map_err(|_| {
+                anyhow::anyhow!("unexpected Arc alias on trigger_meta after tasks completed")
+            })?;
+            let flow_files = Arc::try_unwrap(flow_files).map_err(|_| {
+                anyhow::anyhow!("unexpected Arc alias on flow_files after tasks completed")
+            })?;
+            let flow_meta = Arc::try_unwrap(flow_meta).map_err(|_| {
+                anyhow::anyhow!("unexpected Arc alias on flow_meta after tasks completed")
+            })?;
 
             let class_contexts: Vec<renderer::RenderContext> = files
                 .into_iter()
                 .zip(class_meta)
                 .zip(class_docs)
-                .map(|((file, meta), doc)| renderer::RenderContext {
-                    folder: compute_folder(&file.path, &args.source_dir),
-                    metadata: meta,
-                    documentation: doc.expect("every class must have documentation"),
-                    all_names: Arc::clone(&all_names),
+                .filter_map(|((file, meta), doc)| {
+                    doc.map(|d| renderer::RenderContext {
+                        folder: compute_folder(&file.path, &args.source_dir),
+                        metadata: meta,
+                        documentation: d,
+                        all_names: Arc::clone(&all_names),
+                    })
                 })
                 .collect();
 
@@ -357,11 +399,13 @@ async fn main() -> Result<()> {
                 .into_iter()
                 .zip(trigger_meta)
                 .zip(trigger_docs)
-                .map(|((file, meta), doc)| renderer::TriggerRenderContext {
-                    folder: compute_folder(&file.path, &args.source_dir),
-                    metadata: meta,
-                    documentation: doc.expect("every trigger must have documentation"),
-                    all_names: Arc::clone(&all_names),
+                .filter_map(|((file, meta), doc)| {
+                    doc.map(|d| renderer::TriggerRenderContext {
+                        folder: compute_folder(&file.path, &args.source_dir),
+                        metadata: meta,
+                        documentation: d,
+                        all_names: Arc::clone(&all_names),
+                    })
                 })
                 .collect();
 
@@ -369,11 +413,13 @@ async fn main() -> Result<()> {
                 .into_iter()
                 .zip(flow_meta)
                 .zip(flow_docs)
-                .map(|((file, meta), doc)| renderer::FlowRenderContext {
-                    folder: compute_folder(&file.path, &args.source_dir),
-                    metadata: meta,
-                    documentation: doc.expect("every flow must have documentation"),
-                    all_names: Arc::clone(&all_names),
+                .filter_map(|((file, meta), doc)| {
+                    doc.map(|d| renderer::FlowRenderContext {
+                        folder: compute_folder(&file.path, &args.source_dir),
+                        metadata: meta,
+                        documentation: d,
+                        all_names: Arc::clone(&all_names),
+                    })
                 })
                 .collect();
 

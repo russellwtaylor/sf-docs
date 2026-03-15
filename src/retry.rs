@@ -3,6 +3,18 @@ use std::time::Duration;
 pub const MAX_RETRIES: u32 = 4;
 pub const BASE_BACKOFF_SECS: u64 = 5;
 
+/// Returns true if the given HTTP status code is worth retrying.
+/// Covers rate limits (429) and common transient server errors (5xx).
+pub fn should_retry(status: u16) -> bool {
+    matches!(status, 429 | 500 | 502 | 503 | 504)
+}
+
+/// Returns true if the reqwest error represents a transient network condition
+/// that is worth retrying (timeout, connection failure, or request send failure).
+pub fn is_retryable_error(err: &reqwest::Error) -> bool {
+    err.is_timeout() || err.is_connect() || err.is_request()
+}
+
 /// Parses the suggested retry delay from the 429 response body, falling back
 /// to exponential backoff based on the attempt number.
 pub fn retry_delay_secs(body: &str, attempt: u32) -> u64 {

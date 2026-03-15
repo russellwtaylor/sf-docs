@@ -2,7 +2,7 @@ use anyhow::Result;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::renderer::{FlowRenderContext, RenderContext, TriggerRenderContext};
+use crate::renderer::{sanitize_filename, FlowRenderContext, RenderContext, TriggerRenderContext};
 
 // ---------------------------------------------------------------------------
 // Inline CSS — no external dependencies, works offline
@@ -120,7 +120,10 @@ pub fn write_html_output(
     for ctx in class_contexts {
         let page = render_class_page(ctx, &class_items, &trigger_items, &flow_items);
         std::fs::write(
-            classes_dir.join(format!("{}.html", ctx.metadata.class_name)),
+            classes_dir.join(format!(
+                "{}.html",
+                sanitize_filename(&ctx.metadata.class_name)
+            )),
             page,
         )?;
     }
@@ -128,7 +131,10 @@ pub fn write_html_output(
     for ctx in trigger_contexts {
         let page = render_trigger_page(ctx, &class_items, &trigger_items, &flow_items);
         std::fs::write(
-            triggers_dir.join(format!("{}.html", ctx.metadata.trigger_name)),
+            triggers_dir.join(format!(
+                "{}.html",
+                sanitize_filename(&ctx.metadata.trigger_name)
+            )),
             page,
         )?;
     }
@@ -136,7 +142,10 @@ pub fn write_html_output(
     for ctx in flow_contexts {
         let page = render_flow_page(ctx, &class_items, &trigger_items, &flow_items);
         std::fs::write(
-            flows_dir.join(format!("{}.html", ctx.metadata.api_name)),
+            flows_dir.join(format!(
+                "{}.html",
+                sanitize_filename(&ctx.metadata.api_name)
+            )),
             page,
         )?;
     }

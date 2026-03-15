@@ -119,14 +119,32 @@ impl OpenAiCompatClient {
 
         let mut attempt = 0u32;
         loop {
-            let response = self
+            let response = match self
                 .client
                 .post(&url)
                 .bearer_auth(&self.api_key)
                 .json(&request)
                 .send()
                 .await
-                .with_context(|| format!("Failed to send request to {} API", self.provider_name))?;
+            {
+                Ok(r) => r,
+                Err(e) if retry::is_retryable_error(&e) && attempt < MAX_RETRIES => {
+                    eprintln!(
+                        "Network error calling {} API (attempt {}/{}): {e}",
+                        self.provider_name,
+                        attempt + 1,
+                        MAX_RETRIES
+                    );
+                    retry::sleep_for_retry("", attempt, &self.provider_name).await;
+                    attempt += 1;
+                    continue;
+                }
+                Err(e) => {
+                    return Err(e).with_context(|| {
+                        format!("Failed to send request to {} API", self.provider_name)
+                    })
+                }
+            };
 
             if response.status().is_success() {
                 let chat_response: ChatResponse = response.json().await.with_context(|| {
@@ -159,7 +177,7 @@ impl OpenAiCompatClient {
                 .await
                 .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
 
-            if status.as_u16() == 429 && attempt < MAX_RETRIES {
+            if retry::should_retry(status.as_u16()) && attempt < MAX_RETRIES {
                 retry::sleep_for_retry(&body, attempt, &self.provider_name).await;
                 attempt += 1;
                 continue;
@@ -197,14 +215,32 @@ impl OpenAiCompatClient {
         let url = format!("{}/chat/completions", self.base_url);
         let mut attempt = 0u32;
         loop {
-            let response = self
+            let response = match self
                 .client
                 .post(&url)
                 .bearer_auth(&self.api_key)
                 .json(&request)
                 .send()
                 .await
-                .with_context(|| format!("Failed to send request to {} API", self.provider_name))?;
+            {
+                Ok(r) => r,
+                Err(e) if retry::is_retryable_error(&e) && attempt < MAX_RETRIES => {
+                    eprintln!(
+                        "Network error calling {} API (attempt {}/{}): {e}",
+                        self.provider_name,
+                        attempt + 1,
+                        MAX_RETRIES
+                    );
+                    retry::sleep_for_retry("", attempt, &self.provider_name).await;
+                    attempt += 1;
+                    continue;
+                }
+                Err(e) => {
+                    return Err(e).with_context(|| {
+                        format!("Failed to send request to {} API", self.provider_name)
+                    })
+                }
+            };
 
             if response.status().is_success() {
                 let chat_response: ChatResponse = response.json().await.with_context(|| {
@@ -237,7 +273,7 @@ impl OpenAiCompatClient {
                 .await
                 .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
 
-            if status.as_u16() == 429 && attempt < MAX_RETRIES {
+            if retry::should_retry(status.as_u16()) && attempt < MAX_RETRIES {
                 retry::sleep_for_retry(&body, attempt, &self.provider_name).await;
                 attempt += 1;
                 continue;
@@ -275,14 +311,32 @@ impl OpenAiCompatClient {
         let url = format!("{}/chat/completions", self.base_url);
         let mut attempt = 0u32;
         loop {
-            let response = self
+            let response = match self
                 .client
                 .post(&url)
                 .bearer_auth(&self.api_key)
                 .json(&request)
                 .send()
                 .await
-                .with_context(|| format!("Failed to send request to {} API", self.provider_name))?;
+            {
+                Ok(r) => r,
+                Err(e) if retry::is_retryable_error(&e) && attempt < MAX_RETRIES => {
+                    eprintln!(
+                        "Network error calling {} API (attempt {}/{}): {e}",
+                        self.provider_name,
+                        attempt + 1,
+                        MAX_RETRIES
+                    );
+                    retry::sleep_for_retry("", attempt, &self.provider_name).await;
+                    attempt += 1;
+                    continue;
+                }
+                Err(e) => {
+                    return Err(e).with_context(|| {
+                        format!("Failed to send request to {} API", self.provider_name)
+                    })
+                }
+            };
 
             if response.status().is_success() {
                 let chat_response: ChatResponse = response.json().await.with_context(|| {
@@ -315,7 +369,7 @@ impl OpenAiCompatClient {
                 .await
                 .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
 
-            if status.as_u16() == 429 && attempt < MAX_RETRIES {
+            if retry::should_retry(status.as_u16()) && attempt < MAX_RETRIES {
                 retry::sleep_for_retry(&body, attempt, &self.provider_name).await;
                 attempt += 1;
                 continue;

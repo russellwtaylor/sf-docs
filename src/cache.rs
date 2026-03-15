@@ -51,10 +51,21 @@ impl Cache {
     /// Load the cache from the output directory. Returns an empty cache if the
     /// file doesn't exist or can't be parsed (e.g. after a format change).
     pub fn load(output_dir: &Path) -> Self {
-        std::fs::read_to_string(output_dir.join(CACHE_FILE))
-            .ok()
-            .and_then(|data| serde_json::from_str(&data).ok())
-            .unwrap_or_default()
+        let path = output_dir.join(CACHE_FILE);
+        let data = match std::fs::read_to_string(&path) {
+            Ok(d) => d,
+            Err(_) => return Self::default(), // file missing or unreadable — silent, normal first run
+        };
+        match serde_json::from_str(&data) {
+            Ok(cache) => cache,
+            Err(e) => {
+                eprintln!(
+                    "Warning: cache file at {} is corrupt and will be ignored: {e}",
+                    path.display()
+                );
+                Self::default()
+            }
+        }
     }
 
     /// Persist the cache to the output directory.

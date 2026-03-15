@@ -119,20 +119,31 @@ impl GeminiClient {
             },
         };
 
-        let url = format!(
-            "{}/{}:generateContent?key={}",
-            GEMINI_BASE_URL, self.model, self.api_key
-        );
+        let url = format!("{}/{}:generateContent", GEMINI_BASE_URL, self.model);
 
         let mut attempt = 0u32;
         loop {
-            let response = self
+            let response = match self
                 .client
                 .post(&url)
+                .header("x-goog-api-key", &self.api_key)
                 .json(&request)
                 .send()
                 .await
-                .context("Failed to send request to Gemini API")?;
+            {
+                Ok(r) => r,
+                Err(e) if retry::is_retryable_error(&e) && attempt < MAX_RETRIES => {
+                    eprintln!(
+                        "Network error calling Gemini API (attempt {}/{}): {e}",
+                        attempt + 1,
+                        MAX_RETRIES
+                    );
+                    retry::sleep_for_retry("", attempt, "Gemini API").await;
+                    attempt += 1;
+                    continue;
+                }
+                Err(e) => return Err(e).context("Failed to send request to Gemini API"),
+            };
 
             if response.status().is_success() {
                 let generate_response: GenerateResponse = response
@@ -165,11 +176,10 @@ impl GeminiClient {
                 .await
                 .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
 
-            // 429: rate limited — retry with backoff if we have attempts left
-            if status.as_u16() == 429 && attempt < MAX_RETRIES {
-                // Check if this is a hard quota exhaustion (limit: 0) rather than
-                // a transient per-minute spike. If so, fail fast with a helpful message.
-                if is_quota_exhausted(&body) {
+            if retry::should_retry(status.as_u16()) && attempt < MAX_RETRIES {
+                // For 429 only: check if this is a hard quota exhaustion (limit: 0) rather
+                // than a transient per-minute spike. If so, fail fast with a helpful message.
+                if status.as_u16() == 429 && is_quota_exhausted(&body) {
                     anyhow::bail!(
                         "Gemini API quota exhausted (free tier limit reached).\n\
                          Enable billing on your Google AI project to continue:\n\
@@ -211,20 +221,31 @@ impl GeminiClient {
             },
         };
 
-        let url = format!(
-            "{}/{}:generateContent?key={}",
-            GEMINI_BASE_URL, self.model, self.api_key
-        );
+        let url = format!("{}/{}:generateContent", GEMINI_BASE_URL, self.model);
 
         let mut attempt = 0u32;
         loop {
-            let response = self
+            let response = match self
                 .client
                 .post(&url)
+                .header("x-goog-api-key", &self.api_key)
                 .json(&request)
                 .send()
                 .await
-                .context("Failed to send request to Gemini API")?;
+            {
+                Ok(r) => r,
+                Err(e) if retry::is_retryable_error(&e) && attempt < MAX_RETRIES => {
+                    eprintln!(
+                        "Network error calling Gemini API (attempt {}/{}): {e}",
+                        attempt + 1,
+                        MAX_RETRIES
+                    );
+                    retry::sleep_for_retry("", attempt, "Gemini API").await;
+                    attempt += 1;
+                    continue;
+                }
+                Err(e) => return Err(e).context("Failed to send request to Gemini API"),
+            };
 
             if response.status().is_success() {
                 let generate_response: GenerateResponse = response
@@ -257,8 +278,8 @@ impl GeminiClient {
                 .await
                 .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
 
-            if status.as_u16() == 429 && attempt < MAX_RETRIES {
-                if is_quota_exhausted(&body) {
+            if retry::should_retry(status.as_u16()) && attempt < MAX_RETRIES {
+                if status.as_u16() == 429 && is_quota_exhausted(&body) {
                     anyhow::bail!(
                         "Gemini API quota exhausted (free tier limit reached).\n\
                          Enable billing on your Google AI project to continue:\n\
@@ -299,20 +320,31 @@ impl GeminiClient {
             },
         };
 
-        let url = format!(
-            "{}/{}:generateContent?key={}",
-            GEMINI_BASE_URL, self.model, self.api_key
-        );
+        let url = format!("{}/{}:generateContent", GEMINI_BASE_URL, self.model);
 
         let mut attempt = 0u32;
         loop {
-            let response = self
+            let response = match self
                 .client
                 .post(&url)
+                .header("x-goog-api-key", &self.api_key)
                 .json(&request)
                 .send()
                 .await
-                .context("Failed to send request to Gemini API")?;
+            {
+                Ok(r) => r,
+                Err(e) if retry::is_retryable_error(&e) && attempt < MAX_RETRIES => {
+                    eprintln!(
+                        "Network error calling Gemini API (attempt {}/{}): {e}",
+                        attempt + 1,
+                        MAX_RETRIES
+                    );
+                    retry::sleep_for_retry("", attempt, "Gemini API").await;
+                    attempt += 1;
+                    continue;
+                }
+                Err(e) => return Err(e).context("Failed to send request to Gemini API"),
+            };
 
             if response.status().is_success() {
                 let generate_response: GenerateResponse = response
@@ -345,8 +377,8 @@ impl GeminiClient {
                 .await
                 .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
 
-            if status.as_u16() == 429 && attempt < MAX_RETRIES {
-                if is_quota_exhausted(&body) {
+            if retry::should_retry(status.as_u16()) && attempt < MAX_RETRIES {
+                if status.as_u16() == 429 && is_quota_exhausted(&body) {
                     anyhow::bail!(
                         "Gemini API quota exhausted (free tier limit reached).\n\
                          Enable billing on your Google AI project to continue:\n\

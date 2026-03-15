@@ -626,7 +626,10 @@ pub fn write_output(
     for ctx in class_contexts {
         let page = render_class_page(ctx);
         std::fs::write(
-            classes_dir.join(format!("{}.md", ctx.metadata.class_name)),
+            classes_dir.join(format!(
+                "{}.md",
+                sanitize_filename(&ctx.metadata.class_name)
+            )),
             page,
         )?;
     }
@@ -634,7 +637,10 @@ pub fn write_output(
     for ctx in trigger_contexts {
         let page = render_trigger_page(ctx);
         std::fs::write(
-            triggers_dir.join(format!("{}.md", ctx.metadata.trigger_name)),
+            triggers_dir.join(format!(
+                "{}.md",
+                sanitize_filename(&ctx.metadata.trigger_name)
+            )),
             page,
         )?;
     }
@@ -642,7 +648,7 @@ pub fn write_output(
     for ctx in flow_contexts {
         let page = render_flow_page(ctx);
         std::fs::write(
-            flows_dir.join(format!("{}.md", ctx.metadata.api_name)),
+            flows_dir.join(format!("{}.md", sanitize_filename(&ctx.metadata.api_name))),
             page,
         )?;
     }
@@ -656,6 +662,14 @@ pub fn write_output(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Strips any path separators or traversal components from a name used as
+/// an output filename. Only keeps `[a-zA-Z0-9_.-]` characters.
+pub fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, '_' | '.' | '-'))
+        .collect()
+}
 
 fn render_badges(meta: &ClassMetadata) -> String {
     let mut badges = vec![format!("`{}`", meta.access_modifier)];
