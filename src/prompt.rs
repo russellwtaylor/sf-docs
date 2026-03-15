@@ -1,4 +1,4 @@
-use crate::types::{ApexFile, ClassMetadata};
+use crate::types::{ClassMetadata, SourceFile};
 
 pub const SYSTEM_PROMPT: &str = r#"
 You are an expert Salesforce developer and technical writer.
@@ -33,7 +33,7 @@ Rules:
 - Do not invent functionality that is not in the source.
 "#;
 
-pub fn build_prompt(file: &ApexFile, metadata: &ClassMetadata) -> String {
+pub fn build_prompt(file: &SourceFile, metadata: &ClassMetadata) -> String {
     let mut prompt = String::new();
 
     prompt.push_str(&format!("# Apex Class: {}\n\n", metadata.class_name));

@@ -3,8 +3,9 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::renderer::{
-    sanitize_filename, FlowRenderContext, LwcRenderContext, ObjectRenderContext, RenderContext,
-    TriggerRenderContext, ValidationRuleRenderContext,
+    sanitize_filename, AuraRenderContext, CustomMetadataRenderContext, FlexiPageRenderContext,
+    FlowRenderContext, LwcRenderContext, ObjectRenderContext, RenderContext, TriggerRenderContext,
+    ValidationRuleRenderContext,
 };
 
 // ---------------------------------------------------------------------------
@@ -85,6 +86,7 @@ const APEX_KEYWORDS: &[&str] = &[
 // Public API
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 pub fn write_html_output(
     output_dir: &Path,
     class_contexts: &[RenderContext],
@@ -93,6 +95,9 @@ pub fn write_html_output(
     validation_rule_contexts: &[ValidationRuleRenderContext],
     object_contexts: &[ObjectRenderContext],
     lwc_contexts: &[LwcRenderContext],
+    flexipage_contexts: &[FlexiPageRenderContext],
+    custom_metadata_contexts: &[CustomMetadataRenderContext],
+    aura_contexts: &[AuraRenderContext],
 ) -> Result<()> {
     let classes_dir = output_dir.join("classes");
     let triggers_dir = output_dir.join("triggers");
@@ -100,6 +105,9 @@ pub fn write_html_output(
     let vr_dir = output_dir.join("validation-rules");
     let objects_dir = output_dir.join("objects");
     let lwc_dir = output_dir.join("lwc");
+    let flexipages_dir = output_dir.join("flexipages");
+    let custom_metadata_dir = output_dir.join("custom-metadata");
+    let aura_dir = output_dir.join("aura");
 
     std::fs::create_dir_all(output_dir)?;
     if !class_contexts.is_empty() {
@@ -119,6 +127,15 @@ pub fn write_html_output(
     }
     if !lwc_contexts.is_empty() {
         std::fs::create_dir_all(&lwc_dir)?;
+    }
+    if !flexipage_contexts.is_empty() {
+        std::fs::create_dir_all(&flexipages_dir)?;
+    }
+    if !custom_metadata_contexts.is_empty() {
+        std::fs::create_dir_all(&custom_metadata_dir)?;
+    }
+    if !aura_contexts.is_empty() {
+        std::fs::create_dir_all(&aura_dir)?;
     }
 
     // (name, folder) pairs — used for sidebar grouping and cross-link generation.
@@ -146,6 +163,14 @@ pub fn write_html_output(
         .iter()
         .map(|c| (c.metadata.component_name.as_str(), c.folder.as_str()))
         .collect();
+    let flexipage_items: Vec<(&str, &str)> = flexipage_contexts
+        .iter()
+        .map(|c| (c.metadata.api_name.as_str(), c.folder.as_str()))
+        .collect();
+    let aura_items: Vec<(&str, &str)> = aura_contexts
+        .iter()
+        .map(|c| (c.metadata.component_name.as_str(), c.folder.as_str()))
+        .collect();
 
     for ctx in class_contexts {
         let page = render_class_page(
@@ -156,6 +181,8 @@ pub fn write_html_output(
             &vr_items,
             &obj_items,
             &lwc_items,
+            &flexipage_items,
+            &aura_items,
         );
         std::fs::write(
             classes_dir.join(format!(
@@ -175,6 +202,8 @@ pub fn write_html_output(
             &vr_items,
             &obj_items,
             &lwc_items,
+            &flexipage_items,
+            &aura_items,
         );
         std::fs::write(
             triggers_dir.join(format!(
@@ -194,6 +223,8 @@ pub fn write_html_output(
             &vr_items,
             &obj_items,
             &lwc_items,
+            &flexipage_items,
+            &aura_items,
         );
         std::fs::write(
             flows_dir.join(format!(
@@ -213,6 +244,8 @@ pub fn write_html_output(
             &vr_items,
             &obj_items,
             &lwc_items,
+            &flexipage_items,
+            &aura_items,
         );
         std::fs::write(
             vr_dir.join(format!(
@@ -232,6 +265,8 @@ pub fn write_html_output(
             &vr_items,
             &obj_items,
             &lwc_items,
+            &flexipage_items,
+            &aura_items,
         );
         std::fs::write(
             objects_dir.join(format!(
@@ -251,9 +286,71 @@ pub fn write_html_output(
             &vr_items,
             &obj_items,
             &lwc_items,
+            &flexipage_items,
+            &aura_items,
         );
         std::fs::write(
             lwc_dir.join(format!(
+                "{}.html",
+                sanitize_filename(&ctx.metadata.component_name)
+            )),
+            page,
+        )?;
+    }
+
+    for ctx in flexipage_contexts {
+        let page = render_flexipage_page(
+            ctx,
+            &class_items,
+            &trigger_items,
+            &flow_items,
+            &vr_items,
+            &obj_items,
+            &lwc_items,
+            &flexipage_items,
+            &aura_items,
+        );
+        std::fs::write(
+            flexipages_dir.join(format!(
+                "{}.html",
+                sanitize_filename(&ctx.metadata.api_name)
+            )),
+            page,
+        )?;
+    }
+
+    for ctx in custom_metadata_contexts {
+        let page = render_custom_metadata_page(
+            ctx,
+            &class_items,
+            &trigger_items,
+            &flow_items,
+            &vr_items,
+            &obj_items,
+            &lwc_items,
+            &flexipage_items,
+            &aura_items,
+        );
+        std::fs::write(
+            custom_metadata_dir.join(format!("{}.html", sanitize_filename(&ctx.type_name))),
+            page,
+        )?;
+    }
+
+    for ctx in aura_contexts {
+        let page = render_aura_page(
+            ctx,
+            &class_items,
+            &trigger_items,
+            &flow_items,
+            &vr_items,
+            &obj_items,
+            &lwc_items,
+            &flexipage_items,
+            &aura_items,
+        );
+        std::fs::write(
+            aura_dir.join(format!(
                 "{}.html",
                 sanitize_filename(&ctx.metadata.component_name)
             )),
@@ -268,6 +365,9 @@ pub fn write_html_output(
         validation_rule_contexts,
         object_contexts,
         lwc_contexts,
+        flexipage_contexts,
+        custom_metadata_contexts,
+        aura_contexts,
     );
     std::fs::write(output_dir.join("index.html"), index)?;
 
@@ -278,6 +378,7 @@ pub fn write_html_output(
 // Page renderers
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn render_class_page(
     ctx: &RenderContext,
     class_items: &[(&str, &str)],
@@ -286,6 +387,8 @@ fn render_class_page(
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
     lwc_items: &[(&str, &str)],
+    flexipage_items: &[(&str, &str)],
+    aura_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
@@ -293,6 +396,8 @@ fn render_class_page(
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
+    let _flexipage_names: Vec<&str> = flexipage_items.iter().map(|&(n, _)| n).collect();
+    let _aura_names: Vec<&str> = aura_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.class_name;
@@ -305,6 +410,9 @@ fn render_class_page(
         "<span class=\"badge\">{}</span>\n",
         escape(&meta.access_modifier)
     ));
+    if meta.is_interface {
+        body.push_str("<span class=\"badge\">interface</span>\n");
+    }
     if meta.is_abstract {
         body.push_str("<span class=\"badge\">abstract</span>\n");
     }
@@ -516,6 +624,23 @@ fn render_class_page(
         body.push_str("</ul>\n");
     }
 
+    // Implemented By (for interfaces)
+    if meta.is_interface {
+        if let Some(implementors) = ctx.all_names.interface_implementors.get(&meta.class_name) {
+            if !implementors.is_empty() {
+                body.push_str("<h2>Implemented By</h2>\n<ul>\n");
+                for cls in implementors {
+                    body.push_str(&format!(
+                        "<li><a href=\"{}.html\">{}</a></li>\n",
+                        escape(cls),
+                        escape(cls)
+                    ));
+                }
+                body.push_str("</ul>\n");
+            }
+        }
+    }
+
     wrap_page(
         &doc.class_name,
         "sfdoc",
@@ -528,9 +653,12 @@ fn render_class_page(
         vr_items,
         obj_items,
         lwc_items,
+        flexipage_items,
+        aura_items,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_trigger_page(
     ctx: &TriggerRenderContext,
     class_items: &[(&str, &str)],
@@ -539,6 +667,8 @@ fn render_trigger_page(
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
     lwc_items: &[(&str, &str)],
+    flexipage_items: &[(&str, &str)],
+    aura_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
@@ -546,6 +676,8 @@ fn render_trigger_page(
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
+    let _flexipage_names: Vec<&str> = flexipage_items.iter().map(|&(n, _)| n).collect();
+    let _aura_names: Vec<&str> = aura_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.trigger_name;
@@ -707,9 +839,12 @@ fn render_trigger_page(
         vr_items,
         obj_items,
         lwc_items,
+        flexipage_items,
+        aura_items,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_flow_page(
     ctx: &FlowRenderContext,
     class_items: &[(&str, &str)],
@@ -718,6 +853,8 @@ fn render_flow_page(
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
     lwc_items: &[(&str, &str)],
+    flexipage_items: &[(&str, &str)],
+    aura_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
@@ -725,6 +862,8 @@ fn render_flow_page(
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
+    let _flexipage_names: Vec<&str> = flexipage_items.iter().map(|&(n, _)| n).collect();
+    let _aura_names: Vec<&str> = aura_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.api_name;
@@ -928,9 +1067,12 @@ fn render_flow_page(
         vr_items,
         obj_items,
         lwc_items,
+        flexipage_items,
+        aura_items,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_validation_rule_page(
     ctx: &ValidationRuleRenderContext,
     class_items: &[(&str, &str)],
@@ -939,6 +1081,8 @@ fn render_validation_rule_page(
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
     lwc_items: &[(&str, &str)],
+    flexipage_items: &[(&str, &str)],
+    aura_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
@@ -946,6 +1090,8 @@ fn render_validation_rule_page(
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
+    let _flexipage_names: Vec<&str> = flexipage_items.iter().map(|&(n, _)| n).collect();
+    let _aura_names: Vec<&str> = aura_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.rule_name;
@@ -1102,9 +1248,12 @@ fn render_validation_rule_page(
         vr_items,
         obj_items,
         lwc_items,
+        flexipage_items,
+        aura_items,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_object_page(
     ctx: &ObjectRenderContext,
     class_items: &[(&str, &str)],
@@ -1113,6 +1262,8 @@ fn render_object_page(
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
     lwc_items: &[(&str, &str)],
+    flexipage_items: &[(&str, &str)],
+    aura_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
@@ -1120,6 +1271,8 @@ fn render_object_page(
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
+    let _flexipage_names: Vec<&str> = flexipage_items.iter().map(|&(n, _)| n).collect();
+    let _aura_names: Vec<&str> = aura_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.object_name;
@@ -1294,6 +1447,8 @@ fn render_object_page(
         vr_items,
         obj_items,
         lwc_items,
+        flexipage_items,
+        aura_items,
     )
 }
 
@@ -1306,6 +1461,8 @@ fn render_lwc_page(
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
     lwc_items: &[(&str, &str)],
+    flexipage_items: &[(&str, &str)],
+    aura_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
@@ -1313,6 +1470,8 @@ fn render_lwc_page(
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
+    let _flexipage_names: Vec<&str> = flexipage_items.iter().map(|&(n, _)| n).collect();
+    let _aura_names: Vec<&str> = aura_items.iter().map(|&(n, _)| n).collect();
 
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
@@ -1469,9 +1628,321 @@ fn render_lwc_page(
         vr_items,
         obj_items,
         lwc_items,
+        flexipage_items,
+        aura_items,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
+fn render_flexipage_page(
+    ctx: &FlexiPageRenderContext,
+    class_items: &[(&str, &str)],
+    trigger_items: &[(&str, &str)],
+    flow_items: &[(&str, &str)],
+    vr_items: &[(&str, &str)],
+    obj_items: &[(&str, &str)],
+    lwc_items: &[(&str, &str)],
+    flexipage_items: &[(&str, &str)],
+    aura_items: &[(&str, &str)],
+) -> String {
+    let doc = &ctx.documentation;
+    let meta = &ctx.metadata;
+    let active = &meta.api_name;
+
+    let mut body = String::new();
+
+    let title = if !meta.label.is_empty() {
+        meta.label.as_str()
+    } else {
+        meta.api_name.as_str()
+    };
+
+    body.push_str(&format!("<h1>{}</h1>\n", escape(title)));
+    body.push_str("<div class=\"badges\">\n");
+    body.push_str("<span class=\"badge\">lightning-page</span>\n");
+    if !meta.page_type.is_empty() {
+        body.push_str(&format!(
+            "<span class=\"badge\">{}</span>\n",
+            escape(&meta.page_type)
+        ));
+    }
+    if !meta.sobject.is_empty() {
+        body.push_str(&format!(
+            "<span class=\"badge\">on {}</span>\n",
+            escape(&meta.sobject)
+        ));
+    }
+    body.push_str("</div>\n");
+
+    body.push_str(&format!(
+        "<p class=\"summary\">{}</p>\n",
+        escape(&doc.summary)
+    ));
+
+    body.push_str("<h2>Description</h2>\n");
+    body.push_str(&format!("<p>{}</p>\n", escape(&doc.description)));
+
+    if !doc.usage_context.is_empty() {
+        body.push_str("<h2>Usage Context</h2>\n");
+        body.push_str(&format!("<p>{}</p>\n", escape(&doc.usage_context)));
+    }
+
+    if !meta.component_names.is_empty() {
+        body.push_str("<h2>Components</h2>\n<ul>\n");
+        for comp in &meta.component_names {
+            let name_cell = if lwc_items.iter().any(|&(n, _)| n == comp.as_str()) {
+                format!(
+                    "<a href=\"../lwc/{}.html\"><code>{}</code></a>",
+                    escape(comp),
+                    escape(comp)
+                )
+            } else if aura_items.iter().any(|&(n, _)| n == comp.as_str()) {
+                format!(
+                    "<a href=\"../aura/{}.html\"><code>{}</code></a>",
+                    escape(comp),
+                    escape(comp)
+                )
+            } else {
+                format!("<code>{}</code>", escape(comp))
+            };
+            body.push_str(&format!("<li>{}</li>\n", name_cell));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    if !meta.flow_names.is_empty() {
+        body.push_str("<h2>Flows</h2>\n<ul>\n");
+        for flow in &meta.flow_names {
+            let name_cell = if flow_items.iter().any(|&(n, _)| n == flow.as_str()) {
+                format!(
+                    "<a href=\"../flows/{}.html\"><code>{}</code></a>",
+                    escape(flow),
+                    escape(flow)
+                )
+            } else {
+                format!("<code>{}</code>", escape(flow))
+            };
+            body.push_str(&format!("<li>{}</li>\n", name_cell));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    if !doc.key_components.is_empty() {
+        body.push_str("<h2>Key Components</h2>\n<ul>\n");
+        for comp in &doc.key_components {
+            body.push_str(&format!("<li>{}</li>\n", escape(comp)));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    if !doc.relationships.is_empty() {
+        body.push_str("<h2>See Also</h2>\n<ul>\n");
+        for rel in &doc.relationships {
+            body.push_str(&format!("<li>{}</li>\n", escape(rel)));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    wrap_page(
+        title,
+        "sfdoc",
+        &body,
+        active,
+        "../",
+        class_items,
+        trigger_items,
+        flow_items,
+        vr_items,
+        obj_items,
+        lwc_items,
+        flexipage_items,
+        aura_items,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_custom_metadata_page(
+    ctx: &CustomMetadataRenderContext,
+    class_items: &[(&str, &str)],
+    trigger_items: &[(&str, &str)],
+    flow_items: &[(&str, &str)],
+    vr_items: &[(&str, &str)],
+    obj_items: &[(&str, &str)],
+    lwc_items: &[(&str, &str)],
+    flexipage_items: &[(&str, &str)],
+    aura_items: &[(&str, &str)],
+) -> String {
+    let mut body = String::new();
+
+    body.push_str(&format!("<h1>{}</h1>\n", escape(&ctx.type_name)));
+    body.push_str("<div class=\"badges\">\n");
+    body.push_str("<span class=\"badge\">custom-metadata-type</span>\n");
+    body.push_str("</div>\n");
+
+    body.push_str(&format!(
+        "<p class=\"summary\">{} record(s) defined.</p>\n",
+        ctx.records.len()
+    ));
+
+    if !ctx.records.is_empty() {
+        // Collect all unique field names across records
+        let mut field_names: Vec<String> = Vec::new();
+        for record in &ctx.records {
+            for (field, _) in &record.values {
+                if !field_names.contains(field) {
+                    field_names.push(field.clone());
+                }
+            }
+        }
+        field_names.sort();
+
+        body.push_str("<h2>Records</h2>\n");
+        body.push_str("<table><thead><tr><th>Record</th><th>Label</th>");
+        for field in &field_names {
+            body.push_str(&format!("<th>{}</th>", escape(field)));
+        }
+        body.push_str("</tr></thead><tbody>\n");
+
+        let mut sorted_records: Vec<_> = ctx.records.iter().collect();
+        sorted_records.sort_by(|a, b| a.record_name.cmp(&b.record_name));
+
+        for record in sorted_records {
+            body.push_str(&format!(
+                "<tr><td><code>{}</code></td><td>{}</td>",
+                escape(&record.record_name),
+                escape(&record.label)
+            ));
+            for field in &field_names {
+                let val = record
+                    .values
+                    .iter()
+                    .find(|(f, _)| f == field)
+                    .map(|(_, v)| v.as_str())
+                    .unwrap_or("");
+                body.push_str(&format!("<td>{}</td>", escape(val)));
+            }
+            body.push_str("</tr>\n");
+        }
+        body.push_str("</tbody></table>\n");
+    }
+
+    wrap_page(
+        &ctx.type_name,
+        "sfdoc",
+        &body,
+        &ctx.type_name,
+        "../",
+        class_items,
+        trigger_items,
+        flow_items,
+        vr_items,
+        obj_items,
+        lwc_items,
+        flexipage_items,
+        aura_items,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_aura_page(
+    ctx: &AuraRenderContext,
+    class_items: &[(&str, &str)],
+    trigger_items: &[(&str, &str)],
+    flow_items: &[(&str, &str)],
+    vr_items: &[(&str, &str)],
+    obj_items: &[(&str, &str)],
+    lwc_items: &[(&str, &str)],
+    flexipage_items: &[(&str, &str)],
+    aura_items: &[(&str, &str)],
+) -> String {
+    let doc = &ctx.documentation;
+    let meta = &ctx.metadata;
+    let active = &meta.component_name;
+
+    let mut body = String::new();
+
+    body.push_str(&format!("<h1>{}</h1>\n", escape(&meta.component_name)));
+    body.push_str("<div class=\"badges\">\n");
+    body.push_str("<span class=\"badge\">aura</span>\n");
+    if let Some(ref ext) = meta.extends {
+        body.push_str(&format!(
+            "<span class=\"badge\">extends {}</span>\n",
+            escape(ext)
+        ));
+    }
+    body.push_str("</div>\n");
+
+    body.push_str(&format!(
+        "<p class=\"summary\">{}</p>\n",
+        escape(&doc.summary)
+    ));
+
+    body.push_str("<h2>Description</h2>\n");
+    body.push_str(&format!("<p>{}</p>\n", escape(&doc.description)));
+
+    if !doc.attributes.is_empty() {
+        body.push_str("<h2>Attributes</h2>\n");
+        body.push_str("<table><thead><tr><th>Name</th><th>Type</th><th>Default</th><th>Description</th></tr></thead><tbody>\n");
+        for attr_doc in &doc.attributes {
+            let (attr_type, default_val) = meta
+                .attributes
+                .iter()
+                .find(|a| a.name == attr_doc.name)
+                .map(|a| (a.attr_type.as_str(), a.default.as_str()))
+                .unwrap_or(("", ""));
+            body.push_str(&format!(
+                "<tr><td><code>{}</code></td><td><code>{}</code></td><td>{}</td><td>{}</td></tr>\n",
+                escape(&attr_doc.name),
+                escape(attr_type),
+                escape(default_val),
+                escape(&attr_doc.description)
+            ));
+        }
+        body.push_str("</tbody></table>\n");
+    }
+
+    if !meta.events_handled.is_empty() {
+        body.push_str("<h2>Events Handled</h2>\n<ul>\n");
+        for event in &meta.events_handled {
+            body.push_str(&format!("<li><code>{}</code></li>\n", escape(event)));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    if !doc.usage_notes.is_empty() {
+        body.push_str("<h2>Usage Notes</h2>\n<ul>\n");
+        for note in &doc.usage_notes {
+            body.push_str(&format!("<li>{}</li>\n", escape(note)));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    if !doc.relationships.is_empty() {
+        body.push_str("<h2>See Also</h2>\n<ul>\n");
+        for rel in &doc.relationships {
+            body.push_str(&format!("<li>{}</li>\n", escape(rel)));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    wrap_page(
+        &meta.component_name,
+        "sfdoc",
+        &body,
+        active,
+        "../",
+        class_items,
+        trigger_items,
+        flow_items,
+        vr_items,
+        obj_items,
+        lwc_items,
+        flexipage_items,
+        aura_items,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
 fn render_index(
     class_contexts: &[RenderContext],
     trigger_contexts: &[TriggerRenderContext],
@@ -1479,6 +1950,9 @@ fn render_index(
     validation_rule_contexts: &[ValidationRuleRenderContext],
     object_contexts: &[ObjectRenderContext],
     lwc_contexts: &[LwcRenderContext],
+    flexipage_contexts: &[FlexiPageRenderContext],
+    custom_metadata_contexts: &[CustomMetadataRenderContext],
+    aura_contexts: &[AuraRenderContext],
 ) -> String {
     let class_items: Vec<(&str, &str)> = class_contexts
         .iter()
@@ -1504,22 +1978,49 @@ fn render_index(
         .iter()
         .map(|c| (c.metadata.component_name.as_str(), c.folder.as_str()))
         .collect();
+    let flexipage_items: Vec<(&str, &str)> = flexipage_contexts
+        .iter()
+        .map(|c| (c.metadata.api_name.as_str(), c.folder.as_str()))
+        .collect();
+    let aura_items: Vec<(&str, &str)> = aura_contexts
+        .iter()
+        .map(|c| (c.metadata.component_name.as_str(), c.folder.as_str()))
+        .collect();
     let mut body = String::new();
-    body.push_str("<h1>Apex Documentation</h1>\n");
+    body.push_str("<h1>Salesforce Documentation</h1>\n");
+    let interface_count = class_contexts
+        .iter()
+        .filter(|c| c.metadata.is_interface)
+        .count();
+    let class_count = class_contexts.len() - interface_count;
     body.push_str(&format!(
-        "<p class=\"summary\">Generated documentation for {} class(es), {} trigger(s), {} flow(s), {} validation rule(s), {} object(s), and {} LWC component(s).</p>\n",
-        class_contexts.len(),
+        "<p class=\"summary\">Generated documentation for {} class(es), {} interface(s), {} trigger(s), {} flow(s), {} validation rule(s), {} object(s), {} LWC component(s), {} Lightning page(s), {} custom metadata type(s), and {} Aura component(s).</p>\n",
+        class_count,
+        interface_count,
         trigger_contexts.len(),
         flow_contexts.len(),
         validation_rule_contexts.len(),
         object_contexts.len(),
         lwc_contexts.len(),
+        flexipage_contexts.len(),
+        custom_metadata_contexts.len(),
+        aura_contexts.len(),
     ));
 
-    if !class_contexts.is_empty() {
+    // Partition classes and interfaces
+    let concrete_classes: Vec<&RenderContext> = class_contexts
+        .iter()
+        .filter(|c| !c.metadata.is_interface)
+        .collect();
+    let interfaces: Vec<&RenderContext> = class_contexts
+        .iter()
+        .filter(|c| c.metadata.is_interface)
+        .collect();
+
+    if !concrete_classes.is_empty() {
         // Group classes by folder.
-        let mut class_by_folder: BTreeMap<&str, Vec<&RenderContext>> = BTreeMap::new();
-        for ctx in class_contexts {
+        let mut class_by_folder: BTreeMap<&str, Vec<&&RenderContext>> = BTreeMap::new();
+        for ctx in &concrete_classes {
             class_by_folder
                 .entry(ctx.folder.as_str())
                 .or_default()
@@ -1538,6 +2039,40 @@ fn render_index(
             }
             body.push_str("<table><thead><tr><th>Class</th><th>Summary</th></tr></thead><tbody>\n");
             for ctx in classes {
+                body.push_str(&format!(
+                    "<tr><td><a href=\"classes/{}.html\">{}</a></td><td>{}</td></tr>\n",
+                    escape(&ctx.metadata.class_name),
+                    escape(&ctx.documentation.class_name),
+                    escape(&ctx.documentation.summary),
+                ));
+            }
+            body.push_str("</tbody></table>\n");
+        }
+    }
+
+    if !interfaces.is_empty() {
+        let mut iface_by_folder: BTreeMap<&str, Vec<&&RenderContext>> = BTreeMap::new();
+        for ctx in &interfaces {
+            iface_by_folder
+                .entry(ctx.folder.as_str())
+                .or_default()
+                .push(ctx);
+        }
+        for group in iface_by_folder.values_mut() {
+            group.sort_by(|a, b| a.documentation.class_name.cmp(&b.documentation.class_name));
+        }
+
+        body.push_str("<h2>Interfaces</h2>\n");
+        let multi_folder = iface_by_folder.len() > 1;
+        for (folder, ifaces) in &iface_by_folder {
+            if multi_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                body.push_str(&format!("<h3>{}</h3>\n", escape(label)));
+            }
+            body.push_str(
+                "<table><thead><tr><th>Interface</th><th>Summary</th></tr></thead><tbody>\n",
+            );
+            for ctx in ifaces {
                 body.push_str(&format!(
                     "<tr><td><a href=\"classes/{}.html\">{}</a></td><td>{}</td></tr>\n",
                     escape(&ctx.metadata.class_name),
@@ -1702,6 +2237,67 @@ fn render_index(
         body.push_str("</tbody></table>\n");
     }
 
+    if !flexipage_contexts.is_empty() {
+        let mut fp_sorted: Vec<&FlexiPageRenderContext> = flexipage_contexts.iter().collect();
+        fp_sorted.sort_by(|a, b| a.metadata.api_name.cmp(&b.metadata.api_name));
+
+        body.push_str("<h2>Lightning Pages</h2>\n");
+        body.push_str(
+            "<table><thead><tr><th>Page</th><th>Type</th><th>Summary</th></tr></thead><tbody>\n",
+        );
+        for ctx in fp_sorted {
+            let label = if !ctx.metadata.label.is_empty() {
+                ctx.metadata.label.as_str()
+            } else {
+                ctx.metadata.api_name.as_str()
+            };
+            body.push_str(&format!(
+                "<tr><td><a href=\"flexipages/{}.html\">{}</a></td><td><code>{}</code></td><td>{}</td></tr>\n",
+                escape(&ctx.metadata.api_name),
+                escape(label),
+                escape(&ctx.metadata.page_type),
+                escape(&ctx.documentation.summary),
+            ));
+        }
+        body.push_str("</tbody></table>\n");
+    }
+
+    if !custom_metadata_contexts.is_empty() {
+        let mut cm_sorted: Vec<&CustomMetadataRenderContext> =
+            custom_metadata_contexts.iter().collect();
+        cm_sorted.sort_by(|a, b| a.type_name.cmp(&b.type_name));
+
+        body.push_str("<h2>Custom Metadata Types</h2>\n");
+        body.push_str("<table><thead><tr><th>Type</th><th>Records</th></tr></thead><tbody>\n");
+        for ctx in cm_sorted {
+            body.push_str(&format!(
+                "<tr><td><a href=\"custom-metadata/{}.html\"><code>{}</code></a></td><td>{}</td></tr>\n",
+                escape(&ctx.type_name),
+                escape(&ctx.type_name),
+                ctx.records.len(),
+            ));
+        }
+        body.push_str("</tbody></table>\n");
+    }
+
+    if !aura_contexts.is_empty() {
+        let mut aura_sorted: Vec<&AuraRenderContext> = aura_contexts.iter().collect();
+        aura_sorted.sort_by(|a, b| a.metadata.component_name.cmp(&b.metadata.component_name));
+
+        body.push_str("<h2>Aura Components</h2>\n");
+        body.push_str("<table><thead><tr><th>Component</th><th>Attributes</th><th>Summary</th></tr></thead><tbody>\n");
+        for ctx in aura_sorted {
+            body.push_str(&format!(
+                "<tr><td><a href=\"aura/{}.html\">{}</a></td><td>{}</td><td>{}</td></tr>\n",
+                escape(&ctx.metadata.component_name),
+                escape(&ctx.metadata.component_name),
+                ctx.metadata.attributes.len(),
+                escape(&ctx.documentation.summary),
+            ));
+        }
+        body.push_str("</tbody></table>\n");
+    }
+
     wrap_page(
         "Overview",
         "sfdoc",
@@ -1714,6 +2310,8 @@ fn render_index(
         &vr_items,
         &obj_items,
         &lwc_items,
+        &flexipage_items,
+        &aura_items,
     )
 }
 
@@ -1734,6 +2332,8 @@ fn wrap_page(
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
     lwc_items: &[(&str, &str)],
+    flexipage_items: &[(&str, &str)],
+    aura_items: &[(&str, &str)],
 ) -> String {
     let sidebar = render_sidebar(
         class_items,
@@ -1742,6 +2342,8 @@ fn wrap_page(
         vr_items,
         obj_items,
         lwc_items,
+        flexipage_items,
+        aura_items,
         active,
         up_prefix,
     );
@@ -1775,6 +2377,8 @@ fn render_sidebar(
     vr_items: &[(&str, &str)],
     obj_items: &[(&str, &str)],
     lwc_items: &[(&str, &str)],
+    flexipage_items: &[(&str, &str)],
+    aura_items: &[(&str, &str)],
     active: &str,
     up_prefix: &str,
 ) -> String {
@@ -1965,7 +2569,7 @@ fn render_sidebar(
         }
 
         s.push_str("<div class=\"sidebar-section\">\n");
-        s.push_str("<div class=\"sidebar-heading\">Components</div>\n");
+        s.push_str("<div class=\"sidebar-heading\">LWC</div>\n");
         let multi_folder = by_folder.len() > 1;
         for (folder, names) in &by_folder {
             if multi_folder {
@@ -1989,6 +2593,50 @@ fn render_sidebar(
             }
             s.push_str("</ul>\n");
         }
+        s.push_str("</div>\n");
+    }
+
+    if !flexipage_items.is_empty() {
+        let mut names: Vec<&str> = flexipage_items.iter().map(|&(n, _)| n).collect();
+        names.sort_unstable();
+
+        s.push_str("<div class=\"sidebar-section\">\n");
+        s.push_str("<div class=\"sidebar-heading\">Lightning Pages</div>\n");
+        s.push_str("<ul>\n");
+        for name in names {
+            let cls = if name == active {
+                " class=\"active\""
+            } else {
+                ""
+            };
+            s.push_str(&format!(
+                "<li><a href=\"{up_prefix}flexipages/{name}.html\"{cls}>{}</a></li>\n",
+                escape(name)
+            ));
+        }
+        s.push_str("</ul>\n");
+        s.push_str("</div>\n");
+    }
+
+    if !aura_items.is_empty() {
+        let mut names: Vec<&str> = aura_items.iter().map(|&(n, _)| n).collect();
+        names.sort_unstable();
+
+        s.push_str("<div class=\"sidebar-section\">\n");
+        s.push_str("<div class=\"sidebar-heading\">Aura</div>\n");
+        s.push_str("<ul>\n");
+        for name in names {
+            let cls = if name == active {
+                " class=\"active\""
+            } else {
+                ""
+            };
+            s.push_str(&format!(
+                "<li><a href=\"{up_prefix}aura/{name}.html\"{cls}>{}</a></li>\n",
+                escape(name)
+            ));
+        }
+        s.push_str("</ul>\n");
         s.push_str("</div>\n");
     }
 

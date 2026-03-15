@@ -9,13 +9,19 @@ use std::sync::Arc;
 
 use httpmock::prelude::*;
 use sfdoc::cache::{self, Cache};
+use sfdoc::flow_parser;
+use sfdoc::lwc_parser;
 use sfdoc::parser;
 use sfdoc::renderer::{self, RenderContext, TriggerRenderContext};
-use sfdoc::scanner::{ApexScanner, FileScanner, TriggerScanner};
+use sfdoc::renderer::{
+    FlowRenderContext, LwcRenderContext, ObjectRenderContext, ValidationRuleRenderContext,
+};
+use sfdoc::scanner::{ApexScanner, FileScanner, FlowScanner, LwcScanner, TriggerScanner};
 use sfdoc::trigger_parser;
 use sfdoc::types::{
-    AllNames, ClassDocumentation, MethodDocumentation, PropertyDocumentation, TriggerDocumentation,
-    TriggerEventDocumentation,
+    AllNames, ClassDocumentation, FlowDocumentation, LwcDocumentation, LwcPropDocumentation,
+    MethodDocumentation, ObjectDocumentation, PropertyDocumentation, TriggerDocumentation,
+    TriggerEventDocumentation, ValidationRuleDocumentation,
 };
 
 // ---------------------------------------------------------------------------
@@ -213,6 +219,10 @@ fn full_pipeline_writes_markdown_output() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -262,6 +272,9 @@ fn full_pipeline_writes_markdown_output() {
         &[],
         &[],
         &[],
+        &[],
+        &[],
+        &[],
     )
     .unwrap();
 
@@ -298,6 +311,10 @@ fn markdown_class_page_contains_expected_sections() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -315,6 +332,9 @@ fn markdown_class_page_contains_expected_sections() {
         output_dir,
         &sfdoc::cli::OutputFormat::Markdown,
         &class_contexts,
+        &[],
+        &[],
+        &[],
         &[],
         &[],
         &[],
@@ -352,6 +372,10 @@ fn markdown_index_groups_by_folder() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -373,7 +397,7 @@ fn markdown_index_groups_by_folder() {
         })
         .collect();
 
-    let index = renderer::render_index(&class_contexts, &[], &[], &[], &[], &[]);
+    let index = renderer::render_index(&class_contexts, &[], &[], &[], &[], &[], &[], &[], &[]);
 
     // Both classes should be linked with type-prefixed paths
     assert!(index.contains("[AccountService](classes/AccountService.md)"));
@@ -412,6 +436,10 @@ fn full_pipeline_writes_html_output() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -428,6 +456,9 @@ fn full_pipeline_writes_html_output() {
         output_dir,
         &sfdoc::cli::OutputFormat::Html,
         &class_contexts,
+        &[],
+        &[],
+        &[],
         &[],
         &[],
         &[],
@@ -462,6 +493,10 @@ fn html_page_contains_sidebar_and_content() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -478,6 +513,9 @@ fn html_page_contains_sidebar_and_content() {
         tmp.path(),
         &sfdoc::cli::OutputFormat::Html,
         &class_contexts,
+        &[],
+        &[],
+        &[],
         &[],
         &[],
         &[],
@@ -642,7 +680,7 @@ fn openai_trigger_response(doc: &TriggerDocumentation) -> String {
 #[tokio::test]
 async fn openai_compat_client_documents_class() {
     use sfdoc::openai_compat::OpenAiCompatClient;
-    use sfdoc::types::ApexFile;
+    use sfdoc::types::SourceFile;
 
     let server = MockServer::start();
     let expected_doc = stub_class_doc("AccountService");
@@ -663,7 +701,7 @@ async fn openai_compat_client_documents_class() {
     )
     .unwrap();
 
-    let file = ApexFile {
+    let file = SourceFile {
         path: PathBuf::from("AccountService.cls"),
         filename: "AccountService.cls".to_string(),
         raw_source: std::fs::read_to_string(class_fixtures_dir().join("AccountService.cls"))
@@ -679,7 +717,7 @@ async fn openai_compat_client_documents_class() {
 #[tokio::test]
 async fn openai_compat_client_documents_trigger() {
     use sfdoc::openai_compat::OpenAiCompatClient;
-    use sfdoc::types::ApexFile;
+    use sfdoc::types::SourceFile;
 
     let server = MockServer::start();
     let expected_doc = stub_trigger_doc("AccountTrigger", "Account");
@@ -702,7 +740,7 @@ async fn openai_compat_client_documents_trigger() {
 
     let trigger_files = TriggerScanner.scan(trigger_fixtures_dir()).unwrap();
     let file = &trigger_files[0];
-    let apex_file = ApexFile {
+    let apex_file = SourceFile {
         path: file.path.clone(),
         filename: file.filename.clone(),
         raw_source: file.raw_source.clone(),
@@ -717,7 +755,7 @@ async fn openai_compat_client_documents_trigger() {
 #[tokio::test]
 async fn openai_compat_client_returns_error_on_non_200() {
     use sfdoc::openai_compat::OpenAiCompatClient;
-    use sfdoc::types::ApexFile;
+    use sfdoc::types::SourceFile;
 
     let server = MockServer::start();
     let _mock = server.mock(|when, then| {
@@ -734,7 +772,7 @@ async fn openai_compat_client_returns_error_on_non_200() {
     )
     .unwrap();
 
-    let file = ApexFile {
+    let file = SourceFile {
         path: PathBuf::from("AccountService.cls"),
         filename: "AccountService.cls".to_string(),
         raw_source: "public class AccountService {}".to_string(),
@@ -843,6 +881,10 @@ async fn e2e_scan_parse_ai_render_markdown() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -894,6 +936,9 @@ async fn e2e_scan_parse_ai_render_markdown() {
         &[],
         &[],
         &[],
+        &[],
+        &[],
+        &[],
     )
     .unwrap();
 
@@ -910,4 +955,477 @@ async fn e2e_scan_parse_ai_render_markdown() {
     let account_page =
         std::fs::read_to_string(tmp.path().join("classes/AccountService.md")).unwrap();
     assert!(account_page.contains("Summary for AccountService"));
+}
+
+// ---------------------------------------------------------------------------
+// Flow pipeline
+// ---------------------------------------------------------------------------
+
+fn stub_flow_doc(api_name: &str) -> FlowDocumentation {
+    FlowDocumentation {
+        api_name: api_name.to_string(),
+        label: api_name.replace('_', " "),
+        summary: format!("Summary for {api_name}."),
+        description: format!("Description for {api_name}."),
+        business_process: "The business process.".to_string(),
+        entry_criteria: "When record is created.".to_string(),
+        key_decisions: vec![],
+        admin_notes: vec![],
+        relationships: vec![],
+    }
+}
+
+#[test]
+fn flow_scanner_finds_flow_fixture_files() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let flows_dir = tmp.path().join("flows");
+    std::fs::create_dir_all(&flows_dir).unwrap();
+    std::fs::write(
+        flows_dir.join("Account_Flow.flow-meta.xml"),
+        r#"<?xml version="1.0"?><Flow><label>Account Flow</label><processType>AutoLaunchedFlow</processType></Flow>"#,
+    )
+    .unwrap();
+
+    let files = FlowScanner.scan(tmp.path()).unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].filename, "Account_Flow.flow-meta.xml");
+}
+
+#[test]
+fn flow_pipeline_writes_markdown_output() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output_dir = tmp.path().join("out");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    let flow_xml = r#"<?xml version="1.0"?><Flow><label>My Flow</label><processType>AutoLaunchedFlow</processType><description>Does things.</description></Flow>"#;
+    let meta = flow_parser::parse_flow("My_Flow", flow_xml).unwrap();
+    let doc = stub_flow_doc("My_Flow");
+
+    let all_names = Arc::new(AllNames {
+        class_names: vec![],
+        trigger_names: vec![],
+        flow_names: vec!["My_Flow".to_string()],
+        validation_rule_names: vec![],
+        object_names: vec![],
+        lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
+    });
+
+    let ctx = FlowRenderContext {
+        metadata: meta,
+        documentation: doc,
+        all_names,
+        folder: String::new(),
+    };
+
+    renderer::write_output(
+        &output_dir,
+        &sfdoc::cli::OutputFormat::Markdown,
+        &[],
+        &[],
+        &[ctx],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
+
+    assert!(
+        output_dir.join("flows/My_Flow.md").exists(),
+        "flow page not created"
+    );
+    let index = std::fs::read_to_string(output_dir.join("index.md")).unwrap();
+    assert!(index.contains("My_Flow"), "flow missing from index");
+}
+
+#[test]
+fn flow_page_contains_expected_content() {
+    let flow_xml = r#"<?xml version="1.0"?><Flow>
+        <label>Account Onboarding</label>
+        <processType>AutoLaunchedFlow</processType>
+        <description>Onboards new accounts.</description>
+        <variables>
+            <name>inputAccountId</name>
+            <dataType>String</dataType>
+            <isInput>true</isInput>
+            <isOutput>false</isOutput>
+        </variables>
+    </Flow>"#;
+    let meta = flow_parser::parse_flow("Account_Onboarding", flow_xml).unwrap();
+    assert_eq!(meta.label, "Account Onboarding");
+    assert_eq!(meta.process_type, "AutoLaunchedFlow");
+    assert_eq!(meta.variables.len(), 1);
+    assert!(meta.variables[0].is_input);
+}
+
+// ---------------------------------------------------------------------------
+// Validation rule pipeline
+// ---------------------------------------------------------------------------
+
+fn stub_vr_doc(rule_name: &str, object_name: &str) -> ValidationRuleDocumentation {
+    ValidationRuleDocumentation {
+        rule_name: rule_name.to_string(),
+        object_name: object_name.to_string(),
+        summary: format!("Summary for {rule_name}."),
+        when_fires: "When field is blank.".to_string(),
+        what_protects: "Data quality.".to_string(),
+        formula_explanation: "Checks that Name is not blank.".to_string(),
+        edge_cases: vec![],
+        relationships: vec![],
+    }
+}
+
+#[test]
+fn validation_rule_pipeline_writes_markdown_output() {
+    use sfdoc::validation_rule_parser::parse_validation_rule;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output_dir = tmp.path().join("out");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    // Create the validation rule file in the expected path structure:
+    // objects/{ObjectName}/validationRules/{file}.validationRule-meta.xml
+    let vr_dir = tmp
+        .path()
+        .join("objects")
+        .join("Account")
+        .join("validationRules");
+    std::fs::create_dir_all(&vr_dir).unwrap();
+    let vr_path = vr_dir.join("Require_Name.validationRule-meta.xml");
+    let vr_xml = r#"<?xml version="1.0"?><ValidationRule>
+        <active>true</active>
+        <description>Name must not be blank.</description>
+        <errorConditionFormula>ISBLANK(Name)</errorConditionFormula>
+        <errorMessage>Name is required.</errorMessage>
+    </ValidationRule>"#;
+    std::fs::write(&vr_path, vr_xml).unwrap();
+
+    let meta = parse_validation_rule(&vr_path, vr_xml).unwrap();
+    let doc = stub_vr_doc(&meta.rule_name, &meta.object_name);
+
+    let all_names = Arc::new(AllNames {
+        class_names: vec![],
+        trigger_names: vec![],
+        flow_names: vec![],
+        validation_rule_names: vec![meta.rule_name.clone()],
+        object_names: vec![],
+        lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
+    });
+
+    let ctx = ValidationRuleRenderContext {
+        metadata: meta.clone(),
+        documentation: doc,
+        all_names,
+        folder: meta.object_name.clone(),
+    };
+
+    renderer::write_output(
+        &output_dir,
+        &sfdoc::cli::OutputFormat::Markdown,
+        &[],
+        &[],
+        &[],
+        &[ctx],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
+
+    let expected_path = output_dir
+        .join("validation-rules")
+        .join(format!("{}.md", meta.rule_name));
+    assert!(
+        expected_path.exists(),
+        "validation rule page not created at {expected_path:?}"
+    );
+
+    let index = std::fs::read_to_string(output_dir.join("index.md")).unwrap();
+    assert!(
+        index.contains(&meta.rule_name),
+        "validation rule missing from index"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Object pipeline
+// ---------------------------------------------------------------------------
+
+fn stub_object_doc(object_name: &str) -> ObjectDocumentation {
+    ObjectDocumentation {
+        object_name: object_name.to_string(),
+        label: object_name.replace("__c", ""),
+        summary: format!("Summary for {object_name}."),
+        description: format!("Description for {object_name}."),
+        purpose: "Tracks business data.".to_string(),
+        key_fields: vec![],
+        relationships: vec![],
+        admin_notes: vec![],
+    }
+}
+
+#[test]
+fn object_pipeline_writes_markdown_output() {
+    use sfdoc::object_parser::parse_object;
+
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output_dir = tmp.path().join("out");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    let obj_dir = tmp.path().join("objects").join("My_Object__c");
+    std::fs::create_dir_all(&obj_dir).unwrap();
+    let obj_path = obj_dir.join("My_Object__c.object-meta.xml");
+    let obj_xml = r#"<?xml version="1.0"?><CustomObject>
+        <label>My Object</label>
+        <description>A test object.</description>
+    </CustomObject>"#;
+    std::fs::write(&obj_path, obj_xml).unwrap();
+
+    let meta = parse_object(&obj_path, obj_xml).unwrap();
+    let doc = stub_object_doc(&meta.object_name);
+
+    let all_names = Arc::new(AllNames {
+        class_names: vec![],
+        trigger_names: vec![],
+        flow_names: vec![],
+        validation_rule_names: vec![],
+        object_names: vec![meta.object_name.clone()],
+        lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
+    });
+
+    let ctx = ObjectRenderContext {
+        metadata: meta.clone(),
+        documentation: doc,
+        all_names,
+        folder: String::new(),
+    };
+
+    renderer::write_output(
+        &output_dir,
+        &sfdoc::cli::OutputFormat::Markdown,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[ctx],
+        &[],
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
+
+    assert!(
+        output_dir
+            .join(format!("objects/{}.md", meta.object_name))
+            .exists(),
+        "object page not created"
+    );
+    let index = std::fs::read_to_string(output_dir.join("index.md")).unwrap();
+    assert!(
+        index.contains(&meta.object_name),
+        "object missing from index"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// LWC pipeline
+// ---------------------------------------------------------------------------
+
+fn stub_lwc_doc(component_name: &str) -> LwcDocumentation {
+    LwcDocumentation {
+        component_name: component_name.to_string(),
+        summary: format!("Summary for {component_name}."),
+        description: format!("Description for {component_name}."),
+        api_props: vec![LwcPropDocumentation {
+            name: "recordId".to_string(),
+            description: "The record Id.".to_string(),
+        }],
+        usage_notes: vec!["Use inside a record page.".to_string()],
+        relationships: vec![],
+    }
+}
+
+#[test]
+fn lwc_scanner_finds_lwc_fixtures() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let comp_dir = tmp.path().join("lwc").join("myComp");
+    std::fs::create_dir_all(&comp_dir).unwrap();
+    std::fs::write(
+        comp_dir.join("myComp.js-meta.xml"),
+        "<LightningComponentBundle/>",
+    )
+    .unwrap();
+    std::fs::write(
+        comp_dir.join("myComp.js"),
+        "import { LightningElement, api } from 'lwc';\nexport default class MyComp extends LightningElement {\n    @api recordId;\n}",
+    )
+    .unwrap();
+
+    let files = LwcScanner.scan(tmp.path()).unwrap();
+    assert_eq!(files.len(), 1);
+    assert!(files[0].raw_source.contains("recordId"));
+}
+
+#[test]
+fn lwc_pipeline_writes_markdown_output() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output_dir = tmp.path().join("out");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    // Set up a temp LWC component and parse it
+    let comp_tmp = tempfile::TempDir::new().unwrap();
+    let comp_dir = comp_tmp.path().join("lwc").join("myButton");
+    std::fs::create_dir_all(&comp_dir).unwrap();
+    let js = "import { LightningElement, api } from 'lwc';\nexport default class MyButton extends LightningElement {\n    @api label;\n}";
+    let meta_path = comp_dir.join("myButton.js-meta.xml");
+    std::fs::write(&meta_path, "<LightningComponentBundle/>").unwrap();
+    std::fs::write(comp_dir.join("myButton.js"), js).unwrap();
+
+    let meta = lwc_parser::parse_lwc(&meta_path, js).unwrap();
+    let doc = stub_lwc_doc(&meta.component_name);
+
+    let all_names = Arc::new(AllNames {
+        class_names: vec![],
+        trigger_names: vec![],
+        flow_names: vec![],
+        validation_rule_names: vec![],
+        object_names: vec![],
+        lwc_names: vec![meta.component_name.clone()],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
+    });
+
+    let ctx = LwcRenderContext {
+        metadata: meta.clone(),
+        documentation: doc,
+        all_names,
+        folder: String::new(),
+    };
+
+    renderer::write_output(
+        &output_dir,
+        &sfdoc::cli::OutputFormat::Markdown,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[ctx],
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
+
+    assert!(
+        output_dir
+            .join(format!("lwc/{}.md", meta.component_name))
+            .exists(),
+        "LWC page not created"
+    );
+    let content =
+        std::fs::read_to_string(output_dir.join(format!("lwc/{}.md", meta.component_name)))
+            .unwrap();
+    assert!(
+        content.contains("Summary for myButton"),
+        "summary missing from LWC page"
+    );
+    assert!(
+        content.contains("recordId") || content.contains("label"),
+        "api prop missing from LWC page"
+    );
+
+    let index = std::fs::read_to_string(output_dir.join("index.md")).unwrap();
+    assert!(
+        index.contains(&meta.component_name),
+        "LWC component missing from index"
+    );
+}
+
+#[test]
+fn lwc_pipeline_writes_html_output() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output_dir = tmp.path().join("out");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    let comp_tmp = tempfile::TempDir::new().unwrap();
+    let comp_dir = comp_tmp.path().join("lwc").join("myCard");
+    std::fs::create_dir_all(&comp_dir).unwrap();
+    let js = "import { LightningElement, api } from 'lwc';\nexport default class MyCard extends LightningElement {\n    @api title;\n}";
+    let meta_path = comp_dir.join("myCard.js-meta.xml");
+    std::fs::write(&meta_path, "<LightningComponentBundle/>").unwrap();
+    std::fs::write(comp_dir.join("myCard.js"), js).unwrap();
+
+    let meta = lwc_parser::parse_lwc(&meta_path, js).unwrap();
+    let doc = stub_lwc_doc(&meta.component_name);
+
+    let all_names = Arc::new(AllNames {
+        class_names: vec![],
+        trigger_names: vec![],
+        flow_names: vec![],
+        validation_rule_names: vec![],
+        object_names: vec![],
+        lwc_names: vec![meta.component_name.clone()],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
+    });
+
+    let ctx = LwcRenderContext {
+        metadata: meta.clone(),
+        documentation: doc,
+        all_names,
+        folder: String::new(),
+    };
+
+    renderer::write_output(
+        &output_dir,
+        &sfdoc::cli::OutputFormat::Html,
+        &[],
+        &[],
+        &[],
+        &[],
+        &[],
+        &[ctx],
+        &[],
+        &[],
+        &[],
+    )
+    .unwrap();
+
+    assert!(
+        output_dir
+            .join(format!("lwc/{}.html", meta.component_name))
+            .exists(),
+        "LWC HTML page not created"
+    );
+    let html =
+        std::fs::read_to_string(output_dir.join(format!("lwc/{}.html", meta.component_name)))
+            .unwrap();
+    assert!(html.contains("myCard"), "component name missing from HTML");
+    assert!(html.contains("<nav"), "sidebar missing from HTML");
+    assert!(
+        html.contains("LWC") || html.contains("Components"),
+        "LWC sidebar section missing"
+    );
 }

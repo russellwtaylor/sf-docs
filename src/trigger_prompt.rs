@@ -1,4 +1,4 @@
-use crate::types::{ApexFile, TriggerMetadata};
+use crate::types::{SourceFile, TriggerMetadata};
 
 pub const TRIGGER_SYSTEM_PROMPT: &str = r#"
 You are an expert Salesforce developer and technical writer.
@@ -29,7 +29,7 @@ Rules:
 - Keep descriptions concise and technical.
 "#;
 
-pub fn build_trigger_prompt(file: &ApexFile, metadata: &TriggerMetadata) -> String {
+pub fn build_trigger_prompt(file: &SourceFile, metadata: &TriggerMetadata) -> String {
     let mut prompt = String::new();
 
     prompt.push_str(&format!("# Apex Trigger: {}\n\n", metadata.trigger_name));

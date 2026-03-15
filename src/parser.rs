@@ -11,9 +11,10 @@ use crate::types::{ClassMetadata, MethodMetadata, ParamMetadata, PropertyMetadat
 fn re_class() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
+        // Matches both `class` and `interface` keyword declarations.
         // implements allows dots, angle brackets, and brackets for generic types like Database.Batchable<SObject>
         Regex::new(
-            r"(?i)(?P<access>public|private|protected|global)\s+(?P<mods>(?:(?:abstract|virtual|with\s+sharing|without\s+sharing|inherited\s+sharing)\s+)*)class\s+(?P<name>\w+)(?:\s+extends\s+(?P<extends>\w+))?(?:\s+implements\s+(?P<implements>[^{]+?))?\s*\{",
+            r"(?i)(?P<access>public|private|protected|global)\s+(?P<mods>(?:(?:abstract|virtual|with\s+sharing|without\s+sharing|inherited\s+sharing)\s+)*)(?P<keyword>class|interface)\s+(?P<name>\w+)(?:\s+extends\s+(?P<extends>\w+))?(?:\s+implements\s+(?P<implements>[^{]+?))?\s*\{",
         )
         .unwrap()
     })
@@ -24,6 +25,22 @@ fn re_method() -> &'static Regex {
     RE.get_or_init(|| {
         Regex::new(
             r"(?i)(?P<access>public|private|protected|global|@\w+)\s+(?P<mods>(?:(?:static|override|virtual|abstract)\s+)*)(?P<return>[\w<>\[\],\s]+?)\s+(?P<name>[a-zA-Z_]\w*)\s*\((?P<params>[^)]*)\)\s*(?:\{|;)",
+        )
+        .unwrap()
+    })
+}
+
+/// Matches interface method declarations that have no access modifier:
+/// e.g. `void process(List<Account> accounts);`
+/// Group `return` = return type, `name` = method name, `params` = raw params string.
+/// Matches interface method declarations that have no access modifier:
+/// e.g. `void process(List<Account> accounts);`
+/// Uses `(?m)` so `^` matches the start of each line.
+fn re_interface_method() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(
+            r"(?im)^\s*(?P<return>(?:void|[\w<>\[\],\s]+?))\s+(?P<name>[a-zA-Z_]\w*)\s*\((?P<params>[^)]*)\)\s*;",
         )
         .unwrap()
     })
@@ -147,6 +164,12 @@ fn parse_class_declaration(source: &str, meta: &mut ClassMetadata) {
             .map_or("", |m| m.as_str())
             .to_lowercase();
 
+        let keyword = caps
+            .name("keyword")
+            .map_or("class", |m| m.as_str())
+            .to_lowercase();
+        meta.is_interface = keyword == "interface";
+
         let mods = caps.name("mods").map_or("", |m| m.as_str()).to_lowercase();
         meta.is_abstract = mods.contains("abstract");
         meta.is_virtual = mods.contains("virtual");
@@ -204,6 +227,33 @@ fn parse_methods(source: &str, meta: &mut ClassMetadata) {
             is_static: mods.contains("static"),
             params,
         });
+    }
+
+    // For interfaces: method declarations have no access modifier, so the normal
+    // regex misses them. Apply the interface-method pattern as a supplemental pass.
+    if meta.is_interface {
+        let existing_names: std::collections::HashSet<String> =
+            meta.methods.iter().map(|m| m.name.clone()).collect();
+        let mut extra: Vec<MethodMetadata> = Vec::new();
+        for caps in re_interface_method().captures_iter(source) {
+            let name = caps.name("name").map_or("", |m| m.as_str()).to_string();
+            if existing_names.contains(&name) || name == meta.class_name {
+                continue;
+            }
+            let params_raw = caps.name("params").map_or("", |m| m.as_str());
+            extra.push(MethodMetadata {
+                name,
+                access_modifier: String::new(),
+                return_type: caps
+                    .name("return")
+                    .map_or("", |m| m.as_str())
+                    .trim()
+                    .to_string(),
+                is_static: false,
+                params: parse_params(params_raw),
+            });
+        }
+        meta.methods.extend(extra);
     }
 
     // Remove exact-duplicate signatures only. Two overloads that share a name
@@ -422,6 +472,46 @@ public class AccountService extends BaseService implements Queueable, Database.B
         let meta = parse_apex_class(src).unwrap();
         assert!(meta.is_virtual);
         assert_eq!(meta.access_modifier, "global");
+    }
+
+    #[test]
+    fn parses_interface() {
+        let src = "public interface IAccountService { }";
+        let meta = parse_apex_class(src).unwrap();
+        assert!(
+            meta.is_interface,
+            "expected is_interface=true for interface declaration"
+        );
+        assert_eq!(meta.class_name, "IAccountService");
+    }
+
+    #[test]
+    fn interface_methods_not_empty() {
+        let src = r#"
+public interface IProcessor {
+    void process(List<Account> accounts);
+    Boolean validate(Account acc);
+}
+"#;
+        let meta = parse_apex_class(src).unwrap();
+        assert!(meta.is_interface);
+        // Interface method declarations end with ';' — the parser should still pick them up.
+        let method_names: Vec<&str> = meta.methods.iter().map(|m| m.name.as_str()).collect();
+        assert!(
+            method_names.contains(&"process") || method_names.contains(&"validate"),
+            "expected at least one interface method, got {:?}",
+            method_names
+        );
+    }
+
+    #[test]
+    fn class_is_not_interface() {
+        let src = "public class AccountService { }";
+        let meta = parse_apex_class(src).unwrap();
+        assert!(
+            !meta.is_interface,
+            "regular class should not be flagged as interface"
+        );
     }
 
     #[test]

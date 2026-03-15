@@ -1,4 +1,4 @@
-use crate::types::{ApexFile, FlowMetadata};
+use crate::types::{FlowMetadata, SourceFile};
 
 pub const FLOW_SYSTEM_PROMPT: &str = r#"
 You are an expert Salesforce developer and technical writer.
@@ -25,7 +25,7 @@ Rules:
 - Keep descriptions concise and accurate.
 "#;
 
-pub fn build_flow_prompt(file: &ApexFile, metadata: &FlowMetadata) -> String {
+pub fn build_flow_prompt(file: &SourceFile, metadata: &FlowMetadata) -> String {
     let mut prompt = String::new();
 
     prompt.push_str(&format!("# Salesforce Flow: {}\n\n", metadata.api_name));

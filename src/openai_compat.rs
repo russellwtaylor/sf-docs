@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
+use crate::aura_prompt::{build_aura_prompt, AURA_SYSTEM_PROMPT};
+use crate::flexipage_prompt::{build_flexipage_prompt, FLEXIPAGE_SYSTEM_PROMPT};
 use crate::flow_prompt::{build_flow_prompt, FLOW_SYSTEM_PROMPT};
 use crate::lwc_prompt::{build_lwc_prompt, LWC_SYSTEM_PROMPT};
 use crate::object_prompt::{build_object_prompt, OBJECT_SYSTEM_PROMPT};
@@ -12,8 +14,9 @@ use crate::prompt::{build_prompt, SYSTEM_PROMPT};
 use crate::retry::{self, MAX_RETRIES};
 use crate::trigger_prompt::{build_trigger_prompt, TRIGGER_SYSTEM_PROMPT};
 use crate::types::{
-    ApexFile, ClassDocumentation, ClassMetadata, FlowDocumentation, FlowMetadata, LwcDocumentation,
-    LwcMetadata, ObjectDocumentation, ObjectMetadata, TriggerDocumentation, TriggerMetadata,
+    AuraDocumentation, AuraMetadata, ClassDocumentation, ClassMetadata, FlexiPageDocumentation,
+    FlexiPageMetadata, FlowDocumentation, FlowMetadata, LwcDocumentation, LwcMetadata,
+    ObjectDocumentation, ObjectMetadata, SourceFile, TriggerDocumentation, TriggerMetadata,
     ValidationRuleDocumentation, ValidationRuleMetadata,
 };
 use crate::validation_rule_prompt::{build_validation_rule_prompt, VALIDATION_RULE_SYSTEM_PROMPT};
@@ -94,23 +97,19 @@ impl OpenAiCompatClient {
         })
     }
 
-    pub async fn document_class(
-        &self,
-        file: &ApexFile,
-        metadata: &ClassMetadata,
-    ) -> Result<ClassDocumentation> {
-        let _permit = self.semaphore.acquire().await?;
-
+    /// Send a single (system, user) prompt to the OpenAI-compatible endpoint with retry logic.
+    /// Returns the raw JSON string from the first choice's message content.
+    async fn send_with_retry(&self, system_prompt: &str, user_prompt: &str) -> Result<String> {
         let request = ChatRequest {
             model: self.model.clone(),
             messages: vec![
                 Message {
                     role: "system".to_string(),
-                    content: SYSTEM_PROMPT.to_string(),
+                    content: system_prompt.to_string(),
                 },
                 Message {
                     role: "user".to_string(),
-                    content: build_prompt(file, metadata),
+                    content: user_prompt.to_string(),
                 },
             ],
             response_format: ResponseFormat {
@@ -120,7 +119,6 @@ impl OpenAiCompatClient {
         };
 
         let url = format!("{}/chat/completions", self.base_url);
-
         let mut attempt = 0u32;
         loop {
             let response = match self
@@ -155,24 +153,12 @@ impl OpenAiCompatClient {
                     format!("Failed to deserialize {} response", self.provider_name)
                 })?;
 
-                let raw_json = chat_response
+                return chat_response
                     .choices
                     .into_iter()
                     .next()
                     .map(|c| c.message.content)
-                    .with_context(|| {
-                        format!("{} returned an empty response", self.provider_name)
-                    })?;
-
-                let doc: ClassDocumentation =
-                    serde_json::from_str(&raw_json).with_context(|| {
-                        format!(
-                            "Failed to parse {} JSON for class '{}':\n{}",
-                            self.provider_name, metadata.class_name, raw_json
-                        )
-                    })?;
-
-                return Ok(doc);
+                    .with_context(|| format!("{} returned an empty response", self.provider_name));
             }
 
             let status = response.status();
@@ -189,484 +175,147 @@ impl OpenAiCompatClient {
 
             anyhow::bail!("{} API error {status}: {body}", self.provider_name);
         }
+    }
+
+    pub async fn document_class(
+        &self,
+        file: &SourceFile,
+        metadata: &ClassMetadata,
+    ) -> Result<ClassDocumentation> {
+        let _permit = self.semaphore.acquire().await?;
+        let raw = self
+            .send_with_retry(SYSTEM_PROMPT, &build_prompt(file, metadata))
+            .await?;
+        serde_json::from_str(&raw).with_context(|| {
+            format!(
+                "Failed to parse {} JSON for class '{}':\n{raw}",
+                self.provider_name, metadata.class_name
+            )
+        })
     }
 
     pub async fn document_trigger(
         &self,
-        file: &ApexFile,
+        file: &SourceFile,
         metadata: &TriggerMetadata,
     ) -> Result<TriggerDocumentation> {
         let _permit = self.semaphore.acquire().await?;
-
-        let request = ChatRequest {
-            model: self.model.clone(),
-            messages: vec![
-                Message {
-                    role: "system".to_string(),
-                    content: TRIGGER_SYSTEM_PROMPT.to_string(),
-                },
-                Message {
-                    role: "user".to_string(),
-                    content: build_trigger_prompt(file, metadata),
-                },
-            ],
-            response_format: ResponseFormat {
-                format_type: "json_object".to_string(),
-            },
-            temperature: 0.2,
-        };
-
-        let url = format!("{}/chat/completions", self.base_url);
-        let mut attempt = 0u32;
-        loop {
-            let response = match self
-                .client
-                .post(&url)
-                .bearer_auth(&self.api_key)
-                .json(&request)
-                .send()
-                .await
-            {
-                Ok(r) => r,
-                Err(e) if retry::is_retryable_error(&e) && attempt < MAX_RETRIES => {
-                    eprintln!(
-                        "Network error calling {} API (attempt {}/{}): {e}",
-                        self.provider_name,
-                        attempt + 1,
-                        MAX_RETRIES
-                    );
-                    retry::sleep_for_retry("", attempt, &self.provider_name).await;
-                    attempt += 1;
-                    continue;
-                }
-                Err(e) => {
-                    return Err(e).with_context(|| {
-                        format!("Failed to send request to {} API", self.provider_name)
-                    })
-                }
-            };
-
-            if response.status().is_success() {
-                let chat_response: ChatResponse = response.json().await.with_context(|| {
-                    format!("Failed to deserialize {} response", self.provider_name)
-                })?;
-
-                let raw_json = chat_response
-                    .choices
-                    .into_iter()
-                    .next()
-                    .map(|c| c.message.content)
-                    .with_context(|| {
-                        format!("{} returned an empty response", self.provider_name)
-                    })?;
-
-                let doc: TriggerDocumentation =
-                    serde_json::from_str(&raw_json).with_context(|| {
-                        format!(
-                            "Failed to parse {} JSON for trigger '{}':\n{}",
-                            self.provider_name, metadata.trigger_name, raw_json
-                        )
-                    })?;
-
-                return Ok(doc);
-            }
-
-            let status = response.status();
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
-
-            if retry::should_retry(status.as_u16()) && attempt < MAX_RETRIES {
-                retry::sleep_for_retry(&body, attempt, &self.provider_name).await;
-                attempt += 1;
-                continue;
-            }
-
-            anyhow::bail!("{} API error {status}: {body}", self.provider_name);
-        }
+        let raw = self
+            .send_with_retry(TRIGGER_SYSTEM_PROMPT, &build_trigger_prompt(file, metadata))
+            .await?;
+        serde_json::from_str(&raw).with_context(|| {
+            format!(
+                "Failed to parse {} JSON for trigger '{}':\n{raw}",
+                self.provider_name, metadata.trigger_name
+            )
+        })
     }
 
     pub async fn document_flow(
         &self,
-        file: &ApexFile,
+        file: &SourceFile,
         metadata: &FlowMetadata,
     ) -> Result<FlowDocumentation> {
         let _permit = self.semaphore.acquire().await?;
-
-        let request = ChatRequest {
-            model: self.model.clone(),
-            messages: vec![
-                Message {
-                    role: "system".to_string(),
-                    content: FLOW_SYSTEM_PROMPT.to_string(),
-                },
-                Message {
-                    role: "user".to_string(),
-                    content: build_flow_prompt(file, metadata),
-                },
-            ],
-            response_format: ResponseFormat {
-                format_type: "json_object".to_string(),
-            },
-            temperature: 0.2,
-        };
-
-        let url = format!("{}/chat/completions", self.base_url);
-        let mut attempt = 0u32;
-        loop {
-            let response = match self
-                .client
-                .post(&url)
-                .bearer_auth(&self.api_key)
-                .json(&request)
-                .send()
-                .await
-            {
-                Ok(r) => r,
-                Err(e) if retry::is_retryable_error(&e) && attempt < MAX_RETRIES => {
-                    eprintln!(
-                        "Network error calling {} API (attempt {}/{}): {e}",
-                        self.provider_name,
-                        attempt + 1,
-                        MAX_RETRIES
-                    );
-                    retry::sleep_for_retry("", attempt, &self.provider_name).await;
-                    attempt += 1;
-                    continue;
-                }
-                Err(e) => {
-                    return Err(e).with_context(|| {
-                        format!("Failed to send request to {} API", self.provider_name)
-                    })
-                }
-            };
-
-            if response.status().is_success() {
-                let chat_response: ChatResponse = response.json().await.with_context(|| {
-                    format!("Failed to deserialize {} response", self.provider_name)
-                })?;
-
-                let raw_json = chat_response
-                    .choices
-                    .into_iter()
-                    .next()
-                    .map(|c| c.message.content)
-                    .with_context(|| {
-                        format!("{} returned an empty response", self.provider_name)
-                    })?;
-
-                let doc: FlowDocumentation =
-                    serde_json::from_str(&raw_json).with_context(|| {
-                        format!(
-                            "Failed to parse {} JSON for flow '{}':\n{}",
-                            self.provider_name, metadata.api_name, raw_json
-                        )
-                    })?;
-
-                return Ok(doc);
-            }
-
-            let status = response.status();
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
-
-            if retry::should_retry(status.as_u16()) && attempt < MAX_RETRIES {
-                retry::sleep_for_retry(&body, attempt, &self.provider_name).await;
-                attempt += 1;
-                continue;
-            }
-
-            anyhow::bail!("{} API error {status}: {body}", self.provider_name);
-        }
+        let raw = self
+            .send_with_retry(FLOW_SYSTEM_PROMPT, &build_flow_prompt(file, metadata))
+            .await?;
+        serde_json::from_str(&raw).with_context(|| {
+            format!(
+                "Failed to parse {} JSON for flow '{}':\n{raw}",
+                self.provider_name, metadata.api_name
+            )
+        })
     }
 
     pub async fn document_validation_rule(
         &self,
-        file: &ApexFile,
+        file: &SourceFile,
         metadata: &ValidationRuleMetadata,
     ) -> Result<ValidationRuleDocumentation> {
         let _permit = self.semaphore.acquire().await?;
-
-        let request = ChatRequest {
-            model: self.model.clone(),
-            messages: vec![
-                Message {
-                    role: "system".to_string(),
-                    content: VALIDATION_RULE_SYSTEM_PROMPT.to_string(),
-                },
-                Message {
-                    role: "user".to_string(),
-                    content: build_validation_rule_prompt(file, metadata),
-                },
-            ],
-            response_format: ResponseFormat {
-                format_type: "json_object".to_string(),
-            },
-            temperature: 0.2,
-        };
-
-        let url = format!("{}/chat/completions", self.base_url);
-        let mut attempt = 0u32;
-        loop {
-            let response = match self
-                .client
-                .post(&url)
-                .bearer_auth(&self.api_key)
-                .json(&request)
-                .send()
-                .await
-            {
-                Ok(r) => r,
-                Err(e) if retry::is_retryable_error(&e) && attempt < MAX_RETRIES => {
-                    eprintln!(
-                        "Network error calling {} API (attempt {}/{}): {e}",
-                        self.provider_name,
-                        attempt + 1,
-                        MAX_RETRIES
-                    );
-                    retry::sleep_for_retry("", attempt, &self.provider_name).await;
-                    attempt += 1;
-                    continue;
-                }
-                Err(e) => {
-                    return Err(e).with_context(|| {
-                        format!("Failed to send request to {} API", self.provider_name)
-                    })
-                }
-            };
-
-            if response.status().is_success() {
-                let chat_response: ChatResponse = response.json().await.with_context(|| {
-                    format!("Failed to deserialize {} response", self.provider_name)
-                })?;
-
-                let raw_json = chat_response
-                    .choices
-                    .into_iter()
-                    .next()
-                    .map(|c| c.message.content)
-                    .with_context(|| {
-                        format!("{} returned an empty response", self.provider_name)
-                    })?;
-
-                let doc: ValidationRuleDocumentation = serde_json::from_str(&raw_json)
-                    .with_context(|| {
-                        format!(
-                            "Failed to parse {} JSON for validation rule '{}':\n{}",
-                            self.provider_name, metadata.rule_name, raw_json
-                        )
-                    })?;
-
-                return Ok(doc);
-            }
-
-            let status = response.status();
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
-
-            if retry::should_retry(status.as_u16()) && attempt < MAX_RETRIES {
-                retry::sleep_for_retry(&body, attempt, &self.provider_name).await;
-                attempt += 1;
-                continue;
-            }
-
-            anyhow::bail!("{} API error {status}: {body}", self.provider_name);
-        }
+        let raw = self
+            .send_with_retry(
+                VALIDATION_RULE_SYSTEM_PROMPT,
+                &build_validation_rule_prompt(file, metadata),
+            )
+            .await?;
+        serde_json::from_str(&raw).with_context(|| {
+            format!(
+                "Failed to parse {} JSON for validation rule '{}':\n{raw}",
+                self.provider_name, metadata.rule_name
+            )
+        })
     }
 
     pub async fn document_object(
         &self,
-        file: &ApexFile,
+        file: &SourceFile,
         metadata: &ObjectMetadata,
     ) -> Result<ObjectDocumentation> {
         let _permit = self.semaphore.acquire().await?;
-
-        let request = ChatRequest {
-            model: self.model.clone(),
-            messages: vec![
-                Message {
-                    role: "system".to_string(),
-                    content: OBJECT_SYSTEM_PROMPT.to_string(),
-                },
-                Message {
-                    role: "user".to_string(),
-                    content: build_object_prompt(file, metadata),
-                },
-            ],
-            response_format: ResponseFormat {
-                format_type: "json_object".to_string(),
-            },
-            temperature: 0.2,
-        };
-
-        let url = format!("{}/chat/completions", self.base_url);
-        let mut attempt = 0u32;
-        loop {
-            let response = match self
-                .client
-                .post(&url)
-                .bearer_auth(&self.api_key)
-                .json(&request)
-                .send()
-                .await
-            {
-                Ok(r) => r,
-                Err(e) if retry::is_retryable_error(&e) && attempt < MAX_RETRIES => {
-                    eprintln!(
-                        "Network error calling {} API (attempt {}/{}): {e}",
-                        self.provider_name,
-                        attempt + 1,
-                        MAX_RETRIES
-                    );
-                    retry::sleep_for_retry("", attempt, &self.provider_name).await;
-                    attempt += 1;
-                    continue;
-                }
-                Err(e) => {
-                    return Err(e).with_context(|| {
-                        format!("Failed to send request to {} API", self.provider_name)
-                    })
-                }
-            };
-
-            if response.status().is_success() {
-                let chat_response: ChatResponse = response.json().await.with_context(|| {
-                    format!("Failed to deserialize {} response", self.provider_name)
-                })?;
-
-                let raw_json = chat_response
-                    .choices
-                    .into_iter()
-                    .next()
-                    .map(|c| c.message.content)
-                    .with_context(|| {
-                        format!("{} returned an empty response", self.provider_name)
-                    })?;
-
-                let doc: ObjectDocumentation =
-                    serde_json::from_str(&raw_json).with_context(|| {
-                        format!(
-                            "Failed to parse {} JSON for object '{}':\n{}",
-                            self.provider_name, metadata.object_name, raw_json
-                        )
-                    })?;
-
-                return Ok(doc);
-            }
-
-            let status = response.status();
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
-
-            if retry::should_retry(status.as_u16()) && attempt < MAX_RETRIES {
-                retry::sleep_for_retry(&body, attempt, &self.provider_name).await;
-                attempt += 1;
-                continue;
-            }
-
-            anyhow::bail!("{} API error {status}: {body}", self.provider_name);
-        }
+        let raw = self
+            .send_with_retry(OBJECT_SYSTEM_PROMPT, &build_object_prompt(file, metadata))
+            .await?;
+        serde_json::from_str(&raw).with_context(|| {
+            format!(
+                "Failed to parse {} JSON for object '{}':\n{raw}",
+                self.provider_name, metadata.object_name
+            )
+        })
     }
 
     pub async fn document_lwc(
         &self,
-        file: &ApexFile,
+        file: &SourceFile,
         metadata: &LwcMetadata,
     ) -> Result<LwcDocumentation> {
         let _permit = self.semaphore.acquire().await?;
+        let raw = self
+            .send_with_retry(LWC_SYSTEM_PROMPT, &build_lwc_prompt(file, metadata))
+            .await?;
+        serde_json::from_str(&raw).with_context(|| {
+            format!(
+                "Failed to parse {} JSON for LWC component '{}':\n{raw}",
+                self.provider_name, metadata.component_name
+            )
+        })
+    }
 
-        let request = ChatRequest {
-            model: self.model.clone(),
-            messages: vec![
-                Message {
-                    role: "system".to_string(),
-                    content: LWC_SYSTEM_PROMPT.to_string(),
-                },
-                Message {
-                    role: "user".to_string(),
-                    content: build_lwc_prompt(file, metadata),
-                },
-            ],
-            response_format: ResponseFormat {
-                format_type: "json_object".to_string(),
-            },
-            temperature: 0.2,
-        };
+    pub async fn document_flexipage(
+        &self,
+        file: &SourceFile,
+        metadata: &FlexiPageMetadata,
+    ) -> Result<FlexiPageDocumentation> {
+        let _permit = self.semaphore.acquire().await?;
+        let raw = self
+            .send_with_retry(
+                FLEXIPAGE_SYSTEM_PROMPT,
+                &build_flexipage_prompt(file, metadata),
+            )
+            .await?;
+        serde_json::from_str(&raw).with_context(|| {
+            format!(
+                "Failed to parse {} JSON for FlexiPage '{}':\n{raw}",
+                self.provider_name, metadata.api_name
+            )
+        })
+    }
 
-        let url = format!("{}/chat/completions", self.base_url);
-        let mut attempt = 0u32;
-        loop {
-            let response = match self
-                .client
-                .post(&url)
-                .bearer_auth(&self.api_key)
-                .json(&request)
-                .send()
-                .await
-            {
-                Ok(r) => r,
-                Err(e) if retry::is_retryable_error(&e) && attempt < MAX_RETRIES => {
-                    eprintln!(
-                        "Network error calling {} API (attempt {}/{}): {e}",
-                        self.provider_name,
-                        attempt + 1,
-                        MAX_RETRIES
-                    );
-                    retry::sleep_for_retry("", attempt, &self.provider_name).await;
-                    attempt += 1;
-                    continue;
-                }
-                Err(e) => {
-                    return Err(e).with_context(|| {
-                        format!("Failed to send request to {} API", self.provider_name)
-                    })
-                }
-            };
-
-            if response.status().is_success() {
-                let chat_response: ChatResponse = response.json().await.with_context(|| {
-                    format!("Failed to deserialize {} response", self.provider_name)
-                })?;
-
-                let raw_json = chat_response
-                    .choices
-                    .into_iter()
-                    .next()
-                    .map(|c| c.message.content)
-                    .with_context(|| {
-                        format!("{} returned an empty response", self.provider_name)
-                    })?;
-
-                let doc: LwcDocumentation = serde_json::from_str(&raw_json).with_context(|| {
-                    format!(
-                        "Failed to parse {} JSON for LWC component '{}':\n{}",
-                        self.provider_name, metadata.component_name, raw_json
-                    )
-                })?;
-
-                return Ok(doc);
-            }
-
-            let status = response.status();
-            let body = response
-                .text()
-                .await
-                .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
-
-            if retry::should_retry(status.as_u16()) && attempt < MAX_RETRIES {
-                retry::sleep_for_retry(&body, attempt, &self.provider_name).await;
-                attempt += 1;
-                continue;
-            }
-
-            anyhow::bail!("{} API error {status}: {body}", self.provider_name);
-        }
+    pub async fn document_aura(
+        &self,
+        file: &SourceFile,
+        metadata: &AuraMetadata,
+    ) -> Result<AuraDocumentation> {
+        let _permit = self.semaphore.acquire().await?;
+        let raw = self
+            .send_with_retry(AURA_SYSTEM_PROMPT, &build_aura_prompt(file, metadata))
+            .await?;
+        serde_json::from_str(&raw).with_context(|| {
+            format!(
+                "Failed to parse {} JSON for Aura component '{}':\n{raw}",
+                self.provider_name, metadata.component_name
+            )
+        })
     }
 }

@@ -1,4 +1,4 @@
-use crate::types::{ApexFile, ValidationRuleMetadata};
+use crate::types::{SourceFile, ValidationRuleMetadata};
 
 pub const VALIDATION_RULE_SYSTEM_PROMPT: &str = r#"
 You are an expert Salesforce developer and technical writer.
@@ -24,7 +24,10 @@ Rules:
 - Keep descriptions concise and accurate.
 "#;
 
-pub fn build_validation_rule_prompt(file: &ApexFile, metadata: &ValidationRuleMetadata) -> String {
+pub fn build_validation_rule_prompt(
+    file: &SourceFile,
+    metadata: &ValidationRuleMetadata,
+) -> String {
     let _ = file; // XML not sent raw; structured summary is sufficient
 
     let mut prompt = String::new();

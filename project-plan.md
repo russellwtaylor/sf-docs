@@ -62,16 +62,16 @@ todos:
       status: done
     - id: apex-interfaces
       content: "Phase 20: Apex interface support — distinguish interface vs class in parser, index section, implementors list"
-      status: pending
+      status: done
     - id: flexipages
       content: "Phase 21: FlexiPages / Lightning pages — XML parser, component list per page, link to LWC/Flows"
-      status: pending
+      status: done
     - id: custom-metadata
       content: "Phase 22: Custom Metadata Types — list types and records, optional AI descriptions (lower priority)"
-      status: pending
+      status: done
     - id: aura
       content: "Phase 23: Aura components — scanner, parser, docs (optional; only if Aura-heavy codebase)"
-      status: pending
+      status: done
 isProject: true
 ---
 
@@ -89,8 +89,8 @@ stay up to date automatically through incremental builds.
 
 ```mermaid
 flowchart LR
-    CLI["CLI Layer\n(clap)"] --> Scanner["File Scanners\n(Apex · Trigger · Flow · VR · Object · LWC)"]
-    Scanner --> Parser["Parsers\n(parser · trigger_parser · flow_parser\nvalidation_rule_parser · object_parser · lwc_parser)"]
+    CLI["CLI Layer\n(clap)"] --> Scanner["File Scanners\n(Apex · Trigger · Flow · VR · Object · LWC · FlexiPage · CustomMetadata · Aura)"]
+    Scanner --> Parser["Parsers\n(parser · trigger_parser · flow_parser · validation_rule_parser\nobject_parser · lwc_parser · flexipage_parser · custom_metadata_parser · aura_parser)"]
     Parser --> Cache["Incremental Cache\n(SHA-256 hashing)"]
     Cache -->|stale files only| AI["AI Providers\n(Gemini · Groq · OpenAI · Ollama)"]
     AI --> Renderer["Renderers\n(Markdown · HTML)"]
@@ -103,9 +103,12 @@ flowchart LR
         VR[".validationRule-meta.xml"]
         Obj[".object-meta.xml"]
         LWC[".js-meta.xml"]
+        FP[".flexipage-meta.xml"]
+        CMD[".md-meta.xml"]
+        Aura[".cmp files"]
     end
 
-    Cls & Trg & Flw & VR & Obj & LWC --> Scanner
+    Cls & Trg & Flw & VR & Obj & LWC & FP & CMD & Aura --> Scanner
 ```
 
 ---
@@ -287,6 +290,48 @@ sfdoc/
 - Renderer: object page with field table (name/type/required/description), usage notes, cross-linked See Also; index grouped by folder
 - Cross-linking: `AllNames.object_names` added; object pages link to Apex classes, triggers, flows, validation rules, and other objects
 - Cache: `object_entries` map with hash + model invalidation
+
+### Phase 20: Apex Interface Support ✅
+
+- Updated `re_class()` regex to capture both `class` and `interface` declarations
+- Added `re_interface_method()` regex (with `(?m)` multiline) to parse interface method declarations lacking access modifiers
+- `ClassMetadata.is_interface: bool` field — set automatically by the parser
+- `interface_implementors: HashMap<String, Vec<String>>` added to `AllNames` — built in `main.rs` after parsing by iterating class `implements` lists
+- Markdown renderer: "interface" badge on interface pages; "Implemented By:" section; separate "## Interfaces" section in index
+- HTML renderer: same badge and section logic
+- Unit tests: `parses_interface`, `interface_methods_not_empty`, `class_is_not_interface`
+
+### Phase 21: FlexiPages / Lightning Pages ✅
+
+- `FlexiPageScanner` — discovers `*.flexipage-meta.xml` files; sorted by filename
+- `flexipage_parser.rs` — streaming quick-xml parser extracting page type, master label, sobject type (for record pages), description, LWC component names (stripping `c__` prefix), and referenced Flow names
+- `FlexiPageMetadata`, `FlexiPageDocumentation` types in `types.rs`
+- `flexipage_prompt.rs` — AI prompt asking for summary, description, usage context, key component descriptions, and relationships
+- Markdown renderer: one page per flexipage with type badge, component list, flow list, AI description; "## Lightning Pages" section in index
+- HTML renderer: full HTML page with sidebar "Lightning Pages" section
+- Cache: `flexipage_entries` map with hash + model invalidation
+- `flexipage_names: Vec<String>` added to `AllNames` for cross-linking
+
+### Phase 22: Custom Metadata Types ✅
+
+- `CustomMetadataScanner` — discovers `customMetadata/*.md-meta.xml` record files; sorted by filename
+- `custom_metadata_parser.rs` — streaming quick-xml parser extracting type name and record developer name (from filename), label, and all field values from `<values>` elements
+- `CustomMetadataRecord` type in `types.rs`; no AI call — metadata-only listing
+- Markdown renderer: one page per custom metadata type listing all records in a table; "## Custom Metadata Types" section in index; output to `custom-metadata/` subdirectory
+- HTML renderer: equivalent HTML output with sidebar section
+- No cache needed (no AI call)
+- `custom_metadata_type_names: Vec<String>` added to `AllNames`
+
+### Phase 23: Aura Components ✅
+
+- `AuraScanner` — discovers `*.cmp` files under `aura/` directories; uses sibling `.js` file as `raw_source` when available; sorted by filename
+- `aura_parser.rs` — regex-based parser using `OnceLock<Regex>` patterns; extracts component name, `aura:attribute` elements (name, type, default, description), `aura:handler` events, and `extends` attribute
+- `AuraMetadata`, `AuraAttributeMetadata`, `AuraDocumentation`, `AuraAttributeDocumentation` types in `types.rs`
+- `aura_prompt.rs` — AI prompt including attribute table and events, asking for component purpose, usage notes, and cross-links
+- Markdown renderer: one page per Aura component with attributes table, events, usage notes, See Also; "## Aura Components" section in index; output to `aura/` subdirectory
+- HTML renderer: full HTML page with sidebar "Aura" section
+- Cache: `aura_entries` map with hash + model invalidation
+- `aura_names: Vec<String>` added to `AllNames` for cross-linking
 
 ### Phase 19: Lightning Web Components (LWC) ✅
 

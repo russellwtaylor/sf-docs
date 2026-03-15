@@ -1,4 +1,4 @@
-use crate::types::{ApexFile, ObjectMetadata};
+use crate::types::{ObjectMetadata, SourceFile};
 
 pub const OBJECT_SYSTEM_PROMPT: &str = r#"
 You are an expert Salesforce developer and technical writer.
@@ -24,7 +24,7 @@ Rules:
 - Keep descriptions concise and accurate.
 "#;
 
-pub fn build_object_prompt(file: &ApexFile, metadata: &ObjectMetadata) -> String {
+pub fn build_object_prompt(file: &SourceFile, metadata: &ObjectMetadata) -> String {
     let _ = file; // XML not sent raw; structured summary is sufficient
 
     let mut prompt = String::new();

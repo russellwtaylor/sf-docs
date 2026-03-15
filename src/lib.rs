@@ -1,6 +1,11 @@
+pub mod aura_parser;
+pub mod aura_prompt;
 pub mod cache;
 pub mod cli;
 pub mod config;
+pub mod custom_metadata_parser;
+pub mod flexipage_parser;
+pub mod flexipage_prompt;
 pub mod flow_parser;
 pub mod flow_prompt;
 pub mod gemini;

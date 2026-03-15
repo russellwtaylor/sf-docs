@@ -6,8 +6,8 @@ use std::fmt::Write;
 use std::path::Path;
 
 use crate::types::{
-    ClassDocumentation, FlowDocumentation, LwcDocumentation, ObjectDocumentation,
-    TriggerDocumentation, ValidationRuleDocumentation,
+    AuraDocumentation, ClassDocumentation, FlexiPageDocumentation, FlowDocumentation,
+    LwcDocumentation, ObjectDocumentation, TriggerDocumentation, ValidationRuleDocumentation,
 };
 
 const CACHE_FILE: &str = ".sfdoc-cache.json";
@@ -15,6 +15,24 @@ const CACHE_FILE: &str = ".sfdoc-cache.json";
 // ---------------------------------------------------------------------------
 // Cache types
 // ---------------------------------------------------------------------------
+
+/// Generic cache entry holding a content hash, model name, and AI-generated docs.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct TypedEntry<D> {
+    pub hash: String,
+    pub model: String,
+    pub documentation: D,
+}
+
+/// Type aliases for each documentation kind — keeps call-site names stable.
+pub type CacheEntry = TypedEntry<ClassDocumentation>;
+pub type TriggerCacheEntry = TypedEntry<TriggerDocumentation>;
+pub type FlowCacheEntry = TypedEntry<FlowDocumentation>;
+pub type ValidationRuleCacheEntry = TypedEntry<ValidationRuleDocumentation>;
+pub type ObjectCacheEntry = TypedEntry<ObjectDocumentation>;
+pub type LwcCacheEntry = TypedEntry<LwcDocumentation>;
+pub type FlexiPageCacheEntry = TypedEntry<FlexiPageDocumentation>;
+pub type AuraCacheEntry = TypedEntry<AuraDocumentation>;
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Cache {
@@ -39,48 +57,14 @@ pub struct Cache {
     /// cache files written before LWC support was added.
     #[serde(default)]
     lwc_entries: HashMap<String, LwcCacheEntry>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct TriggerCacheEntry {
-    pub hash: String,
-    pub model: String,
-    pub documentation: TriggerDocumentation,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct FlowCacheEntry {
-    pub hash: String,
-    pub model: String,
-    pub documentation: FlowDocumentation,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct ValidationRuleCacheEntry {
-    pub hash: String,
-    pub model: String,
-    pub documentation: ValidationRuleDocumentation,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct ObjectCacheEntry {
-    pub hash: String,
-    pub model: String,
-    pub documentation: ObjectDocumentation,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct LwcCacheEntry {
-    pub hash: String,
-    pub model: String,
-    pub documentation: LwcDocumentation,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct CacheEntry {
-    pub hash: String,
-    pub model: String,
-    pub documentation: ClassDocumentation,
+    /// FlexiPage entries are in a separate map so the field can be absent in
+    /// cache files written before FlexiPage support was added.
+    #[serde(default)]
+    flexipage_entries: HashMap<String, FlexiPageCacheEntry>,
+    /// Aura entries are in a separate map so the field can be absent in
+    /// cache files written before Aura support was added.
+    #[serde(default)]
+    aura_entries: HashMap<String, AuraCacheEntry>,
 }
 
 impl Cache {
@@ -293,6 +277,66 @@ impl Cache {
         self.lwc_entries.insert(
             key,
             LwcCacheEntry {
+                hash,
+                model: model.to_owned(),
+                documentation,
+            },
+        );
+    }
+
+    /// Returns the cached FlexiPage entry if hash and model both match.
+    pub fn get_flexipage_if_fresh<'a>(
+        &'a self,
+        key: &str,
+        hash: &str,
+        model: &str,
+    ) -> Option<&'a FlexiPageCacheEntry> {
+        self.flexipage_entries
+            .get(key)
+            .filter(|e| e.hash == hash && e.model == model)
+    }
+
+    /// Insert or update a FlexiPage entry after a successful API call.
+    pub fn update_flexipage(
+        &mut self,
+        key: String,
+        hash: String,
+        model: &str,
+        documentation: FlexiPageDocumentation,
+    ) {
+        self.flexipage_entries.insert(
+            key,
+            FlexiPageCacheEntry {
+                hash,
+                model: model.to_owned(),
+                documentation,
+            },
+        );
+    }
+
+    /// Returns the cached Aura entry if hash and model both match.
+    pub fn get_aura_if_fresh<'a>(
+        &'a self,
+        key: &str,
+        hash: &str,
+        model: &str,
+    ) -> Option<&'a AuraCacheEntry> {
+        self.aura_entries
+            .get(key)
+            .filter(|e| e.hash == hash && e.model == model)
+    }
+
+    /// Insert or update an Aura entry after a successful API call.
+    pub fn update_aura(
+        &mut self,
+        key: String,
+        hash: String,
+        model: &str,
+        documentation: AuraDocumentation,
+    ) {
+        self.aura_entries.insert(
+            key,
+            AuraCacheEntry {
                 hash,
                 model: model.to_owned(),
                 documentation,
