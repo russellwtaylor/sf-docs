@@ -179,10 +179,6 @@ pub fn write_html_output(
         trigger_contexts,
         flow_contexts,
         validation_rule_contexts,
-        &class_items,
-        &trigger_items,
-        &flow_items,
-        &vr_items,
     );
     std::fs::write(output_dir.join("index.html"), index)?;
 
@@ -905,11 +901,23 @@ fn render_index(
     trigger_contexts: &[TriggerRenderContext],
     flow_contexts: &[FlowRenderContext],
     validation_rule_contexts: &[ValidationRuleRenderContext],
-    class_items: &[(&str, &str)],
-    trigger_items: &[(&str, &str)],
-    flow_items: &[(&str, &str)],
-    vr_items: &[(&str, &str)],
 ) -> String {
+    let class_items: Vec<(&str, &str)> = class_contexts
+        .iter()
+        .map(|c| (c.metadata.class_name.as_str(), c.folder.as_str()))
+        .collect();
+    let trigger_items: Vec<(&str, &str)> = trigger_contexts
+        .iter()
+        .map(|c| (c.metadata.trigger_name.as_str(), c.folder.as_str()))
+        .collect();
+    let flow_items: Vec<(&str, &str)> = flow_contexts
+        .iter()
+        .map(|c| (c.metadata.api_name.as_str(), c.folder.as_str()))
+        .collect();
+    let vr_items: Vec<(&str, &str)> = validation_rule_contexts
+        .iter()
+        .map(|c| (c.metadata.rule_name.as_str(), c.folder.as_str()))
+        .collect();
     let mut body = String::new();
     body.push_str("<h1>Apex Documentation</h1>\n");
     body.push_str(&format!(
@@ -1070,10 +1078,10 @@ fn render_index(
         &body,
         "Overview",
         "",
-        class_items,
-        trigger_items,
-        flow_items,
-        vr_items,
+        &class_items,
+        &trigger_items,
+        &flow_items,
+        &vr_items,
     )
 }
 
