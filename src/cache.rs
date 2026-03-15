@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::path::Path;
 
-use crate::types::{ClassDocumentation, FlowDocumentation, TriggerDocumentation, ValidationRuleDocumentation};
+use crate::types::{
+    ClassDocumentation, FlowDocumentation, TriggerDocumentation, ValidationRuleDocumentation,
+};
 
 const CACHE_FILE: &str = ".sfdoc-cache.json";
 

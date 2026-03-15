@@ -1046,7 +1046,11 @@ fn render_index(
             }
             body.push_str("<table><thead><tr><th>Rule</th><th>Object</th><th>Status</th><th>Summary</th></tr></thead><tbody>\n");
             for ctx in rules {
-                let status = if ctx.metadata.active { "active" } else { "inactive" };
+                let status = if ctx.metadata.active {
+                    "active"
+                } else {
+                    "inactive"
+                };
                 body.push_str(&format!(
                     "<tr><td><a href=\"validation-rules/{}.html\">{}</a></td><td><code>{}</code></td><td>{}</td><td>{}</td></tr>\n",
                     escape(&ctx.metadata.rule_name),
@@ -1089,8 +1093,14 @@ fn wrap_page(
     flow_items: &[(&str, &str)],
     vr_items: &[(&str, &str)],
 ) -> String {
-    let sidebar =
-        render_sidebar(class_items, trigger_items, flow_items, vr_items, active, up_prefix);
+    let sidebar = render_sidebar(
+        class_items,
+        trigger_items,
+        flow_items,
+        vr_items,
+        active,
+        up_prefix,
+    );
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">

@@ -460,8 +460,8 @@ impl GeminiClient {
                     .map(|p| p.text)
                     .context("Gemini returned an empty response")?;
 
-                let doc: ValidationRuleDocumentation =
-                    serde_json::from_str(&raw_json).with_context(|| {
+                let doc: ValidationRuleDocumentation = serde_json::from_str(&raw_json)
+                    .with_context(|| {
                         format!(
                             "Failed to parse Gemini JSON for validation rule '{}':\n{}",
                             metadata.rule_name, raw_json

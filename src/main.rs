@@ -131,7 +131,11 @@ async fn main() -> Result<()> {
                 })?;
 
             // Require at least one file of any supported type.
-            if files.is_empty() && trigger_files.is_empty() && flow_files.is_empty() && vr_files.is_empty() {
+            if files.is_empty()
+                && trigger_files.is_empty()
+                && flow_files.is_empty()
+                && vr_files.is_empty()
+            {
                 anyhow::bail!(
                     "No supported source files found in {} (expected .cls, .trigger, .flow-meta.xml, or .validationRule-meta.xml)",
                     args.source_dir.display()
@@ -259,8 +263,7 @@ async fn main() -> Result<()> {
             }
 
             let mut vr_work: Vec<usize> = Vec::new();
-            let mut vr_docs: Vec<Option<ValidationRuleDocumentation>> =
-                vec![None; vr_files.len()];
+            let mut vr_docs: Vec<Option<ValidationRuleDocumentation>> = vec![None; vr_files.len()];
             for (i, (f, h)) in vr_files.iter().zip(vr_hashes.iter()).enumerate() {
                 if let Some(e) =
                     cache.get_validation_rule_if_fresh(&f.path.to_string_lossy(), h, &model)

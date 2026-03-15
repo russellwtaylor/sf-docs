@@ -160,7 +160,10 @@ mod tests {
     fn parses_description() {
         let path = make_path("Account", "Require_Start_Date");
         let meta = parse_validation_rule(&path, SAMPLE_RULE).unwrap();
-        assert_eq!(meta.description, "Ensures active records have a start date.");
+        assert_eq!(
+            meta.description,
+            "Ensures active records have a start date."
+        );
     }
 
     #[test]

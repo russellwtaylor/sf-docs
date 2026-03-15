@@ -503,7 +503,11 @@ pub fn render_validation_rule_page(ctx: &ValidationRuleRenderContext) -> String 
     out.push_str(&format!(
         "`validation-rule` · `on {}` · {}\n\n",
         meta.object_name,
-        if meta.active { "`active`" } else { "`inactive`" }
+        if meta.active {
+            "`active`"
+        } else {
+            "`inactive`"
+        }
     ));
 
     // Summary
@@ -729,7 +733,11 @@ pub fn render_index(
             out.push_str("| Rule | Object | Status | Summary |\n");
             out.push_str("|------|--------|--------|---------|\n");
             for ctx in rules {
-                let status = if ctx.metadata.active { "active" } else { "inactive" };
+                let status = if ctx.metadata.active {
+                    "active"
+                } else {
+                    "inactive"
+                };
                 out.push_str(&format!(
                     "| [{}](validation-rules/{}.md) | `{}` | {} | {} |\n",
                     ctx.metadata.rule_name,

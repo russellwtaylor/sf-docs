@@ -449,8 +449,8 @@ impl OpenAiCompatClient {
                         format!("{} returned an empty response", self.provider_name)
                     })?;
 
-                let doc: ValidationRuleDocumentation =
-                    serde_json::from_str(&raw_json).with_context(|| {
+                let doc: ValidationRuleDocumentation = serde_json::from_str(&raw_json)
+                    .with_context(|| {
                         format!(
                             "Failed to parse {} JSON for validation rule '{}':\n{}",
                             self.provider_name, metadata.rule_name, raw_json
