@@ -67,6 +67,30 @@ pub struct Cache {
     aura_entries: HashMap<String, AuraCacheEntry>,
 }
 
+/// Generates a `get_*_if_fresh` / `update_*` pair for a given HashMap field.
+///
+/// Usage: `cache_accessors!(field_name, EntryType, DocType, get_fn_name, update_fn_name);`
+macro_rules! cache_accessors {
+    ($field:ident, $entry:ty, $doc:ty, $get_fn:ident, $update_fn:ident) => {
+        pub fn $get_fn<'a>(&'a self, key: &str, hash: &str, model: &str) -> Option<&'a $entry> {
+            self.$field
+                .get(key)
+                .filter(|e| e.hash == hash && e.model == model)
+        }
+
+        pub fn $update_fn(&mut self, key: String, hash: String, model: &str, documentation: $doc) {
+            self.$field.insert(
+                key,
+                TypedEntry {
+                    hash,
+                    model: model.to_owned(),
+                    documentation,
+                },
+            );
+        }
+    };
+}
+
 impl Cache {
     /// Load the cache from the output directory. Returns an empty cache if the
     /// file doesn't exist or can't be parsed (e.g. after a format change).
@@ -103,246 +127,62 @@ impl Cache {
         Ok(())
     }
 
-    /// Returns the cached entry if the hash and model both match (i.e. the
-    /// source file hasn't changed and was generated with the same model).
-    pub fn get_if_fresh<'a>(
-        &'a self,
-        key: &str,
-        hash: &str,
-        model: &str,
-    ) -> Option<&'a CacheEntry> {
-        self.entries
-            .get(key)
-            .filter(|e| e.hash == hash && e.model == model)
-    }
-
-    /// Insert or update a class entry after a successful API call.
-    pub fn update(
-        &mut self,
-        key: String,
-        hash: String,
-        model: &str,
-        documentation: ClassDocumentation,
-    ) {
-        self.entries.insert(
-            key,
-            CacheEntry {
-                hash,
-                model: model.to_owned(),
-                documentation,
-            },
-        );
-    }
-
-    /// Returns the cached trigger entry if hash and model both match.
-    pub fn get_trigger_if_fresh<'a>(
-        &'a self,
-        key: &str,
-        hash: &str,
-        model: &str,
-    ) -> Option<&'a TriggerCacheEntry> {
-        self.trigger_entries
-            .get(key)
-            .filter(|e| e.hash == hash && e.model == model)
-    }
-
-    /// Insert or update a trigger entry after a successful API call.
-    pub fn update_trigger(
-        &mut self,
-        key: String,
-        hash: String,
-        model: &str,
-        documentation: TriggerDocumentation,
-    ) {
-        self.trigger_entries.insert(
-            key,
-            TriggerCacheEntry {
-                hash,
-                model: model.to_owned(),
-                documentation,
-            },
-        );
-    }
-
-    /// Returns the cached flow entry if hash and model both match.
-    pub fn get_flow_if_fresh<'a>(
-        &'a self,
-        key: &str,
-        hash: &str,
-        model: &str,
-    ) -> Option<&'a FlowCacheEntry> {
-        self.flow_entries
-            .get(key)
-            .filter(|e| e.hash == hash && e.model == model)
-    }
-
-    /// Insert or update a flow entry after a successful API call.
-    pub fn update_flow(
-        &mut self,
-        key: String,
-        hash: String,
-        model: &str,
-        documentation: FlowDocumentation,
-    ) {
-        self.flow_entries.insert(
-            key,
-            FlowCacheEntry {
-                hash,
-                model: model.to_owned(),
-                documentation,
-            },
-        );
-    }
-
-    /// Returns the cached validation rule entry if hash and model both match.
-    pub fn get_validation_rule_if_fresh<'a>(
-        &'a self,
-        key: &str,
-        hash: &str,
-        model: &str,
-    ) -> Option<&'a ValidationRuleCacheEntry> {
-        self.validation_rule_entries
-            .get(key)
-            .filter(|e| e.hash == hash && e.model == model)
-    }
-
-    /// Insert or update a validation rule entry after a successful API call.
-    pub fn update_validation_rule(
-        &mut self,
-        key: String,
-        hash: String,
-        model: &str,
-        documentation: ValidationRuleDocumentation,
-    ) {
-        self.validation_rule_entries.insert(
-            key,
-            ValidationRuleCacheEntry {
-                hash,
-                model: model.to_owned(),
-                documentation,
-            },
-        );
-    }
-
-    /// Returns the cached object entry if hash and model both match.
-    pub fn get_object_if_fresh<'a>(
-        &'a self,
-        key: &str,
-        hash: &str,
-        model: &str,
-    ) -> Option<&'a ObjectCacheEntry> {
-        self.object_entries
-            .get(key)
-            .filter(|e| e.hash == hash && e.model == model)
-    }
-
-    /// Insert or update an object entry after a successful API call.
-    pub fn update_object(
-        &mut self,
-        key: String,
-        hash: String,
-        model: &str,
-        documentation: ObjectDocumentation,
-    ) {
-        self.object_entries.insert(
-            key,
-            ObjectCacheEntry {
-                hash,
-                model: model.to_owned(),
-                documentation,
-            },
-        );
-    }
-
-    /// Returns the cached LWC entry if hash and model both match.
-    pub fn get_lwc_if_fresh<'a>(
-        &'a self,
-        key: &str,
-        hash: &str,
-        model: &str,
-    ) -> Option<&'a LwcCacheEntry> {
-        self.lwc_entries
-            .get(key)
-            .filter(|e| e.hash == hash && e.model == model)
-    }
-
-    /// Insert or update an LWC entry after a successful API call.
-    pub fn update_lwc(
-        &mut self,
-        key: String,
-        hash: String,
-        model: &str,
-        documentation: LwcDocumentation,
-    ) {
-        self.lwc_entries.insert(
-            key,
-            LwcCacheEntry {
-                hash,
-                model: model.to_owned(),
-                documentation,
-            },
-        );
-    }
-
-    /// Returns the cached FlexiPage entry if hash and model both match.
-    pub fn get_flexipage_if_fresh<'a>(
-        &'a self,
-        key: &str,
-        hash: &str,
-        model: &str,
-    ) -> Option<&'a FlexiPageCacheEntry> {
-        self.flexipage_entries
-            .get(key)
-            .filter(|e| e.hash == hash && e.model == model)
-    }
-
-    /// Insert or update a FlexiPage entry after a successful API call.
-    pub fn update_flexipage(
-        &mut self,
-        key: String,
-        hash: String,
-        model: &str,
-        documentation: FlexiPageDocumentation,
-    ) {
-        self.flexipage_entries.insert(
-            key,
-            FlexiPageCacheEntry {
-                hash,
-                model: model.to_owned(),
-                documentation,
-            },
-        );
-    }
-
-    /// Returns the cached Aura entry if hash and model both match.
-    pub fn get_aura_if_fresh<'a>(
-        &'a self,
-        key: &str,
-        hash: &str,
-        model: &str,
-    ) -> Option<&'a AuraCacheEntry> {
-        self.aura_entries
-            .get(key)
-            .filter(|e| e.hash == hash && e.model == model)
-    }
-
-    /// Insert or update an Aura entry after a successful API call.
-    pub fn update_aura(
-        &mut self,
-        key: String,
-        hash: String,
-        model: &str,
-        documentation: AuraDocumentation,
-    ) {
-        self.aura_entries.insert(
-            key,
-            AuraCacheEntry {
-                hash,
-                model: model.to_owned(),
-                documentation,
-            },
-        );
-    }
+    cache_accessors!(
+        entries,
+        CacheEntry,
+        ClassDocumentation,
+        get_if_fresh,
+        update
+    );
+    cache_accessors!(
+        trigger_entries,
+        TriggerCacheEntry,
+        TriggerDocumentation,
+        get_trigger_if_fresh,
+        update_trigger
+    );
+    cache_accessors!(
+        flow_entries,
+        FlowCacheEntry,
+        FlowDocumentation,
+        get_flow_if_fresh,
+        update_flow
+    );
+    cache_accessors!(
+        validation_rule_entries,
+        ValidationRuleCacheEntry,
+        ValidationRuleDocumentation,
+        get_validation_rule_if_fresh,
+        update_validation_rule
+    );
+    cache_accessors!(
+        object_entries,
+        ObjectCacheEntry,
+        ObjectDocumentation,
+        get_object_if_fresh,
+        update_object
+    );
+    cache_accessors!(
+        lwc_entries,
+        LwcCacheEntry,
+        LwcDocumentation,
+        get_lwc_if_fresh,
+        update_lwc
+    );
+    cache_accessors!(
+        flexipage_entries,
+        FlexiPageCacheEntry,
+        FlexiPageDocumentation,
+        get_flexipage_if_fresh,
+        update_flexipage
+    );
+    cache_accessors!(
+        aura_entries,
+        AuraCacheEntry,
+        AuraDocumentation,
+        get_aura_if_fresh,
+        update_aura
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -899,7 +899,9 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
-            // Custom metadata contexts: group by type_name (no AI docs)
+            // Custom metadata contexts: group by type_name.
+            // Custom metadata records are purely structural (field-value tables) — no AI
+            // documentation is generated for them, so there is no cache look-up or API call.
             let custom_metadata_contexts: Vec<renderer::CustomMetadataRenderContext> = cm_by_type
                 .into_iter()
                 .map(
