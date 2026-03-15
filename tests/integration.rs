@@ -210,6 +210,7 @@ fn full_pipeline_writes_markdown_output() {
             .map(|m| m.trigger_name.clone())
             .collect(),
         flow_names: vec![],
+        validation_rule_names: vec![],
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -256,6 +257,7 @@ fn full_pipeline_writes_markdown_output() {
         &class_contexts,
         &trigger_contexts,
         &[],
+        &[],
     )
     .unwrap();
 
@@ -289,6 +291,7 @@ fn markdown_class_page_contains_expected_sections() {
         class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
         trigger_names: vec![],
         flow_names: vec![],
+        validation_rule_names: vec![],
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -306,6 +309,7 @@ fn markdown_class_page_contains_expected_sections() {
         output_dir,
         &sfdoc::cli::OutputFormat::Markdown,
         &class_contexts,
+        &[],
         &[],
         &[],
     )
@@ -337,6 +341,7 @@ fn markdown_index_groups_by_folder() {
         class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
         trigger_names: vec![],
         flow_names: vec![],
+        validation_rule_names: vec![],
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -358,7 +363,7 @@ fn markdown_index_groups_by_folder() {
         })
         .collect();
 
-    let index = renderer::render_index(&class_contexts, &[], &[]);
+    let index = renderer::render_index(&class_contexts, &[], &[], &[]);
 
     // Both classes should be linked with type-prefixed paths
     assert!(index.contains("[AccountService](classes/AccountService.md)"));
@@ -394,6 +399,7 @@ fn full_pipeline_writes_html_output() {
         class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
         trigger_names: vec![],
         flow_names: vec![],
+        validation_rule_names: vec![],
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -410,6 +416,7 @@ fn full_pipeline_writes_html_output() {
         output_dir,
         &sfdoc::cli::OutputFormat::Html,
         &class_contexts,
+        &[],
         &[],
         &[],
     )
@@ -438,6 +445,7 @@ fn html_page_contains_sidebar_and_content() {
         class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
         trigger_names: vec![],
         flow_names: vec![],
+        validation_rule_names: vec![],
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -454,6 +462,7 @@ fn html_page_contains_sidebar_and_content() {
         tmp.path(),
         &sfdoc::cli::OutputFormat::Html,
         &class_contexts,
+        &[],
         &[],
         &[],
     )
@@ -633,7 +642,8 @@ async fn openai_compat_client_documents_class() {
         &server.base_url(),
         1,
         "TestProvider",
-    );
+    )
+    .unwrap();
 
     let file = ApexFile {
         path: PathBuf::from("AccountService.cls"),
@@ -669,7 +679,8 @@ async fn openai_compat_client_documents_trigger() {
         &server.base_url(),
         1,
         "TestProvider",
-    );
+    )
+    .unwrap();
 
     let trigger_files = TriggerScanner.scan(trigger_fixtures_dir()).unwrap();
     let file = &trigger_files[0];
@@ -702,7 +713,8 @@ async fn openai_compat_client_returns_error_on_non_200() {
         &server.base_url(),
         1,
         "TestProvider",
-    );
+    )
+    .unwrap();
 
     let file = ApexFile {
         path: PathBuf::from("AccountService.cls"),
@@ -765,13 +777,16 @@ async fn e2e_scan_parse_ai_render_markdown() {
             .body(openai_trigger_response(&trigger_doc));
     });
 
-    let client = Arc::new(OpenAiCompatClient::new(
-        "test-key".to_string(),
-        "test-model",
-        &server.base_url(),
-        3,
-        "TestProvider",
-    ));
+    let client = Arc::new(
+        OpenAiCompatClient::new(
+            "test-key".to_string(),
+            "test-model",
+            &server.base_url(),
+            3,
+            "TestProvider",
+        )
+        .unwrap(),
+    );
 
     // Scan
     let class_files = ApexScanner.scan(class_fixtures_dir()).unwrap();
@@ -807,6 +822,7 @@ async fn e2e_scan_parse_ai_render_markdown() {
             .map(|m| m.trigger_name.clone())
             .collect(),
         flow_names: vec![],
+        validation_rule_names: vec![],
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -854,6 +870,7 @@ async fn e2e_scan_parse_ai_render_markdown() {
         &sfdoc::cli::OutputFormat::Markdown,
         &class_contexts,
         &trigger_contexts,
+        &[],
         &[],
     )
     .unwrap();

@@ -52,6 +52,7 @@ pub struct AllNames {
     pub class_names: Vec<String>,
     pub trigger_names: Vec<String>,
     pub flow_names: Vec<String>,
+    pub validation_rule_names: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -199,5 +200,34 @@ pub struct FlowDocumentation {
     pub entry_criteria: String,
     pub key_decisions: Vec<String>,
     pub admin_notes: Vec<String>,
+    pub relationships: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Validation Rule types
+// ---------------------------------------------------------------------------
+
+/// Structural metadata extracted from a Salesforce Validation Rule XML file.
+#[derive(Debug, Clone, Default)]
+pub struct ValidationRuleMetadata {
+    pub rule_name: String,
+    pub object_name: String,
+    pub active: bool,
+    pub description: String,
+    pub error_condition_formula: String,
+    pub error_display_field: String,
+    pub error_message: String,
+}
+
+/// AI-generated documentation for a Salesforce Validation Rule.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct ValidationRuleDocumentation {
+    pub rule_name: String,
+    pub object_name: String,
+    pub summary: String,
+    pub when_fires: String,
+    pub what_protects: String,
+    pub formula_explanation: String,
+    pub edge_cases: Vec<String>,
     pub relationships: Vec<String>,
 }

@@ -2,7 +2,10 @@ use anyhow::Result;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use crate::renderer::{sanitize_filename, FlowRenderContext, RenderContext, TriggerRenderContext};
+use crate::renderer::{
+    sanitize_filename, FlowRenderContext, RenderContext, TriggerRenderContext,
+    ValidationRuleRenderContext,
+};
 
 // ---------------------------------------------------------------------------
 // Inline CSS — no external dependencies, works offline
@@ -87,10 +90,12 @@ pub fn write_html_output(
     class_contexts: &[RenderContext],
     trigger_contexts: &[TriggerRenderContext],
     flow_contexts: &[FlowRenderContext],
+    validation_rule_contexts: &[ValidationRuleRenderContext],
 ) -> Result<()> {
     let classes_dir = output_dir.join("classes");
     let triggers_dir = output_dir.join("triggers");
     let flows_dir = output_dir.join("flows");
+    let vr_dir = output_dir.join("validation-rules");
 
     std::fs::create_dir_all(output_dir)?;
     if !class_contexts.is_empty() {
@@ -101,6 +106,9 @@ pub fn write_html_output(
     }
     if !flow_contexts.is_empty() {
         std::fs::create_dir_all(&flows_dir)?;
+    }
+    if !validation_rule_contexts.is_empty() {
+        std::fs::create_dir_all(&vr_dir)?;
     }
 
     // (name, folder) pairs — used for sidebar grouping and cross-link generation.
@@ -116,9 +124,13 @@ pub fn write_html_output(
         .iter()
         .map(|c| (c.metadata.api_name.as_str(), c.folder.as_str()))
         .collect();
+    let vr_items: Vec<(&str, &str)> = validation_rule_contexts
+        .iter()
+        .map(|c| (c.metadata.rule_name.as_str(), c.folder.as_str()))
+        .collect();
 
     for ctx in class_contexts {
-        let page = render_class_page(ctx, &class_items, &trigger_items, &flow_items);
+        let page = render_class_page(ctx, &class_items, &trigger_items, &flow_items, &vr_items);
         std::fs::write(
             classes_dir.join(format!(
                 "{}.html",
@@ -129,7 +141,7 @@ pub fn write_html_output(
     }
 
     for ctx in trigger_contexts {
-        let page = render_trigger_page(ctx, &class_items, &trigger_items, &flow_items);
+        let page = render_trigger_page(ctx, &class_items, &trigger_items, &flow_items, &vr_items);
         std::fs::write(
             triggers_dir.join(format!(
                 "{}.html",
@@ -140,7 +152,7 @@ pub fn write_html_output(
     }
 
     for ctx in flow_contexts {
-        let page = render_flow_page(ctx, &class_items, &trigger_items, &flow_items);
+        let page = render_flow_page(ctx, &class_items, &trigger_items, &flow_items, &vr_items);
         std::fs::write(
             flows_dir.join(format!(
                 "{}.html",
@@ -150,13 +162,27 @@ pub fn write_html_output(
         )?;
     }
 
+    for ctx in validation_rule_contexts {
+        let page =
+            render_validation_rule_page(ctx, &class_items, &trigger_items, &flow_items, &vr_items);
+        std::fs::write(
+            vr_dir.join(format!(
+                "{}.html",
+                sanitize_filename(&ctx.metadata.rule_name)
+            )),
+            page,
+        )?;
+    }
+
     let index = render_index(
         class_contexts,
         trigger_contexts,
         flow_contexts,
+        validation_rule_contexts,
         &class_items,
         &trigger_items,
         &flow_items,
+        &vr_items,
     );
     std::fs::write(output_dir.join("index.html"), index)?;
 
@@ -172,10 +198,12 @@ fn render_class_page(
     class_items: &[(&str, &str)],
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
+    vr_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
     let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
+    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.class_name;
@@ -352,6 +380,18 @@ fn render_class_page(
                             )
                         })
                 })
+                .or_else(|| {
+                    vr_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../validation-rules/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
         })
         .collect();
 
@@ -372,6 +412,7 @@ fn render_class_page(
         class_items,
         trigger_items,
         flow_items,
+        vr_items,
     )
 }
 
@@ -380,10 +421,12 @@ fn render_trigger_page(
     class_items: &[(&str, &str)],
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
+    vr_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
     let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
+    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.trigger_name;
@@ -486,6 +529,18 @@ fn render_trigger_page(
                             )
                         })
                 })
+                .or_else(|| {
+                    vr_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../validation-rules/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
         })
         .collect();
 
@@ -506,6 +561,7 @@ fn render_trigger_page(
         class_items,
         trigger_items,
         flow_items,
+        vr_items,
     )
 }
 
@@ -514,10 +570,12 @@ fn render_flow_page(
     class_items: &[(&str, &str)],
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
+    vr_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
     let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
+    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.api_name;
@@ -662,6 +720,18 @@ fn render_flow_page(
                             )
                         })
                 })
+                .or_else(|| {
+                    vr_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../validation-rules/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
         })
         .collect();
 
@@ -682,6 +752,151 @@ fn render_flow_page(
         class_items,
         trigger_items,
         flow_items,
+        vr_items,
+    )
+}
+
+fn render_validation_rule_page(
+    ctx: &ValidationRuleRenderContext,
+    class_items: &[(&str, &str)],
+    trigger_items: &[(&str, &str)],
+    flow_items: &[(&str, &str)],
+    vr_items: &[(&str, &str)],
+) -> String {
+    let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
+    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
+    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
+    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
+    let doc = &ctx.documentation;
+    let meta = &ctx.metadata;
+    let active = &meta.rule_name;
+
+    let mut body = String::new();
+
+    body.push_str(&format!("<h1>{}</h1>\n", escape(&meta.rule_name)));
+    body.push_str("<div class=\"badges\">\n");
+    body.push_str("<span class=\"badge\">validation-rule</span>\n");
+    body.push_str(&format!(
+        "<span class=\"badge\">on {}</span>\n",
+        escape(&meta.object_name)
+    ));
+    if meta.active {
+        body.push_str("<span class=\"badge\">active</span>\n");
+    } else {
+        body.push_str("<span class=\"badge\">inactive</span>\n");
+    }
+    body.push_str("</div>\n");
+    body.push_str(&format!(
+        "<p class=\"summary\">{}</p>\n",
+        escape(&doc.summary)
+    ));
+
+    body.push_str("<h2>When It Fires</h2>\n");
+    body.push_str(&format!("<p>{}</p>\n", escape(&doc.when_fires)));
+
+    body.push_str("<h2>What It Protects</h2>\n");
+    body.push_str(&format!("<p>{}</p>\n", escape(&doc.what_protects)));
+
+    body.push_str("<h2>Error Condition Formula</h2>\n");
+    body.push_str(&format!(
+        "<pre><code>{}</code></pre>\n",
+        escape(&meta.error_condition_formula)
+    ));
+
+    body.push_str("<h2>Formula Explanation</h2>\n");
+    body.push_str(&format!("<p>{}</p>\n", escape(&doc.formula_explanation)));
+
+    body.push_str("<h2>Error Message</h2>\n");
+    body.push_str(&format!(
+        "<blockquote><p>{}</p></blockquote>\n",
+        escape(&meta.error_message)
+    ));
+    if !meta.error_display_field.is_empty() {
+        body.push_str(&format!(
+            "<p><strong>Displayed on field:</strong> <code>{}</code></p>\n",
+            escape(&meta.error_display_field)
+        ));
+    }
+
+    if !doc.edge_cases.is_empty() {
+        body.push_str("<h2>Edge Cases</h2>\n<ul>\n");
+        for case in &doc.edge_cases {
+            body.push_str(&format!("<li>{}</li>\n", escape(case)));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    let see_also: Vec<String> = doc
+        .relationships
+        .iter()
+        .filter_map(|rel| {
+            class_names
+                .iter()
+                .find(|&&name| rel.contains(name))
+                .map(|&name| {
+                    format!(
+                        "<a href=\"../classes/{name}.html\">{}</a> — {}",
+                        escape(name),
+                        escape(rel)
+                    )
+                })
+                .or_else(|| {
+                    trigger_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../triggers/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
+                .or_else(|| {
+                    flow_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../flows/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
+                .or_else(|| {
+                    vr_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
+        })
+        .collect();
+
+    if !see_also.is_empty() {
+        body.push_str("<h2>See Also</h2>\n<ul>\n");
+        for link in see_also {
+            body.push_str(&format!("<li>{}</li>\n", link));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    wrap_page(
+        &meta.rule_name,
+        "sfdoc",
+        &body,
+        active,
+        "../",
+        class_items,
+        trigger_items,
+        flow_items,
+        vr_items,
     )
 }
 
@@ -689,17 +904,20 @@ fn render_index(
     class_contexts: &[RenderContext],
     trigger_contexts: &[TriggerRenderContext],
     flow_contexts: &[FlowRenderContext],
+    validation_rule_contexts: &[ValidationRuleRenderContext],
     class_items: &[(&str, &str)],
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
+    vr_items: &[(&str, &str)],
 ) -> String {
     let mut body = String::new();
     body.push_str("<h1>Apex Documentation</h1>\n");
     body.push_str(&format!(
-        "<p class=\"summary\">Generated documentation for {} class(es), {} trigger(s), and {} flow(s).</p>\n",
+        "<p class=\"summary\">Generated documentation for {} class(es), {} trigger(s), {} flow(s), and {} validation rule(s).</p>\n",
         class_contexts.len(),
         trigger_contexts.len(),
-        flow_contexts.len()
+        flow_contexts.len(),
+        validation_rule_contexts.len(),
     ));
 
     if !class_contexts.is_empty() {
@@ -807,6 +1025,41 @@ fn render_index(
         }
     }
 
+    if !validation_rule_contexts.is_empty() {
+        let mut vr_by_folder: BTreeMap<&str, Vec<&ValidationRuleRenderContext>> = BTreeMap::new();
+        for ctx in validation_rule_contexts {
+            vr_by_folder
+                .entry(ctx.folder.as_str())
+                .or_default()
+                .push(ctx);
+        }
+        for group in vr_by_folder.values_mut() {
+            group.sort_by(|a, b| a.metadata.rule_name.cmp(&b.metadata.rule_name));
+        }
+
+        body.push_str("<h2>Validation Rules</h2>\n");
+        let multi_folder = vr_by_folder.len() > 1;
+        for (folder, rules) in &vr_by_folder {
+            if multi_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                body.push_str(&format!("<h3>{}</h3>\n", escape(label)));
+            }
+            body.push_str("<table><thead><tr><th>Rule</th><th>Object</th><th>Status</th><th>Summary</th></tr></thead><tbody>\n");
+            for ctx in rules {
+                let status = if ctx.metadata.active { "active" } else { "inactive" };
+                body.push_str(&format!(
+                    "<tr><td><a href=\"validation-rules/{}.html\">{}</a></td><td><code>{}</code></td><td>{}</td><td>{}</td></tr>\n",
+                    escape(&ctx.metadata.rule_name),
+                    escape(&ctx.metadata.rule_name),
+                    escape(&ctx.metadata.object_name),
+                    status,
+                    escape(&ctx.documentation.summary),
+                ));
+            }
+            body.push_str("</tbody></table>\n");
+        }
+    }
+
     wrap_page(
         "Overview",
         "sfdoc",
@@ -816,6 +1069,7 @@ fn render_index(
         class_items,
         trigger_items,
         flow_items,
+        vr_items,
     )
 }
 
@@ -833,8 +1087,10 @@ fn wrap_page(
     class_items: &[(&str, &str)],
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
+    vr_items: &[(&str, &str)],
 ) -> String {
-    let sidebar = render_sidebar(class_items, trigger_items, flow_items, active, up_prefix);
+    let sidebar =
+        render_sidebar(class_items, trigger_items, flow_items, vr_items, active, up_prefix);
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">
@@ -861,6 +1117,7 @@ fn render_sidebar(
     class_items: &[(&str, &str)],
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
+    vr_items: &[(&str, &str)],
     active: &str,
     up_prefix: &str,
 ) -> String {
@@ -974,6 +1231,43 @@ fn render_sidebar(
                 };
                 s.push_str(&format!(
                     "<li><a href=\"{up_prefix}flows/{name}.html\"{cls}>{}</a></li>\n",
+                    escape(name)
+                ));
+            }
+            s.push_str("</ul>\n");
+        }
+        s.push_str("</div>\n");
+    }
+
+    if !vr_items.is_empty() {
+        let mut by_folder: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        for &(name, folder) in vr_items {
+            by_folder.entry(folder).or_default().push(name);
+        }
+        for names in by_folder.values_mut() {
+            names.sort_unstable();
+        }
+
+        s.push_str("<div class=\"sidebar-section\">\n");
+        s.push_str("<div class=\"sidebar-heading\">Validation Rules</div>\n");
+        let multi_folder = by_folder.len() > 1;
+        for (folder, names) in &by_folder {
+            if multi_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                s.push_str(&format!(
+                    "<div class=\"sidebar-folder\">{}</div>\n",
+                    escape(label)
+                ));
+            }
+            s.push_str("<ul>\n");
+            for name in names {
+                let cls = if *name == active {
+                    " class=\"active\""
+                } else {
+                    ""
+                };
+                s.push_str(&format!(
+                    "<li><a href=\"{up_prefix}validation-rules/{name}.html\"{cls}>{}</a></li>\n",
                     escape(name)
                 ));
             }

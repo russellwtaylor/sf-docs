@@ -108,7 +108,7 @@ Run from the root of your Salesforce project:
 sfdoc generate
 ```
 
-This scans `force-app/main/default/classes/` for `.cls` and `.trigger` files and `force-app/main/default/flows/` for `.flow-meta.xml` files, then writes Markdown output to `docs/`.
+This recursively scans `--source-dir` (default: `force-app/main/default`) for `.cls`, `.trigger`, `.flow-meta.xml`, and `.validationRule-meta.xml` files, then writes Markdown output to `docs/`.
 
 ## Usage
 
@@ -209,21 +209,31 @@ Options:
 
 ```
 docs/
-  index.md                          # Home page — classes, triggers, and flows grouped by folder
-  AccountService.md                 # One page per class
-  OrderTrigger.md                   # One page per trigger
-  Account_Onboarding_Flow.md        # One page per flow
-  .sfdoc-cache.json                 # Incremental build cache (do not edit manually)
+  index.md                                      # Home page — all types grouped by folder/object
+  classes/
+    AccountService.md                           # One page per class
+  triggers/
+    OrderTrigger.md                             # One page per trigger
+  flows/
+    Account_Onboarding_Flow.md                  # One page per flow
+  validation-rules/
+    Require_Start_Date.md                       # One page per validation rule
+  .sfdoc-cache.json                             # Incremental build cache (do not edit manually)
 ```
 
 ### HTML
 
 ```
 site/
-  index.html                        # Home page with sidebar navigation
-  AccountService.html
-  OrderTrigger.html
-  Account_Onboarding_Flow.html
+  index.html                                    # Home page with sidebar navigation
+  classes/
+    AccountService.html
+  triggers/
+    OrderTrigger.html
+  flows/
+    Account_Onboarding_Flow.html
+  validation-rules/
+    Require_Start_Date.html
 ```
 
 Markdown and HTML outputs default to separate directories (`docs/` and `site/`) so both formats can coexist without overwriting each other.
@@ -238,7 +248,7 @@ Markdown and HTML outputs default to separate directories (`docs/` and `site/`) 
 | Properties     | Name, type, description table                                     |
 | Methods        | Signature, description, parameter table, return value, exceptions |
 | Usage examples | Apex code snippets                                                |
-| See Also       | Cross-links to related classes, triggers, and flows               |
+| See Also       | Cross-links to related classes, triggers, flows, and validation rules |
 
 ### Flow pages additionally include
 
@@ -252,6 +262,18 @@ Markdown and HTML outputs default to separate directories (`docs/` and `site/`) 
 | Action calls     | Invocable actions, Apex actions, email alerts, etc.                  |
 | Key decisions    | Major branching conditions                                           |
 | Admin notes      | Operational considerations for admins                                |
+
+### Validation rule pages additionally include
+
+| Section               | Details                                                          |
+| --------------------- | ---------------------------------------------------------------- |
+| Active/Inactive badge | Whether the rule is currently enforced                           |
+| When it fires         | Plain-English description of the trigger condition for admins    |
+| What it protects      | The data-quality or business rule being enforced                 |
+| Error condition formula | Raw formula in a code block                                    |
+| Formula explanation   | Step-by-step walkthrough of each function and condition          |
+| Error message         | The message shown to the user, with the display field if set     |
+| Edge cases            | Noteworthy exceptions or gotchas in the formula logic            |
 
 ## Example workflow
 
@@ -285,24 +307,26 @@ open docs/index.md
 
 ```
 src/
-  main.rs             Entry point and pipeline orchestration
-  cli.rs              clap CLI definitions
-  config.rs           API key storage and resolution
-  providers.rs        Provider enum and per-provider defaults
-  scanner.rs          FileScanner trait, ApexScanner, TriggerScanner, FlowScanner
-  parser.rs           Regex-based Apex class structural parser
-  trigger_parser.rs   Apex trigger structural parser
-  flow_parser.rs      Salesforce Flow XML structural parser (quick-xml)
-  prompt.rs           AI prompt construction for classes
-  trigger_prompt.rs   AI prompt construction for triggers
-  flow_prompt.rs      AI prompt construction for flows
-  gemini.rs           Google Gemini API client
-  openai_compat.rs    OpenAI-compatible client (Groq, OpenAI, Ollama)
-  retry.rs            Retry logic with exponential backoff
-  renderer.rs         Markdown generation and cross-linking
-  html_renderer.rs    Self-contained HTML site generator
-  cache.rs            SHA-256 incremental build cache
-  types.rs            Shared data structures
+  main.rs                       Entry point and pipeline orchestration
+  cli.rs                        clap CLI definitions
+  config.rs                     API key storage and resolution
+  providers.rs                  Provider enum and per-provider defaults
+  scanner.rs                    FileScanner trait and all scanner implementations
+  parser.rs                     Regex-based Apex class structural parser
+  trigger_parser.rs             Apex trigger structural parser
+  flow_parser.rs                Salesforce Flow XML structural parser
+  validation_rule_parser.rs     Salesforce Validation Rule XML structural parser
+  prompt.rs                     AI prompt construction for classes
+  trigger_prompt.rs             AI prompt construction for triggers
+  flow_prompt.rs                AI prompt construction for flows
+  validation_rule_prompt.rs     AI prompt construction for validation rules
+  gemini.rs                     Google Gemini API client
+  openai_compat.rs              OpenAI-compatible client (Groq, OpenAI, Ollama)
+  retry.rs                      Retry logic with exponential backoff
+  renderer.rs                   Markdown generation and cross-linking
+  html_renderer.rs              Self-contained HTML site generator
+  cache.rs                      SHA-256 incremental build cache
+  types.rs                      Shared data structures
 ```
 
 ## Development
