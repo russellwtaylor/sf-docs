@@ -550,6 +550,7 @@ async fn main() -> Result<()> {
                         api_key,
                         &model,
                         args.concurrency,
+                        args.rpm,
                     )?)),
                     _ => DocClient::OpenAiCompat(Arc::new(OpenAiCompatClient::new(
                         api_key,
@@ -557,6 +558,7 @@ async fn main() -> Result<()> {
                         provider.base_url(),
                         args.concurrency,
                         provider.display_name(),
+                        args.rpm,
                     )?)),
                 };
                 let client = Arc::new(client);

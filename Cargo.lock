@@ -2478,6 +2478,7 @@ dependencies = [
  "indicatif",
  "keyring",
  "quick-xml",
+ "rand",
  "rayon",
  "regex",
  "reqwest",
