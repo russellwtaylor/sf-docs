@@ -5,9 +5,10 @@ use std::sync::Arc;
 
 use crate::cli::OutputFormat;
 use crate::types::{
-    AllNames, ClassDocumentation, ClassMetadata, FlowDocumentation, FlowMetadata, LwcDocumentation,
-    LwcMetadata, ObjectDocumentation, ObjectMetadata, TriggerDocumentation, TriggerMetadata,
-    ValidationRuleDocumentation, ValidationRuleMetadata,
+    AllNames, AuraDocumentation, AuraMetadata, ClassDocumentation, ClassMetadata,
+    CustomMetadataRecord, FlexiPageDocumentation, FlexiPageMetadata, FlowDocumentation,
+    FlowMetadata, LwcDocumentation, LwcMetadata, ObjectDocumentation, ObjectMetadata,
+    TriggerDocumentation, TriggerMetadata, ValidationRuleDocumentation, ValidationRuleMetadata,
 };
 
 pub struct RenderContext {
@@ -56,6 +57,25 @@ pub struct LwcRenderContext {
     pub folder: String,
 }
 
+pub struct FlexiPageRenderContext {
+    pub metadata: FlexiPageMetadata,
+    pub documentation: FlexiPageDocumentation,
+    pub all_names: Arc<AllNames>,
+    pub folder: String,
+}
+
+pub struct CustomMetadataRenderContext {
+    pub type_name: String,
+    pub records: Vec<CustomMetadataRecord>,
+}
+
+pub struct AuraRenderContext {
+    pub metadata: AuraMetadata,
+    pub documentation: AuraDocumentation,
+    pub all_names: Arc<AllNames>,
+    pub folder: String,
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -77,6 +97,10 @@ fn cross_link_md(name: &str, all_names: &AllNames, from_type: &str) -> String {
         "object"
     } else if all_names.lwc_names.iter().any(|n| n == name) {
         "lwc"
+    } else if all_names.flexipage_names.iter().any(|n| n == name) {
+        "flexipage"
+    } else if all_names.aura_names.iter().any(|n| n == name) {
+        "aura"
     } else {
         // Unknown name — no link generated (caller filters via `known` set).
         return format!("{name}.md");
@@ -88,6 +112,8 @@ fn cross_link_md(name: &str, all_names: &AllNames, from_type: &str) -> String {
         "flow" => "flows",
         "object" => "objects",
         "lwc" => "lwc",
+        "flexipage" => "flexipages",
+        "aura" => "aura",
         _ => "validation-rules",
     };
 
@@ -128,6 +154,20 @@ pub fn render_class_page(ctx: &RenderContext) -> String {
     out.push_str("## Description\n\n");
     out.push_str(&doc.description);
     out.push_str("\n\n");
+
+    // Implemented By (for interfaces)
+    if meta.is_interface {
+        if let Some(implementors) = ctx.all_names.interface_implementors.get(&meta.class_name) {
+            if !implementors.is_empty() {
+                out.push_str("## Implemented By\n\n");
+                for cls in implementors {
+                    let link = cross_link_md(cls, &ctx.all_names, "class");
+                    out.push_str(&format!("- [{cls}]({link})\n"));
+                }
+                out.push('\n');
+            }
+        }
+    }
 
     // Properties
     if !doc.properties.is_empty() {
@@ -827,6 +867,7 @@ pub fn render_lwc_page(ctx: &LwcRenderContext) -> String {
     out
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn render_index(
     class_contexts: &[RenderContext],
     trigger_contexts: &[TriggerRenderContext],
@@ -834,22 +875,32 @@ pub fn render_index(
     validation_rule_contexts: &[ValidationRuleRenderContext],
     object_contexts: &[ObjectRenderContext],
     lwc_contexts: &[LwcRenderContext],
+    flexipage_contexts: &[FlexiPageRenderContext],
+    custom_metadata_contexts: &[CustomMetadataRenderContext],
+    aura_contexts: &[AuraRenderContext],
 ) -> String {
     let mut out = String::new();
     out.push_str("# Apex Documentation Index\n\n");
     out.push_str(&format!(
-        "Generated documentation for {} class(es), {} trigger(s), {} flow(s), {} validation rule(s), {} object(s), and {} LWC component(s).\n\n",
-        class_contexts.len(),
+        "Generated documentation for {} class(es), {} trigger(s), {} flow(s), {} validation rule(s), {} object(s), {} LWC component(s), {} Lightning page(s), {} Custom Metadata type(s), and {} Aura component(s).\n\n",
+        class_contexts.iter().filter(|c| !c.metadata.is_interface).count(),
         trigger_contexts.len(),
         flow_contexts.len(),
         validation_rule_contexts.len(),
         object_contexts.len(),
         lwc_contexts.len(),
+        flexipage_contexts.len(),
+        custom_metadata_contexts.len(),
+        aura_contexts.len(),
     ));
 
-    // Group classes by folder, sorted alphabetically within each group.
+    // Separate classes and interfaces
+    let (interface_contexts, regular_class_contexts): (Vec<_>, Vec<_>) =
+        class_contexts.iter().partition(|c| c.metadata.is_interface);
+
+    // Group regular classes by folder, sorted alphabetically within each group.
     let mut class_by_folder: BTreeMap<&str, Vec<&RenderContext>> = BTreeMap::new();
-    for ctx in class_contexts {
+    for ctx in &regular_class_contexts {
         class_by_folder
             .entry(ctx.folder.as_str())
             .or_default()
@@ -859,16 +910,36 @@ pub fn render_index(
         group.sort_by(|a, b| a.documentation.class_name.cmp(&b.documentation.class_name));
     }
 
-    out.push_str("## Classes\n\n");
-    let multi_class_folder = class_by_folder.len() > 1;
-    for (folder, classes) in &class_by_folder {
-        if multi_class_folder {
-            let label = if folder.is_empty() { "(root)" } else { folder };
-            out.push_str(&format!("### {label}\n\n"));
+    if !regular_class_contexts.is_empty() {
+        out.push_str("## Classes\n\n");
+        let multi_class_folder = class_by_folder.len() > 1;
+        for (folder, classes) in &class_by_folder {
+            if multi_class_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                out.push_str(&format!("### {label}\n\n"));
+            }
+            out.push_str("| Class | Summary |\n");
+            out.push_str("|-------|---------|\n");
+            for ctx in classes {
+                out.push_str(&format!(
+                    "| [{}](classes/{}.md) | {} |\n",
+                    ctx.documentation.class_name,
+                    ctx.documentation.class_name,
+                    ctx.documentation.summary
+                ));
+            }
+            out.push('\n');
         }
-        out.push_str("| Class | Summary |\n");
-        out.push_str("|-------|---------|\n");
-        for ctx in classes {
+    }
+
+    // Interfaces section
+    if !interface_contexts.is_empty() {
+        let mut iface_sorted: Vec<&&RenderContext> = interface_contexts.iter().collect();
+        iface_sorted.sort_by(|a, b| a.documentation.class_name.cmp(&b.documentation.class_name));
+        out.push_str("## Interfaces\n\n");
+        out.push_str("| Interface | Summary |\n");
+        out.push_str("|-----------|--------|\n");
+        for ctx in iface_sorted {
             out.push_str(&format!(
                 "| [{}](classes/{}.md) | {} |\n",
                 ctx.documentation.class_name,
@@ -1053,6 +1124,327 @@ pub fn render_index(
         }
     }
 
+    // FlexiPages section
+    if !flexipage_contexts.is_empty() {
+        let mut fp_sorted: Vec<&FlexiPageRenderContext> = flexipage_contexts.iter().collect();
+        fp_sorted.sort_by(|a, b| a.metadata.api_name.cmp(&b.metadata.api_name));
+        out.push_str("## Lightning Pages\n\n");
+        out.push_str("| Page | Type | Summary |\n");
+        out.push_str("|------|------|---------|\n");
+        for ctx in fp_sorted {
+            let label = if ctx.documentation.label.is_empty() {
+                ctx.metadata.api_name.as_str()
+            } else {
+                ctx.documentation.label.as_str()
+            };
+            out.push_str(&format!(
+                "| [{}](flexipages/{}.md) | `{}` | {} |\n",
+                label,
+                sanitize_filename(&ctx.metadata.api_name),
+                ctx.metadata.page_type,
+                ctx.documentation.summary,
+            ));
+        }
+        out.push('\n');
+    }
+
+    // Custom Metadata Types section
+    if !custom_metadata_contexts.is_empty() {
+        let mut cmt_sorted: Vec<&CustomMetadataRenderContext> =
+            custom_metadata_contexts.iter().collect();
+        cmt_sorted.sort_by(|a, b| a.type_name.cmp(&b.type_name));
+        out.push_str("## Custom Metadata Types\n\n");
+        out.push_str("| Type | Records |\n");
+        out.push_str("|------|---------|\n");
+        for ctx in cmt_sorted {
+            out.push_str(&format!(
+                "| [{}](custom-metadata/{}.md) | {} |\n",
+                ctx.type_name,
+                sanitize_filename(&ctx.type_name),
+                ctx.records.len(),
+            ));
+        }
+        out.push('\n');
+    }
+
+    // Aura Components section
+    if !aura_contexts.is_empty() {
+        let mut aura_sorted: Vec<&AuraRenderContext> = aura_contexts.iter().collect();
+        aura_sorted.sort_by(|a, b| a.metadata.component_name.cmp(&b.metadata.component_name));
+        out.push_str("## Aura Components\n\n");
+        out.push_str("| Component | Attributes | Summary |\n");
+        out.push_str("|-----------|------------|---------|\n");
+        for ctx in aura_sorted {
+            out.push_str(&format!(
+                "| [{}](aura/{}.md) | {} | {} |\n",
+                ctx.metadata.component_name,
+                sanitize_filename(&ctx.metadata.component_name),
+                ctx.metadata.attributes.len(),
+                ctx.documentation.summary,
+            ));
+        }
+        out.push('\n');
+    }
+
+    out
+}
+
+pub fn render_flexipage_page(ctx: &FlexiPageRenderContext) -> String {
+    let doc = &ctx.documentation;
+    let meta = &ctx.metadata;
+    let known: HashSet<&str> = ctx
+        .all_names
+        .class_names
+        .iter()
+        .chain(ctx.all_names.lwc_names.iter())
+        .chain(ctx.all_names.flow_names.iter())
+        .chain(ctx.all_names.aura_names.iter())
+        .map(|s| s.as_str())
+        .collect();
+
+    let mut out = String::new();
+
+    let label = if doc.label.is_empty() {
+        meta.api_name.as_str()
+    } else {
+        doc.label.as_str()
+    };
+
+    out.push_str(&format!("# {label}\n\n"));
+    out.push_str(&format!(
+        "`lightning-page` · `{}` · `{}`\n\n",
+        meta.page_type,
+        if meta.sobject.is_empty() {
+            "—".to_string()
+        } else {
+            meta.sobject.clone()
+        }
+    ));
+
+    out.push_str(&format!("{}\n\n", doc.summary));
+
+    out.push_str("## Description\n\n");
+    out.push_str(&doc.description);
+    out.push_str("\n\n");
+
+    if !doc.usage_context.is_empty() {
+        out.push_str("## Usage Context\n\n");
+        out.push_str(&doc.usage_context);
+        out.push_str("\n\n");
+    }
+
+    if !meta.component_names.is_empty() {
+        out.push_str("## Components\n\n");
+        out.push_str("| Component |\n");
+        out.push_str("|-----------|\n");
+        for comp in &meta.component_names {
+            out.push_str(&format!("| `{}` |\n", comp));
+        }
+        out.push('\n');
+    }
+
+    if !doc.key_components.is_empty() {
+        out.push_str("## Key Components\n\n");
+        for comp_desc in &doc.key_components {
+            out.push_str(&format!("- {}\n", comp_desc));
+        }
+        out.push('\n');
+    }
+
+    if !meta.flow_names.is_empty() {
+        out.push_str("## Referenced Flows\n\n");
+        for flow in &meta.flow_names {
+            out.push_str(&format!("- `{}`\n", flow));
+        }
+        out.push('\n');
+    }
+
+    let see_also: Vec<String> = doc
+        .relationships
+        .iter()
+        .filter_map(|rel| {
+            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+                let link = cross_link_md(name, &ctx.all_names, "flexipage");
+                format!("[{name}]({link}) — {rel}")
+            })
+        })
+        .collect();
+
+    if !see_also.is_empty() {
+        out.push_str("## See Also\n\n");
+        for link in see_also {
+            out.push_str(&format!("- {link}\n"));
+        }
+        out.push('\n');
+    }
+
+    out
+}
+
+pub fn render_custom_metadata_page(ctx: &CustomMetadataRenderContext) -> String {
+    let mut out = String::new();
+
+    out.push_str(&format!("# {}\n\n", ctx.type_name));
+    out.push_str("`custom-metadata-type`\n\n");
+    out.push_str(&format!("{} record(s)\n\n", ctx.records.len()));
+
+    if ctx.records.is_empty() {
+        out.push_str("_No records found._\n");
+        return out;
+    }
+
+    // Collect all unique field names across all records for table headers
+    let mut all_fields: Vec<String> = Vec::new();
+    for rec in &ctx.records {
+        for (field, _) in &rec.values {
+            if !all_fields.contains(field) {
+                all_fields.push(field.clone());
+            }
+        }
+    }
+    all_fields.sort();
+
+    // Records table
+    out.push_str("## Records\n\n");
+
+    // Build header
+    let mut header = "| Record | Label".to_string();
+    for f in &all_fields {
+        header.push_str(&format!(" | {}", f));
+    }
+    header.push_str(" |\n");
+    out.push_str(&header);
+
+    let mut separator = "|--------|------".to_string();
+    for _ in &all_fields {
+        separator.push_str("|------");
+    }
+    separator.push_str("|\n");
+    out.push_str(&separator);
+
+    let mut sorted_records: Vec<&CustomMetadataRecord> = ctx.records.iter().collect();
+    sorted_records.sort_by(|a, b| a.record_name.cmp(&b.record_name));
+
+    for rec in sorted_records {
+        let mut row = format!("| `{}` | {} ", rec.record_name, rec.label);
+        for field_name in &all_fields {
+            let val = rec
+                .values
+                .iter()
+                .find(|(f, _)| f == field_name)
+                .map(|(_, v)| v.as_str())
+                .unwrap_or("—");
+            row.push_str(&format!("| {} ", val));
+        }
+        row.push_str("|\n");
+        out.push_str(&row);
+    }
+    out.push('\n');
+
+    out
+}
+
+pub fn render_aura_page(ctx: &AuraRenderContext) -> String {
+    let doc = &ctx.documentation;
+    let meta = &ctx.metadata;
+    let known: HashSet<&str> = ctx
+        .all_names
+        .class_names
+        .iter()
+        .chain(ctx.all_names.trigger_names.iter())
+        .chain(ctx.all_names.flow_names.iter())
+        .chain(ctx.all_names.aura_names.iter())
+        .chain(ctx.all_names.lwc_names.iter())
+        .map(|s| s.as_str())
+        .collect();
+
+    let mut out = String::new();
+
+    out.push_str(&format!("# {}\n\n", meta.component_name));
+    let mut badges = vec!["`aura`".to_string(), "`Aura Component`".to_string()];
+    if let Some(ref ext) = meta.extends {
+        badges.push(format!("extends `{}`", ext));
+    }
+    out.push_str(&format!("{}\n\n", badges.join(" · ")));
+
+    out.push_str(&format!("{}\n\n", doc.summary));
+
+    out.push_str("## Table of Contents\n\n");
+    out.push_str("- [Description](#description)\n");
+    if !doc.attributes.is_empty() {
+        out.push_str("- [Attributes](#attributes)\n");
+    }
+    if !meta.events_handled.is_empty() {
+        out.push_str("- [Events](#events)\n");
+    }
+    if !doc.usage_notes.is_empty() {
+        out.push_str("- [Usage Notes](#usage-notes)\n");
+    }
+    out.push('\n');
+
+    out.push_str("## Description\n\n");
+    out.push_str(&doc.description);
+    out.push_str("\n\n");
+
+    if !doc.attributes.is_empty() {
+        out.push_str("## Attributes\n\n");
+        out.push_str("| Name | Type | Default | Description |\n");
+        out.push_str("|------|------|---------|-------------|\n");
+        for attr_doc in &doc.attributes {
+            let meta_attr = meta.attributes.iter().find(|a| a.name == attr_doc.name);
+            let attr_type = meta_attr.map(|a| a.attr_type.as_str()).unwrap_or("—");
+            let default = meta_attr
+                .map(|a| {
+                    if a.default.is_empty() {
+                        "—".to_string()
+                    } else {
+                        format!("`{}`", a.default)
+                    }
+                })
+                .unwrap_or_else(|| "—".to_string());
+            out.push_str(&format!(
+                "| `{}` | `{}` | {} | {} |\n",
+                attr_doc.name, attr_type, default, attr_doc.description
+            ));
+        }
+        out.push('\n');
+    }
+
+    if !meta.events_handled.is_empty() {
+        out.push_str("## Events\n\n");
+        for event in &meta.events_handled {
+            out.push_str(&format!("- `{}`\n", event));
+        }
+        out.push('\n');
+    }
+
+    if !doc.usage_notes.is_empty() {
+        out.push_str("## Usage Notes\n\n");
+        for note in &doc.usage_notes {
+            out.push_str(&format!("- {note}\n"));
+        }
+        out.push('\n');
+    }
+
+    let see_also: Vec<String> = doc
+        .relationships
+        .iter()
+        .filter_map(|rel| {
+            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+                let link = cross_link_md(name, &ctx.all_names, "aura");
+                format!("[{name}]({link}) — {rel}")
+            })
+        })
+        .collect();
+
+    if !see_also.is_empty() {
+        out.push_str("## See Also\n\n");
+        for link in see_also {
+            out.push_str(&format!("- {link}\n"));
+        }
+        out.push('\n');
+    }
+
     out
 }
 
@@ -1066,6 +1458,9 @@ pub fn write_output(
     validation_rule_contexts: &[ValidationRuleRenderContext],
     object_contexts: &[ObjectRenderContext],
     lwc_contexts: &[LwcRenderContext],
+    flexipage_contexts: &[FlexiPageRenderContext],
+    custom_metadata_contexts: &[CustomMetadataRenderContext],
+    aura_contexts: &[AuraRenderContext],
 ) -> Result<()> {
     if *format == OutputFormat::Html {
         return crate::html_renderer::write_html_output(
@@ -1076,6 +1471,9 @@ pub fn write_output(
             validation_rule_contexts,
             object_contexts,
             lwc_contexts,
+            flexipage_contexts,
+            custom_metadata_contexts,
+            aura_contexts,
         );
     }
 
@@ -1085,6 +1483,9 @@ pub fn write_output(
     let vr_dir = output_dir.join("validation-rules");
     let objects_dir = output_dir.join("objects");
     let lwc_dir = output_dir.join("lwc");
+    let flexipages_dir = output_dir.join("flexipages");
+    let custom_metadata_dir = output_dir.join("custom-metadata");
+    let aura_dir = output_dir.join("aura");
 
     std::fs::create_dir_all(output_dir)?;
     if !class_contexts.is_empty() {
@@ -1104,6 +1505,15 @@ pub fn write_output(
     }
     if !lwc_contexts.is_empty() {
         std::fs::create_dir_all(&lwc_dir)?;
+    }
+    if !flexipage_contexts.is_empty() {
+        std::fs::create_dir_all(&flexipages_dir)?;
+    }
+    if !custom_metadata_contexts.is_empty() {
+        std::fs::create_dir_all(&custom_metadata_dir)?;
+    }
+    if !aura_contexts.is_empty() {
+        std::fs::create_dir_all(&aura_dir)?;
     }
 
     for ctx in class_contexts {
@@ -1166,6 +1576,33 @@ pub fn write_output(
         )?;
     }
 
+    for ctx in flexipage_contexts {
+        let page = render_flexipage_page(ctx);
+        std::fs::write(
+            flexipages_dir.join(format!("{}.md", sanitize_filename(&ctx.metadata.api_name))),
+            page,
+        )?;
+    }
+
+    for ctx in custom_metadata_contexts {
+        let page = render_custom_metadata_page(ctx);
+        std::fs::write(
+            custom_metadata_dir.join(format!("{}.md", sanitize_filename(&ctx.type_name))),
+            page,
+        )?;
+    }
+
+    for ctx in aura_contexts {
+        let page = render_aura_page(ctx);
+        std::fs::write(
+            aura_dir.join(format!(
+                "{}.md",
+                sanitize_filename(&ctx.metadata.component_name)
+            )),
+            page,
+        )?;
+    }
+
     let index = render_index(
         class_contexts,
         trigger_contexts,
@@ -1173,6 +1610,9 @@ pub fn write_output(
         validation_rule_contexts,
         object_contexts,
         lwc_contexts,
+        flexipage_contexts,
+        custom_metadata_contexts,
+        aura_contexts,
     );
     std::fs::write(output_dir.join("index.md"), index)?;
 
@@ -1193,6 +1633,9 @@ pub fn sanitize_filename(name: &str) -> String {
 
 fn render_badges(meta: &ClassMetadata) -> String {
     let mut badges = vec![format!("`{}`", meta.access_modifier)];
+    if meta.is_interface {
+        badges.push("`interface`".to_string());
+    }
     if meta.is_abstract {
         badges.push("`abstract`".to_string());
     }
@@ -1247,6 +1690,7 @@ mod tests {
                 access_modifier: "public".to_string(),
                 is_abstract: false,
                 is_virtual: false,
+                is_interface: false,
                 extends: Some("BaseService".to_string()),
                 implements: vec!["Queueable".to_string()],
                 methods: vec![crate::types::MethodMetadata {
@@ -1296,6 +1740,10 @@ mod tests {
                 validation_rule_names: vec![],
                 object_names: vec![],
                 lwc_names: vec![],
+                flexipage_names: vec![],
+                aura_names: vec![],
+                custom_metadata_type_names: vec![],
+                interface_implementors: std::collections::HashMap::new(),
             }),
             folder: "classes".to_string(),
         }
@@ -1344,7 +1792,7 @@ mod tests {
     #[test]
     fn index_contains_all_classes() {
         let ctx = sample_context();
-        let index = render_index(&[ctx], &[], &[], &[], &[], &[]);
+        let index = render_index(&[ctx], &[], &[], &[], &[], &[], &[], &[], &[]);
         assert!(index.contains("# Apex Documentation Index"));
         assert!(index.contains("[AccountService](classes/AccountService.md)"));
         assert!(index.contains("Handles account processing operations."));
@@ -1374,6 +1822,9 @@ mod tests {
             tmp.path(),
             &crate::cli::OutputFormat::Markdown,
             &[ctx],
+            &[],
+            &[],
+            &[],
             &[],
             &[],
             &[],

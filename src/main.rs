@@ -1,6 +1,7 @@
 use sfdoc::{
-    cache, cli, config, flow_parser, gemini, lwc_parser, object_parser, openai_compat, parser,
-    providers, renderer, scanner, validation_rule_parser,
+    aura_parser, cache, cli, config, custom_metadata_parser, flexipage_parser, flow_parser, gemini,
+    lwc_parser, object_parser, openai_compat, parser, providers, renderer, scanner,
+    validation_rule_parser,
 };
 use sfdoc::{trigger_parser, types};
 
@@ -19,12 +20,13 @@ use gemini::GeminiClient;
 use openai_compat::OpenAiCompatClient;
 use providers::Provider;
 use scanner::{
-    ApexScanner, FileScanner, FlowScanner, LwcScanner, ObjectScanner, TriggerScanner,
-    ValidationRuleScanner,
+    ApexScanner, AuraScanner, CustomMetadataScanner, FileScanner, FlexiPageScanner, FlowScanner,
+    LwcScanner, ObjectScanner, TriggerScanner, ValidationRuleScanner,
 };
 use types::{
-    AllNames, ClassDocumentation, FlowDocumentation, LwcDocumentation, ObjectDocumentation,
-    SourceFile, TriggerDocumentation, ValidationRuleDocumentation,
+    AllNames, AuraDocumentation, ClassDocumentation, FlexiPageDocumentation, FlowDocumentation,
+    LwcDocumentation, ObjectDocumentation, SourceFile, TriggerDocumentation,
+    ValidationRuleDocumentation,
 };
 
 /// Unified client enum for dispatch without dynamic dispatch overhead.
@@ -99,6 +101,28 @@ impl DocClient {
             DocClient::OpenAiCompat(c) => c.document_lwc(file, metadata).await,
         }
     }
+
+    async fn document_flexipage(
+        &self,
+        file: &SourceFile,
+        metadata: &types::FlexiPageMetadata,
+    ) -> Result<FlexiPageDocumentation> {
+        match self {
+            DocClient::Gemini(c) => c.document_flexipage(file, metadata).await,
+            DocClient::OpenAiCompat(c) => c.document_flexipage(file, metadata).await,
+        }
+    }
+
+    async fn document_aura(
+        &self,
+        file: &SourceFile,
+        metadata: &types::AuraMetadata,
+    ) -> Result<AuraDocumentation> {
+        match self {
+            DocClient::Gemini(c) => c.document_aura(file, metadata).await,
+            DocClient::OpenAiCompat(c) => c.document_aura(file, metadata).await,
+        }
+    }
 }
 
 #[tokio::main]
@@ -160,6 +184,24 @@ async fn main() -> Result<()> {
             let lwc_files = LwcScanner
                 .scan(&args.source_dir)
                 .with_context(|| format!("Failed to scan LWC in {}", args.source_dir.display()))?;
+            let flexipage_files = FlexiPageScanner.scan(&args.source_dir).with_context(|| {
+                format!("Failed to scan FlexiPages in {}", args.source_dir.display())
+            })?;
+            let custom_metadata_files =
+                CustomMetadataScanner
+                    .scan(&args.source_dir)
+                    .with_context(|| {
+                        format!(
+                            "Failed to scan Custom Metadata in {}",
+                            args.source_dir.display()
+                        )
+                    })?;
+            let aura_files = AuraScanner.scan(&args.source_dir).with_context(|| {
+                format!(
+                    "Failed to scan Aura components in {}",
+                    args.source_dir.display()
+                )
+            })?;
 
             // Require at least one file of any supported type.
             if files.is_empty()
@@ -168,9 +210,12 @@ async fn main() -> Result<()> {
                 && vr_files.is_empty()
                 && object_files.is_empty()
                 && lwc_files.is_empty()
+                && flexipage_files.is_empty()
+                && custom_metadata_files.is_empty()
+                && aura_files.is_empty()
             {
                 anyhow::bail!(
-                    "No supported source files found in {} (expected .cls, .trigger, .flow-meta.xml, .validationRule-meta.xml, .object-meta.xml, or .js-meta.xml)",
+                    "No supported source files found in {} (expected .cls, .trigger, .flow-meta.xml, .validationRule-meta.xml, .object-meta.xml, .js-meta.xml, .flexipage-meta.xml, .md-meta.xml, or .cmp)",
                     args.source_dir.display()
                 );
             }
@@ -197,6 +242,18 @@ async fn main() -> Result<()> {
             }
             if !lwc_files.is_empty() {
                 println!("Found {} LWC component(s)", lwc_files.len());
+            }
+            if !flexipage_files.is_empty() {
+                println!("Found {} Lightning Page(s)", flexipage_files.len());
+            }
+            if !custom_metadata_files.is_empty() {
+                println!(
+                    "Found {} Custom Metadata record(s)",
+                    custom_metadata_files.len()
+                );
+            }
+            if !aura_files.is_empty() {
+                println!("Found {} Aura component(s)", aura_files.len());
             }
 
             // Parse classes, triggers, and flows in parallel using rayon.
@@ -230,6 +287,26 @@ async fn main() -> Result<()> {
                 .par_iter()
                 .map(|f| lwc_parser::parse_lwc(&f.path, &f.raw_source))
                 .collect::<Result<_>>()?;
+            let flexipage_meta: Vec<_> = flexipage_files
+                .par_iter()
+                .map(|f| {
+                    let api_name = f
+                        .filename
+                        .strip_suffix(".flexipage-meta.xml")
+                        .unwrap_or(&f.filename);
+                    flexipage_parser::parse_flexipage(api_name, &f.raw_source)
+                })
+                .collect::<Result<_>>()?;
+            let custom_metadata_records: Vec<_> = custom_metadata_files
+                .par_iter()
+                .map(|f| {
+                    custom_metadata_parser::parse_custom_metadata_record(&f.path, &f.raw_source)
+                })
+                .collect::<Result<_>>()?;
+            let aura_meta: Vec<_> = aura_files
+                .par_iter()
+                .map(|f| aura_parser::parse_aura(&f.path, &f.raw_source))
+                .collect::<Result<_>>()?;
 
             // Wrap in Arc so task closures share the data without cloning raw_source.
             let files = Arc::new(files);
@@ -244,6 +321,34 @@ async fn main() -> Result<()> {
             let object_meta = Arc::new(object_meta);
             let lwc_files = Arc::new(lwc_files);
             let lwc_meta = Arc::new(lwc_meta);
+            let flexipage_files = Arc::new(flexipage_files);
+            let flexipage_meta = Arc::new(flexipage_meta);
+            let aura_files = Arc::new(aura_files);
+            let aura_meta = Arc::new(aura_meta);
+
+            // Build interface_implementors map
+            let mut interface_implementors: std::collections::HashMap<String, Vec<String>> =
+                std::collections::HashMap::new();
+            for meta in class_meta.iter() {
+                for iface in &meta.implements {
+                    interface_implementors
+                        .entry(iface.clone())
+                        .or_default()
+                        .push(meta.class_name.clone());
+                }
+            }
+
+            // Group custom metadata records by type
+            let mut cm_by_type: std::collections::BTreeMap<
+                String,
+                Vec<types::CustomMetadataRecord>,
+            > = std::collections::BTreeMap::new();
+            for record in custom_metadata_records {
+                cm_by_type
+                    .entry(record.type_name.clone())
+                    .or_default()
+                    .push(record);
+            }
 
             // Shared cross-linking index
             let all_names = Arc::new(AllNames {
@@ -256,6 +361,10 @@ async fn main() -> Result<()> {
                 validation_rule_names: vr_meta.iter().map(|m| m.rule_name.clone()).collect(),
                 object_names: object_meta.iter().map(|m| m.object_name.clone()).collect(),
                 lwc_names: lwc_meta.iter().map(|m| m.component_name.clone()).collect(),
+                flexipage_names: flexipage_meta.iter().map(|m| m.api_name.clone()).collect(),
+                aura_names: aura_meta.iter().map(|m| m.component_name.clone()).collect(),
+                custom_metadata_type_names: cm_by_type.keys().cloned().collect(),
+                interface_implementors,
             });
 
             // Load incremental build cache (empty if --force or first run)
@@ -287,6 +396,14 @@ async fn main() -> Result<()> {
                 .map(|f| cache::hash_source(&f.raw_source))
                 .collect();
             let lwc_hashes: Vec<String> = lwc_files
+                .par_iter()
+                .map(|f| cache::hash_source(&f.raw_source))
+                .collect();
+            let flexipage_hashes: Vec<String> = flexipage_files
+                .par_iter()
+                .map(|f| cache::hash_source(&f.raw_source))
+                .collect();
+            let aura_hashes: Vec<String> = aura_files
                 .par_iter()
                 .map(|f| cache::hash_source(&f.raw_source))
                 .collect();
@@ -355,12 +472,40 @@ async fn main() -> Result<()> {
                 }
             }
 
+            let mut flexipage_work: Vec<usize> = Vec::new();
+            let mut flexipage_docs: Vec<Option<FlexiPageDocumentation>> =
+                vec![None; flexipage_files.len()];
+            for (i, (f, h)) in flexipage_files
+                .iter()
+                .zip(flexipage_hashes.iter())
+                .enumerate()
+            {
+                if let Some(e) = cache.get_flexipage_if_fresh(&f.path.to_string_lossy(), h, &model)
+                {
+                    flexipage_docs[i] = Some(e.documentation.clone());
+                } else {
+                    flexipage_work.push(i);
+                }
+            }
+
+            let mut aura_work: Vec<usize> = Vec::new();
+            let mut aura_docs: Vec<Option<AuraDocumentation>> = vec![None; aura_files.len()];
+            for (i, (f, h)) in aura_files.iter().zip(aura_hashes.iter()).enumerate() {
+                if let Some(e) = cache.get_aura_if_fresh(&f.path.to_string_lossy(), h, &model) {
+                    aura_docs[i] = Some(e.documentation.clone());
+                } else {
+                    aura_work.push(i);
+                }
+            }
+
             let skipped = (files.len() - class_work.len())
                 + (trigger_files.len() - trigger_work.len())
                 + (flow_files.len() - flow_work.len())
                 + (vr_files.len() - vr_work.len())
                 + (object_files.len() - object_work.len())
-                + (lwc_files.len() - lwc_work.len());
+                + (lwc_files.len() - lwc_work.len())
+                + (flexipage_files.len() - flexipage_work.len())
+                + (aura_files.len() - aura_work.len());
             if skipped > 0 {
                 println!("{skipped} file(s) up-to-date — skipping API calls");
             }
@@ -371,6 +516,8 @@ async fn main() -> Result<()> {
                 || !vr_work.is_empty()
                 || !object_work.is_empty()
                 || !lwc_work.is_empty()
+                || !flexipage_work.is_empty()
+                || !aura_work.is_empty()
             {
                 let api_key = resolve_api_key(provider)?;
                 let client = match provider {
@@ -394,7 +541,9 @@ async fn main() -> Result<()> {
                     + flow_work.len()
                     + vr_work.len()
                     + object_work.len()
-                    + lwc_work.len()) as u64;
+                    + lwc_work.len()
+                    + flexipage_work.len()
+                    + aura_work.len()) as u64;
                 let pb = Arc::new(ProgressBar::new(total_work));
                 if let Ok(style) = ProgressStyle::with_template(
                     "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
@@ -411,6 +560,8 @@ async fn main() -> Result<()> {
                     ValidationRule(usize, ValidationRuleDocumentation),
                     Object(usize, ObjectDocumentation),
                     Lwc(usize, LwcDocumentation),
+                    FlexiPage(usize, FlexiPageDocumentation),
+                    Aura(usize, AuraDocumentation),
                 }
 
                 let mut tasks: JoinSet<Result<WorkResult>> = JoinSet::new();
@@ -496,6 +647,34 @@ async fn main() -> Result<()> {
                     });
                 }
 
+                for &idx in &flexipage_work {
+                    let client = Arc::clone(&client);
+                    let flexipage_files = Arc::clone(&flexipage_files);
+                    let flexipage_meta = Arc::clone(&flexipage_meta);
+                    let pb_task = Arc::clone(&pb);
+                    tasks.spawn(async move {
+                        let doc = client
+                            .document_flexipage(&flexipage_files[idx], &flexipage_meta[idx])
+                            .await?;
+                        pb_task.inc(1);
+                        Ok(WorkResult::FlexiPage(idx, doc))
+                    });
+                }
+
+                for &idx in &aura_work {
+                    let client = Arc::clone(&client);
+                    let aura_files = Arc::clone(&aura_files);
+                    let aura_meta = Arc::clone(&aura_meta);
+                    let pb_task = Arc::clone(&pb);
+                    tasks.spawn(async move {
+                        let doc = client
+                            .document_aura(&aura_files[idx], &aura_meta[idx])
+                            .await?;
+                        pb_task.inc(1);
+                        Ok(WorkResult::Aura(idx, doc))
+                    });
+                }
+
                 // Collect results as they complete (not in spawn order).
                 while let Some(res) = tasks.join_next().await {
                     match res {
@@ -557,6 +736,26 @@ async fn main() -> Result<()> {
                                 cache.update_lwc(key, lwc_hashes[idx].clone(), &model, doc.clone());
                                 lwc_docs[idx] = Some(doc);
                             }
+                            WorkResult::FlexiPage(idx, doc) => {
+                                let key = flexipage_files[idx].path.to_string_lossy().into_owned();
+                                cache.update_flexipage(
+                                    key,
+                                    flexipage_hashes[idx].clone(),
+                                    &model,
+                                    doc.clone(),
+                                );
+                                flexipage_docs[idx] = Some(doc);
+                            }
+                            WorkResult::Aura(idx, doc) => {
+                                let key = aura_files[idx].path.to_string_lossy().into_owned();
+                                cache.update_aura(
+                                    key,
+                                    aura_hashes[idx].clone(),
+                                    &model,
+                                    doc.clone(),
+                                );
+                                aura_docs[idx] = Some(doc);
+                            }
                         },
                     }
                 }
@@ -595,6 +794,12 @@ async fn main() -> Result<()> {
             let object_meta = Arc::try_unwrap(object_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
             let lwc_files = Arc::try_unwrap(lwc_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
             let lwc_meta = Arc::try_unwrap(lwc_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let flexipage_files =
+                Arc::try_unwrap(flexipage_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let flexipage_meta =
+                Arc::try_unwrap(flexipage_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let aura_files = Arc::try_unwrap(aura_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let aura_meta = Arc::try_unwrap(aura_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
 
             let class_contexts: Vec<renderer::RenderContext> = files
                 .into_iter()
@@ -680,6 +885,45 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
+            let flexipage_contexts: Vec<renderer::FlexiPageRenderContext> = flexipage_files
+                .into_iter()
+                .zip(flexipage_meta)
+                .zip(flexipage_docs)
+                .filter_map(|((file, meta), doc)| {
+                    doc.map(|d| renderer::FlexiPageRenderContext {
+                        folder: compute_folder(&file.path, &args.source_dir),
+                        metadata: meta,
+                        documentation: d,
+                        all_names: Arc::clone(&all_names),
+                    })
+                })
+                .collect();
+
+            // Custom metadata contexts: group by type_name (no AI docs)
+            let custom_metadata_contexts: Vec<renderer::CustomMetadataRenderContext> = cm_by_type
+                .into_iter()
+                .map(
+                    |(type_name, records)| renderer::CustomMetadataRenderContext {
+                        type_name,
+                        records,
+                    },
+                )
+                .collect();
+
+            let aura_contexts: Vec<renderer::AuraRenderContext> = aura_files
+                .into_iter()
+                .zip(aura_meta)
+                .zip(aura_docs)
+                .filter_map(|((file, meta), doc)| {
+                    doc.map(|d| renderer::AuraRenderContext {
+                        folder: compute_folder(&file.path, &args.source_dir),
+                        metadata: meta,
+                        documentation: d,
+                        all_names: Arc::clone(&all_names),
+                    })
+                })
+                .collect();
+
             // Render and write output
             renderer::write_output(
                 &output_dir,
@@ -690,6 +934,9 @@ async fn main() -> Result<()> {
                 &vr_contexts,
                 &object_contexts,
                 &lwc_contexts,
+                &flexipage_contexts,
+                &custom_metadata_contexts,
+                &aura_contexts,
             )?;
             println!("Documentation written to {}", output_dir.display());
 

@@ -15,8 +15,9 @@ SFDX project → scan → parse → AI provider → Markdown / HTML output
 
 ## Features
 
-- Discovers `.cls`, `.trigger`, `.flow-meta.xml`, `.validationRule-meta.xml`, `.object-meta.xml`, and `.js-meta.xml` (LWC) files recursively
-- Extracts structural metadata (class signatures, methods, properties, ApexDoc comments, trigger events, flow elements, validation formulas) without a full AST
+- Discovers `.cls`, `.trigger`, `.flow-meta.xml`, `.validationRule-meta.xml`, `.object-meta.xml`, `.js-meta.xml` (LWC), `.flexipage-meta.xml`, `customMetadata/*.md-meta.xml`, and `.cmp` (Aura) files recursively
+- Distinguishes Apex interfaces from classes — interface pages show "Implemented By:" lists; class pages link to implemented interfaces
+- Extracts structural metadata (class signatures, methods, properties, ApexDoc comments, trigger events, flow elements, validation formulas, LWC `@api` props, FlexiPage components, Aura attributes) without a full AST
 - Generates rich documentation pages with summaries, parameter tables, usage examples, and cross-links
 - Outputs interlinked **Markdown** pages or a self-contained **HTML** site with sidebar navigation
 - **Incremental builds** — tracks SHA-256 hashes and skips unchanged files; use `--force` to regenerate everything
@@ -222,6 +223,12 @@ docs/
     Account.md                                  # One page per custom object
   lwc/
     myComponent.md                              # One page per LWC component
+  flexipages/
+    My_App_Page.md                              # One page per Lightning page
+  custom-metadata/
+    MyType__mdt.md                              # One page per custom metadata type
+  aura/
+    MyComponent.md                              # One page per Aura component
   .sfdoc-cache.json                             # Incremental build cache (do not edit manually)
 ```
 
@@ -242,6 +249,12 @@ site/
     Account.html
   lwc/
     myComponent.html
+  flexipages/
+    My_App_Page.html
+  custom-metadata/
+    MyType__mdt.html
+  aura/
+    MyComponent.html
 ```
 
 Markdown and HTML outputs default to separate directories (`docs/` and `site/`) so both formats can coexist without overwriting each other.
@@ -291,6 +304,37 @@ Markdown and HTML outputs default to separate directories (`docs/` and `site/`) 
 | Slots       | Named and anonymous (default) slots exposed by the component               |
 | Usage Notes | AI-generated guidance on how to use the component                          |
 
+### Apex interface pages additionally include
+
+| Section        | Details                                                                       |
+| -------------- | ----------------------------------------------------------------------------- |
+| `interface` badge | Clearly distinguished from class pages in the index and sidebar            |
+| Implemented By | List of classes that `implements` this interface, with links                  |
+| Methods        | Interface method signatures (no access modifier shown)                        |
+
+### Lightning page (FlexiPage) pages additionally include
+
+| Section        | Details                                                                       |
+| -------------- | ----------------------------------------------------------------------------- |
+| Page type      | AppPage, RecordPage, or HomePage badge                                        |
+| Components     | LWC component names placed on the page, cross-linked to their pages           |
+| Flows          | Flow references within the page, cross-linked to their pages                  |
+| Usage Context  | AI-generated description of who sees this page and when                       |
+
+### Custom Metadata Type pages include
+
+| Section        | Details                                                                       |
+| -------------- | ----------------------------------------------------------------------------- |
+| Records table  | All records for the type — developer name, label, and all field values        |
+
+### Aura component pages additionally include
+
+| Section     | Details                                                                         |
+| ----------- | ------------------------------------------------------------------------------- |
+| Attributes  | `aura:attribute` declarations — name, type, default, AI-generated description   |
+| Events      | `aura:handler` events the component responds to                                 |
+| Usage Notes | AI-generated guidance on how to use the component                               |
+
 ## Example workflow
 
 ```bash
@@ -334,12 +378,17 @@ src/
   validation_rule_parser.rs     Salesforce Validation Rule XML structural parser
   object_parser.rs              Custom Object XML structural parser
   lwc_parser.rs                 LWC @api/slot/component-reference parser
+  flexipage_parser.rs           FlexiPage XML structural parser
+  custom_metadata_parser.rs     Custom Metadata record parser
+  aura_parser.rs                Aura component regex-based parser
   prompt.rs                     AI prompt construction for classes
   trigger_prompt.rs             AI prompt construction for triggers
   flow_prompt.rs                AI prompt construction for flows
   validation_rule_prompt.rs     AI prompt construction for validation rules
   object_prompt.rs              AI prompt construction for custom objects
   lwc_prompt.rs                 AI prompt construction for LWC components
+  flexipage_prompt.rs           AI prompt construction for Lightning pages
+  aura_prompt.rs                AI prompt construction for Aura components
   gemini.rs                     Google Gemini API client
   openai_compat.rs              OpenAI-compatible client (Groq, OpenAI, Ollama)
   retry.rs                      Retry logic with exponential backoff

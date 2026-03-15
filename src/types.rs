@@ -15,6 +15,8 @@ pub struct ClassMetadata {
     pub access_modifier: String,
     pub is_abstract: bool,
     pub is_virtual: bool,
+    /// True when the declaration uses `interface` keyword instead of `class`.
+    pub is_interface: bool,
     pub extends: Option<String>,
     pub implements: Vec<String>,
     pub methods: Vec<MethodMetadata>,
@@ -55,6 +57,11 @@ pub struct AllNames {
     pub validation_rule_names: Vec<String>,
     pub object_names: Vec<String>,
     pub lwc_names: Vec<String>,
+    pub flexipage_names: Vec<String>,
+    pub aura_names: Vec<String>,
+    pub custom_metadata_type_names: Vec<String>,
+    /// Maps interface name → Vec of class names that implement it.
+    pub interface_implementors: std::collections::HashMap<String, Vec<String>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +318,92 @@ pub struct LwcDocumentation {
     pub summary: String,
     pub description: String,
     pub api_props: Vec<LwcPropDocumentation>,
+    pub usage_notes: Vec<String>,
+    pub relationships: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// FlexiPage types
+// ---------------------------------------------------------------------------
+
+/// Structural metadata extracted from a Salesforce FlexiPage XML file.
+#[derive(Debug, Clone, Default)]
+pub struct FlexiPageMetadata {
+    pub api_name: String,
+    pub label: String,
+    pub page_type: String,
+    /// SObject type for record pages; empty for other page types.
+    pub sobject: String,
+    pub description: String,
+    /// LWC component names referenced in flexiPageRegions.
+    pub component_names: Vec<String>,
+    /// Flow API names referenced in action components.
+    pub flow_names: Vec<String>,
+}
+
+/// AI-generated documentation for a Salesforce FlexiPage.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct FlexiPageDocumentation {
+    pub api_name: String,
+    pub label: String,
+    pub summary: String,
+    pub description: String,
+    /// Who/when this page is shown.
+    pub usage_context: String,
+    /// AI-described purpose of each key component.
+    pub key_components: Vec<String>,
+    pub relationships: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Custom Metadata Record types
+// ---------------------------------------------------------------------------
+
+/// A single custom metadata record parsed from a `.md-meta.xml` file.
+#[derive(Debug, Clone, Default)]
+pub struct CustomMetadataRecord {
+    pub type_name: String,
+    pub record_name: String,
+    pub label: String,
+    pub values: Vec<(String, String)>,
+}
+
+// ---------------------------------------------------------------------------
+// Aura Component types
+// ---------------------------------------------------------------------------
+
+/// A single attribute declared on an Aura component.
+#[derive(Debug, Clone, Default)]
+pub struct AuraAttributeMetadata {
+    pub name: String,
+    pub attr_type: String,
+    pub default: String,
+    pub description: String,
+}
+
+/// Structural metadata extracted from an Aura component `.cmp` file.
+#[derive(Debug, Clone, Default)]
+pub struct AuraMetadata {
+    pub component_name: String,
+    pub attributes: Vec<AuraAttributeMetadata>,
+    pub events_handled: Vec<String>,
+    pub extends: Option<String>,
+}
+
+/// AI-generated documentation for a single Aura attribute.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct AuraAttributeDocumentation {
+    pub name: String,
+    pub description: String,
+}
+
+/// AI-generated documentation for an Aura component.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct AuraDocumentation {
+    pub component_name: String,
+    pub summary: String,
+    pub description: String,
+    pub attributes: Vec<AuraAttributeDocumentation>,
     pub usage_notes: Vec<String>,
     pub relationships: Vec<String>,
 }

@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
+use crate::aura_prompt::{build_aura_prompt, AURA_SYSTEM_PROMPT};
+use crate::flexipage_prompt::{build_flexipage_prompt, FLEXIPAGE_SYSTEM_PROMPT};
 use crate::flow_prompt::{build_flow_prompt, FLOW_SYSTEM_PROMPT};
 use crate::lwc_prompt::{build_lwc_prompt, LWC_SYSTEM_PROMPT};
 use crate::object_prompt::{build_object_prompt, OBJECT_SYSTEM_PROMPT};
@@ -12,9 +14,10 @@ use crate::prompt::{build_prompt, SYSTEM_PROMPT};
 use crate::retry::{self, MAX_RETRIES};
 use crate::trigger_prompt::{build_trigger_prompt, TRIGGER_SYSTEM_PROMPT};
 use crate::types::{
-    ClassDocumentation, ClassMetadata, FlowDocumentation, FlowMetadata, LwcDocumentation,
-    LwcMetadata, ObjectDocumentation, ObjectMetadata, SourceFile, TriggerDocumentation,
-    TriggerMetadata, ValidationRuleDocumentation, ValidationRuleMetadata,
+    AuraDocumentation, AuraMetadata, ClassDocumentation, ClassMetadata, FlexiPageDocumentation,
+    FlexiPageMetadata, FlowDocumentation, FlowMetadata, LwcDocumentation, LwcMetadata,
+    ObjectDocumentation, ObjectMetadata, SourceFile, TriggerDocumentation, TriggerMetadata,
+    ValidationRuleDocumentation, ValidationRuleMetadata,
 };
 use crate::validation_rule_prompt::{build_validation_rule_prompt, VALIDATION_RULE_SYSTEM_PROMPT};
 
@@ -274,6 +277,43 @@ impl OpenAiCompatClient {
         serde_json::from_str(&raw).with_context(|| {
             format!(
                 "Failed to parse {} JSON for LWC component '{}':\n{raw}",
+                self.provider_name, metadata.component_name
+            )
+        })
+    }
+
+    pub async fn document_flexipage(
+        &self,
+        file: &SourceFile,
+        metadata: &FlexiPageMetadata,
+    ) -> Result<FlexiPageDocumentation> {
+        let _permit = self.semaphore.acquire().await?;
+        let raw = self
+            .send_with_retry(
+                FLEXIPAGE_SYSTEM_PROMPT,
+                &build_flexipage_prompt(file, metadata),
+            )
+            .await?;
+        serde_json::from_str(&raw).with_context(|| {
+            format!(
+                "Failed to parse {} JSON for FlexiPage '{}':\n{raw}",
+                self.provider_name, metadata.api_name
+            )
+        })
+    }
+
+    pub async fn document_aura(
+        &self,
+        file: &SourceFile,
+        metadata: &AuraMetadata,
+    ) -> Result<AuraDocumentation> {
+        let _permit = self.semaphore.acquire().await?;
+        let raw = self
+            .send_with_retry(AURA_SYSTEM_PROMPT, &build_aura_prompt(file, metadata))
+            .await?;
+        serde_json::from_str(&raw).with_context(|| {
+            format!(
+                "Failed to parse {} JSON for Aura component '{}':\n{raw}",
                 self.provider_name, metadata.component_name
             )
         })

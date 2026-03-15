@@ -25,6 +25,15 @@ pub struct ObjectScanner;
 /// Scans a directory tree for Lightning Web Component roots (`*.js-meta.xml` under `lwc/`).
 pub struct LwcScanner;
 
+/// Scans a directory tree for Salesforce FlexiPage files (`.flexipage-meta.xml`).
+pub struct FlexiPageScanner;
+
+/// Scans a directory tree for custom metadata record files (`customMetadata/*.md-meta.xml`).
+pub struct CustomMetadataScanner;
+
+/// Scans a directory tree for Aura component root files (`*.cmp` under `aura/`).
+pub struct AuraScanner;
+
 /// Returns `true` if WalkDir should descend into (or keep) this entry.
 /// Prunes common noise directories to reduce unnecessary syscalls.
 fn should_visit(entry: &walkdir::DirEntry) -> bool {
@@ -250,6 +259,132 @@ impl FileScanner for LwcScanner {
                 Some(js) => js,
                 None => std::fs::read_to_string(path)
                     .with_context(|| format!("Failed to read LWC source for {}", file_name))?,
+            };
+
+            files.push(SourceFile {
+                path: path.to_path_buf(),
+                filename: file_name,
+                raw_source,
+            });
+        }
+        files.sort_by(|a, b| a.filename.cmp(&b.filename));
+        Ok(files)
+    }
+}
+
+impl FileScanner for FlexiPageScanner {
+    fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
+        let mut files = Vec::new();
+        for entry in WalkDir::new(source_dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_entry(should_visit)
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let file_name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+            if !file_name.ends_with(".flexipage-meta.xml") {
+                continue;
+            }
+            let raw_source = std::fs::read_to_string(path)?;
+            files.push(SourceFile {
+                path: path.to_path_buf(),
+                filename: file_name,
+                raw_source,
+            });
+        }
+        files.sort_by(|a, b| a.filename.cmp(&b.filename));
+        Ok(files)
+    }
+}
+
+impl FileScanner for CustomMetadataScanner {
+    fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
+        let mut files = Vec::new();
+        for entry in WalkDir::new(source_dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_entry(should_visit)
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let file_name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+            if !file_name.ends_with(".md-meta.xml") {
+                continue;
+            }
+            // Only pick up files inside a `customMetadata` directory
+            let in_custom_metadata_dir = path
+                .ancestors()
+                .any(|a| a.file_name().and_then(|n| n.to_str()) == Some("customMetadata"));
+            if !in_custom_metadata_dir {
+                continue;
+            }
+            let raw_source = std::fs::read_to_string(path)?;
+            files.push(SourceFile {
+                path: path.to_path_buf(),
+                filename: file_name,
+                raw_source,
+            });
+        }
+        files.sort_by(|a, b| a.filename.cmp(&b.filename));
+        Ok(files)
+    }
+}
+
+impl FileScanner for AuraScanner {
+    fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
+        let mut files = Vec::new();
+        for entry in WalkDir::new(source_dir)
+            .follow_links(true)
+            .into_iter()
+            .filter_entry(should_visit)
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let file_name = match path.file_name().and_then(|n| n.to_str()) {
+                Some(n) => n.to_string(),
+                None => continue,
+            };
+            // Only process .cmp files
+            if !file_name.ends_with(".cmp") {
+                continue;
+            }
+            // Ensure we are inside an `aura/` directory
+            let in_aura_dir = path
+                .ancestors()
+                .any(|a| a.file_name().and_then(|n| n.to_str()) == Some("aura"));
+            if !in_aura_dir {
+                continue;
+            }
+
+            // Use the sibling .js file as raw_source if it exists.
+            // Fall back to the .cmp content when there is no JS file.
+            let component_name = file_name.trim_end_matches(".cmp");
+            let js_path = path
+                .parent()
+                .map(|p| p.join(format!("{component_name}.js")));
+            let raw_source = match js_path
+                .as_deref()
+                .and_then(|p| std::fs::read_to_string(p).ok())
+            {
+                Some(js) => js,
+                None => std::fs::read_to_string(path)
+                    .with_context(|| format!("Failed to read Aura source for {}", file_name))?,
             };
 
             files.push(SourceFile {

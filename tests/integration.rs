@@ -219,6 +219,10 @@ fn full_pipeline_writes_markdown_output() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -268,6 +272,9 @@ fn full_pipeline_writes_markdown_output() {
         &[],
         &[],
         &[],
+        &[],
+        &[],
+        &[],
     )
     .unwrap();
 
@@ -304,6 +311,10 @@ fn markdown_class_page_contains_expected_sections() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -321,6 +332,9 @@ fn markdown_class_page_contains_expected_sections() {
         output_dir,
         &sfdoc::cli::OutputFormat::Markdown,
         &class_contexts,
+        &[],
+        &[],
+        &[],
         &[],
         &[],
         &[],
@@ -358,6 +372,10 @@ fn markdown_index_groups_by_folder() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -379,7 +397,7 @@ fn markdown_index_groups_by_folder() {
         })
         .collect();
 
-    let index = renderer::render_index(&class_contexts, &[], &[], &[], &[], &[]);
+    let index = renderer::render_index(&class_contexts, &[], &[], &[], &[], &[], &[], &[], &[]);
 
     // Both classes should be linked with type-prefixed paths
     assert!(index.contains("[AccountService](classes/AccountService.md)"));
@@ -418,6 +436,10 @@ fn full_pipeline_writes_html_output() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -434,6 +456,9 @@ fn full_pipeline_writes_html_output() {
         output_dir,
         &sfdoc::cli::OutputFormat::Html,
         &class_contexts,
+        &[],
+        &[],
+        &[],
         &[],
         &[],
         &[],
@@ -468,6 +493,10 @@ fn html_page_contains_sidebar_and_content() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -484,6 +513,9 @@ fn html_page_contains_sidebar_and_content() {
         tmp.path(),
         &sfdoc::cli::OutputFormat::Html,
         &class_contexts,
+        &[],
+        &[],
+        &[],
         &[],
         &[],
         &[],
@@ -849,6 +881,10 @@ async fn e2e_scan_parse_ai_render_markdown() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -896,6 +932,9 @@ async fn e2e_scan_parse_ai_render_markdown() {
         &sfdoc::cli::OutputFormat::Markdown,
         &class_contexts,
         &trigger_contexts,
+        &[],
+        &[],
+        &[],
         &[],
         &[],
         &[],
@@ -969,6 +1008,10 @@ fn flow_pipeline_writes_markdown_output() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
 
     let ctx = FlowRenderContext {
@@ -984,6 +1027,9 @@ fn flow_pipeline_writes_markdown_output() {
         &[],
         &[],
         &[ctx],
+        &[],
+        &[],
+        &[],
         &[],
         &[],
         &[],
@@ -1070,6 +1116,10 @@ fn validation_rule_pipeline_writes_markdown_output() {
         validation_rule_names: vec![meta.rule_name.clone()],
         object_names: vec![],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
 
     let ctx = ValidationRuleRenderContext {
@@ -1086,6 +1136,9 @@ fn validation_rule_pipeline_writes_markdown_output() {
         &[],
         &[],
         &[ctx],
+        &[],
+        &[],
+        &[],
         &[],
         &[],
     )
@@ -1150,6 +1203,10 @@ fn object_pipeline_writes_markdown_output() {
         validation_rule_names: vec![],
         object_names: vec![meta.object_name.clone()],
         lwc_names: vec![],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
 
     let ctx = ObjectRenderContext {
@@ -1167,6 +1224,9 @@ fn object_pipeline_writes_markdown_output() {
         &[],
         &[],
         &[ctx],
+        &[],
+        &[],
+        &[],
         &[],
     )
     .unwrap();
@@ -1248,6 +1308,10 @@ fn lwc_pipeline_writes_markdown_output() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![meta.component_name.clone()],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
 
     let ctx = LwcRenderContext {
@@ -1266,6 +1330,9 @@ fn lwc_pipeline_writes_markdown_output() {
         &[],
         &[],
         &[ctx],
+        &[],
+        &[],
+        &[],
     )
     .unwrap();
 
@@ -1318,6 +1385,10 @@ fn lwc_pipeline_writes_html_output() {
         validation_rule_names: vec![],
         object_names: vec![],
         lwc_names: vec![meta.component_name.clone()],
+        flexipage_names: vec![],
+        aura_names: vec![],
+        custom_metadata_type_names: vec![],
+        interface_implementors: std::collections::HashMap::new(),
     });
 
     let ctx = LwcRenderContext {
@@ -1336,6 +1407,9 @@ fn lwc_pipeline_writes_html_output() {
         &[],
         &[],
         &[ctx],
+        &[],
+        &[],
+        &[],
     )
     .unwrap();
 
@@ -1350,5 +1424,8 @@ fn lwc_pipeline_writes_html_output() {
             .unwrap();
     assert!(html.contains("myCard"), "component name missing from HTML");
     assert!(html.contains("<nav"), "sidebar missing from HTML");
-    assert!(html.contains("Components"), "LWC sidebar section missing");
+    assert!(
+        html.contains("LWC") || html.contains("Components"),
+        "LWC sidebar section missing"
+    );
 }
