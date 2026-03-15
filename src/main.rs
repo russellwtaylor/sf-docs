@@ -23,8 +23,8 @@ use scanner::{
     ValidationRuleScanner,
 };
 use types::{
-    AllNames, ApexFile, ClassDocumentation, FlowDocumentation, LwcDocumentation,
-    ObjectDocumentation, TriggerDocumentation, ValidationRuleDocumentation,
+    AllNames, ClassDocumentation, FlowDocumentation, LwcDocumentation, ObjectDocumentation,
+    SourceFile, TriggerDocumentation, ValidationRuleDocumentation,
 };
 
 /// Unified client enum for dispatch without dynamic dispatch overhead.
@@ -36,7 +36,7 @@ enum DocClient {
 impl DocClient {
     async fn document_class(
         &self,
-        file: &ApexFile,
+        file: &SourceFile,
         metadata: &types::ClassMetadata,
     ) -> Result<ClassDocumentation> {
         match self {
@@ -47,7 +47,7 @@ impl DocClient {
 
     async fn document_trigger(
         &self,
-        file: &ApexFile,
+        file: &SourceFile,
         metadata: &types::TriggerMetadata,
     ) -> Result<TriggerDocumentation> {
         match self {
@@ -58,7 +58,7 @@ impl DocClient {
 
     async fn document_flow(
         &self,
-        file: &ApexFile,
+        file: &SourceFile,
         metadata: &types::FlowMetadata,
     ) -> Result<FlowDocumentation> {
         match self {
@@ -69,7 +69,7 @@ impl DocClient {
 
     async fn document_validation_rule(
         &self,
-        file: &ApexFile,
+        file: &SourceFile,
         metadata: &types::ValidationRuleMetadata,
     ) -> Result<ValidationRuleDocumentation> {
         match self {
@@ -80,7 +80,7 @@ impl DocClient {
 
     async fn document_object(
         &self,
-        file: &ApexFile,
+        file: &SourceFile,
         metadata: &types::ObjectMetadata,
     ) -> Result<ObjectDocumentation> {
         match self {
@@ -91,7 +91,7 @@ impl DocClient {
 
     async fn document_lwc(
         &self,
-        file: &ApexFile,
+        file: &SourceFile,
         metadata: &types::LwcMetadata,
     ) -> Result<LwcDocumentation> {
         match self {

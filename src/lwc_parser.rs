@@ -248,4 +248,111 @@ mod tests {
         assert_eq!(kebab_to_camel("account-detail-card"), "accountDetailCard");
         assert_eq!(kebab_to_camel("simple"), "simple");
     }
+
+    #[test]
+    fn no_html_file_gives_empty_slots_and_references() {
+        let tmp = TempDir::new().unwrap();
+        // Component with JS but no HTML template
+        let meta = setup_component(&tmp, "myComp", "@api recordId;", "");
+        // Delete the html file that setup_component wrote (empty string → no file written)
+        let result = parse_lwc(&meta, "@api recordId;").unwrap();
+        assert!(result.slots.is_empty());
+        assert!(result.referenced_components.is_empty());
+    }
+
+    #[test]
+    fn duplicate_api_decorator_deduplicates() {
+        let tmp = TempDir::new().unwrap();
+        // Same property appears twice (e.g. copy-paste error in source)
+        let js = "@api recordId;\n@api recordId;";
+        let meta = setup_component(&tmp, "myComp", js, "");
+        let result = parse_lwc(&meta, js).unwrap();
+        assert_eq!(
+            result
+                .api_props
+                .iter()
+                .filter(|p| p.name == "recordId")
+                .count(),
+            1,
+            "duplicate @api prop should appear only once"
+        );
+    }
+
+    #[test]
+    fn anonymous_slot_added_only_once() {
+        let tmp = TempDir::new().unwrap();
+        // Two anonymous slots in the template — default should only appear once
+        let html = "<template><slot></slot><slot/></template>";
+        let meta = setup_component(&tmp, "myComp", "", html);
+        let result = parse_lwc(&meta, "").unwrap();
+        assert_eq!(
+            result
+                .slots
+                .iter()
+                .filter(|s| s.as_str() == "default")
+                .count(),
+            1,
+            "default slot should appear exactly once"
+        );
+    }
+
+    #[test]
+    fn named_slot_not_duplicated() {
+        let tmp = TempDir::new().unwrap();
+        let html = r#"<template><slot name="header"></slot><slot name="header"></slot></template>"#;
+        let meta = setup_component(&tmp, "myComp", "", html);
+        let result = parse_lwc(&meta, "").unwrap();
+        assert_eq!(
+            result
+                .slots
+                .iter()
+                .filter(|s| s.as_str() == "header")
+                .count(),
+            1,
+            "named slot should appear exactly once even if repeated"
+        );
+    }
+
+    #[test]
+    fn api_getter_treated_as_property() {
+        let tmp = TempDir::new().unwrap();
+        let js = "@api get value() { return this._value; }";
+        let meta = setup_component(&tmp, "myComp", js, "");
+        let result = parse_lwc(&meta, js).unwrap();
+        let prop = result.api_props.iter().find(|p| p.name == "value").unwrap();
+        assert!(
+            !prop.is_method,
+            "@api getter should be treated as a property, not a method"
+        );
+    }
+
+    #[test]
+    fn multiple_c_component_refs_deduplicates() {
+        let tmp = TempDir::new().unwrap();
+        let html = r#"<template>
+            <c-my-button label="A"></c-my-button>
+            <c-my-button label="B"></c-my-button>
+        </template>"#;
+        let meta = setup_component(&tmp, "myComp", "", html);
+        let result = parse_lwc(&meta, "").unwrap();
+        assert_eq!(
+            result
+                .referenced_components
+                .iter()
+                .filter(|c| c.as_str() == "myButton")
+                .count(),
+            1,
+            "same child component referenced twice should appear once"
+        );
+    }
+
+    #[test]
+    fn api_props_sorted_alphabetically() {
+        let tmp = TempDir::new().unwrap();
+        let js = "@api zebra;\n@api alpha;\n@api mango;";
+        let meta = setup_component(&tmp, "myComp", js, "");
+        let result = parse_lwc(&meta, js).unwrap();
+        let names: Vec<&str> = result.api_props.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(names, vec!["alpha", "mango", "zebra"]);
+    }
 }

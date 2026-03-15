@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
-/// A discovered .cls file with its raw source content.
+/// A discovered source file with its raw content (used for all file types).
 #[derive(Debug, Clone)]
-pub struct ApexFile {
+pub struct SourceFile {
     pub path: PathBuf,
     pub filename: String,
     pub raw_source: String,

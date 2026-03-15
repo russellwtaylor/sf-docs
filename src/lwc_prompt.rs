@@ -1,4 +1,4 @@
-use crate::types::{ApexFile, LwcMetadata};
+use crate::types::{LwcMetadata, SourceFile};
 
 pub const LWC_SYSTEM_PROMPT: &str = r#"
 You are an expert Salesforce developer and technical writer specializing in Lightning Web Components (LWC).
@@ -28,7 +28,7 @@ Rules:
 - Keep descriptions concise and accurate.
 "#;
 
-pub fn build_lwc_prompt(file: &ApexFile, metadata: &LwcMetadata) -> String {
+pub fn build_lwc_prompt(file: &SourceFile, metadata: &LwcMetadata) -> String {
     let mut prompt = String::new();
 
     prompt.push_str(&format!("# LWC Component: {}\n\n", metadata.component_name));

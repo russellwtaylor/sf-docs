@@ -16,6 +16,22 @@ const CACHE_FILE: &str = ".sfdoc-cache.json";
 // Cache types
 // ---------------------------------------------------------------------------
 
+/// Generic cache entry holding a content hash, model name, and AI-generated docs.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct TypedEntry<D> {
+    pub hash: String,
+    pub model: String,
+    pub documentation: D,
+}
+
+/// Type aliases for each documentation kind — keeps call-site names stable.
+pub type CacheEntry = TypedEntry<ClassDocumentation>;
+pub type TriggerCacheEntry = TypedEntry<TriggerDocumentation>;
+pub type FlowCacheEntry = TypedEntry<FlowDocumentation>;
+pub type ValidationRuleCacheEntry = TypedEntry<ValidationRuleDocumentation>;
+pub type ObjectCacheEntry = TypedEntry<ObjectDocumentation>;
+pub type LwcCacheEntry = TypedEntry<LwcDocumentation>;
+
 #[derive(Serialize, Deserialize, Default)]
 pub struct Cache {
     entries: HashMap<String, CacheEntry>,
@@ -39,48 +55,6 @@ pub struct Cache {
     /// cache files written before LWC support was added.
     #[serde(default)]
     lwc_entries: HashMap<String, LwcCacheEntry>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct TriggerCacheEntry {
-    pub hash: String,
-    pub model: String,
-    pub documentation: TriggerDocumentation,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct FlowCacheEntry {
-    pub hash: String,
-    pub model: String,
-    pub documentation: FlowDocumentation,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct ValidationRuleCacheEntry {
-    pub hash: String,
-    pub model: String,
-    pub documentation: ValidationRuleDocumentation,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct ObjectCacheEntry {
-    pub hash: String,
-    pub model: String,
-    pub documentation: ObjectDocumentation,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct LwcCacheEntry {
-    pub hash: String,
-    pub model: String,
-    pub documentation: LwcDocumentation,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct CacheEntry {
-    pub hash: String,
-    pub model: String,
-    pub documentation: ClassDocumentation,
 }
 
 impl Cache {
