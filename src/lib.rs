@@ -18,6 +18,7 @@ pub mod openai_compat;
 pub mod parser;
 pub mod prompt;
 pub mod providers;
+pub mod rate_limit;
 pub mod renderer;
 pub mod retry;
 pub mod scanner;

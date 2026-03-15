@@ -56,6 +56,11 @@ pub struct GenerateArgs {
     #[arg(long, default_value_t = 3, value_parser = parse_concurrency)]
     pub concurrency: usize,
 
+    /// Maximum API requests per minute (0 = no limit).
+    /// Use this to stay within your provider's RPM quota without lowering concurrency.
+    #[arg(long, default_value_t = 0)]
+    pub rpm: u32,
+
     /// Output format
     #[arg(long, default_value = "markdown")]
     pub format: OutputFormat,

@@ -699,6 +699,7 @@ async fn openai_compat_client_documents_class() {
         &server.base_url(),
         1,
         "TestProvider",
+        0,
     )
     .unwrap();
 
@@ -736,6 +737,7 @@ async fn openai_compat_client_documents_trigger() {
         &server.base_url(),
         1,
         "TestProvider",
+        0,
     )
     .unwrap();
 
@@ -770,6 +772,7 @@ async fn openai_compat_client_returns_error_on_non_200() {
         &server.base_url(),
         1,
         "TestProvider",
+        0,
     )
     .unwrap();
 
@@ -841,6 +844,7 @@ async fn e2e_scan_parse_ai_render_markdown() {
             &server.base_url(),
             3,
             "TestProvider",
+            0,
         )
         .unwrap(),
     );

@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
+use crate::rate_limit::RpmLimiter;
+
 use crate::aura_prompt::{build_aura_prompt, AURA_SYSTEM_PROMPT};
 use crate::flexipage_prompt::{build_flexipage_prompt, FLEXIPAGE_SYSTEM_PROMPT};
 use crate::flow_prompt::{build_flow_prompt, FLOW_SYSTEM_PROMPT};
@@ -84,20 +86,23 @@ pub struct GeminiClient {
     api_key: String,
     model: String,
     semaphore: Arc<Semaphore>,
+    rate_limiter: Option<Arc<RpmLimiter>>,
 }
 
 impl GeminiClient {
-    pub fn new(api_key: String, model: &str, concurrency: usize) -> Result<Self> {
+    pub fn new(api_key: String, model: &str, concurrency: usize, rpm: u32) -> Result<Self> {
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(30))
             .timeout(Duration::from_secs(120))
             .build()
             .context("Failed to build HTTP client")?;
+        let rate_limiter = (rpm > 0).then(|| Arc::new(RpmLimiter::new(rpm)));
         Ok(Self {
             client,
             api_key,
             model: model.to_string(),
             semaphore: Arc::new(Semaphore::new(concurrency)),
+            rate_limiter,
         })
     }
 
@@ -124,6 +129,12 @@ impl GeminiClient {
         };
 
         let url = format!("{}/{}:generateContent", GEMINI_BASE_URL, self.model);
+
+        // Acquire a rate-limit token before starting (counts one logical call, not retries).
+        if let Some(limiter) = &self.rate_limiter {
+            limiter.acquire().await;
+        }
+
         let mut attempt = 0u32;
         loop {
             let response = match self
@@ -141,7 +152,7 @@ impl GeminiClient {
                         attempt + 1,
                         MAX_RETRIES
                     );
-                    retry::sleep_for_retry("", attempt, "Gemini API").await;
+                    retry::sleep_for_retry(None, "", attempt, "Gemini API").await;
                     attempt += 1;
                     continue;
                 }
@@ -164,6 +175,8 @@ impl GeminiClient {
             }
 
             let status = response.status();
+            // Extract Retry-After header before consuming the body.
+            let retry_after = retry::parse_retry_after_header(response.headers());
             let body = response
                 .text()
                 .await
@@ -177,7 +190,7 @@ impl GeminiClient {
                          https://aistudio.google.com/plan_information"
                     );
                 }
-                retry::sleep_for_retry(&body, attempt, "Gemini API").await;
+                retry::sleep_for_retry(retry_after, &body, attempt, "Gemini API").await;
                 attempt += 1;
                 continue;
             }

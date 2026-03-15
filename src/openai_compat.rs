@@ -5,6 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
 
+use crate::rate_limit::RpmLimiter;
+
 use crate::aura_prompt::{build_aura_prompt, AURA_SYSTEM_PROMPT};
 use crate::flexipage_prompt::{build_flexipage_prompt, FLEXIPAGE_SYSTEM_PROMPT};
 use crate::flow_prompt::{build_flow_prompt, FLOW_SYSTEM_PROMPT};
@@ -72,6 +74,7 @@ pub struct OpenAiCompatClient {
     base_url: String,
     semaphore: Arc<Semaphore>,
     provider_name: String,
+    rate_limiter: Option<Arc<RpmLimiter>>,
 }
 
 impl OpenAiCompatClient {
@@ -81,12 +84,14 @@ impl OpenAiCompatClient {
         base_url: &str,
         concurrency: usize,
         provider_name: &str,
+        rpm: u32,
     ) -> Result<Self> {
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(30))
             .timeout(Duration::from_secs(120))
             .build()
             .context("Failed to build HTTP client")?;
+        let rate_limiter = (rpm > 0).then(|| Arc::new(RpmLimiter::new(rpm)));
         Ok(Self {
             client,
             api_key,
@@ -94,6 +99,7 @@ impl OpenAiCompatClient {
             base_url: base_url.to_string(),
             semaphore: Arc::new(Semaphore::new(concurrency)),
             provider_name: provider_name.to_string(),
+            rate_limiter,
         })
     }
 
@@ -119,6 +125,12 @@ impl OpenAiCompatClient {
         };
 
         let url = format!("{}/chat/completions", self.base_url);
+
+        // Acquire a rate-limit token before starting (counts one logical call, not retries).
+        if let Some(limiter) = &self.rate_limiter {
+            limiter.acquire().await;
+        }
+
         let mut attempt = 0u32;
         loop {
             let response = match self
@@ -137,7 +149,7 @@ impl OpenAiCompatClient {
                         attempt + 1,
                         MAX_RETRIES
                     );
-                    retry::sleep_for_retry("", attempt, &self.provider_name).await;
+                    retry::sleep_for_retry(None, "", attempt, &self.provider_name).await;
                     attempt += 1;
                     continue;
                 }
@@ -162,13 +174,15 @@ impl OpenAiCompatClient {
             }
 
             let status = response.status();
+            // Extract Retry-After header before consuming the body.
+            let retry_after = retry::parse_retry_after_header(response.headers());
             let body = response
                 .text()
                 .await
                 .unwrap_or_else(|e| format!("<failed to read body: {e}>"));
 
             if retry::should_retry(status.as_u16()) && attempt < MAX_RETRIES {
-                retry::sleep_for_retry(&body, attempt, &self.provider_name).await;
+                retry::sleep_for_retry(retry_after, &body, attempt, &self.provider_name).await;
                 attempt += 1;
                 continue;
             }
