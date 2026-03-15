@@ -1,5 +1,6 @@
 use anyhow::Result;
 use regex::Regex;
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -16,14 +17,17 @@ fn re_aura_attribute() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r#"<aura:attribute\s+([^>]*?)/?>"#).unwrap())
 }
 
-/// Extracts a named attribute value from a tag's attribute string.
-/// e.g. `name="foo"` or `name='foo'`
-fn re_attr_value(attr_name: &str) -> Regex {
-    Regex::new(&format!(
-        r#"(?:^|\s){}=["']([^"']*)["']"#,
-        regex::escape(attr_name)
-    ))
-    .unwrap()
+/// Extracts all `key="value"` or `key='value'` pairs from an XML attribute string in a single pass.
+fn parse_attrs(tag_attrs: &str) -> HashMap<&str, &str> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r#"(\w+)=["']([^"']*)["']"#).unwrap());
+    re.captures_iter(tag_attrs)
+        .filter_map(|c| {
+            let key = c.get(1)?.as_str();
+            let val = c.get(2)?.as_str();
+            Some((key, val))
+        })
+        .collect()
 }
 
 /// Matches `<aura:registerEvent .../>` or `<aura:handler .../>`.
@@ -58,10 +62,10 @@ pub fn parse_aura(path: &Path, cmp_source: &str) -> Result<AuraMetadata> {
     // Parse <aura:component> opening tag for `extends`
     // -----------------------------------------------------------------------
     let extends = re_aura_component().captures(cmp_source).and_then(|caps| {
-        let tag_attrs = &caps[1];
-        let re = re_attr_value("extends");
-        re.captures(tag_attrs)
-            .map(|c| c[1].trim().to_string())
+        let attrs = parse_attrs(&caps[1]);
+        attrs
+            .get("extends")
+            .map(|v| v.trim().to_string())
             .filter(|s| !s.is_empty())
     });
 
@@ -71,26 +75,26 @@ pub fn parse_aura(path: &Path, cmp_source: &str) -> Result<AuraMetadata> {
     let mut attributes: Vec<AuraAttributeMetadata> = Vec::new();
 
     for caps in re_aura_attribute().captures_iter(cmp_source) {
-        let tag_attrs = &caps[1];
+        let attrs = parse_attrs(&caps[1]);
 
-        let name = re_attr_value("name")
-            .captures(tag_attrs)
-            .map(|c| c[1].trim().to_string())
+        let name = attrs
+            .get("name")
+            .map(|v| v.trim().to_string())
             .unwrap_or_default();
 
-        let attr_type = re_attr_value("type")
-            .captures(tag_attrs)
-            .map(|c| c[1].trim().to_string())
+        let attr_type = attrs
+            .get("type")
+            .map(|v| v.trim().to_string())
             .unwrap_or_default();
 
-        let default = re_attr_value("default")
-            .captures(tag_attrs)
-            .map(|c| c[1].trim().to_string())
+        let default = attrs
+            .get("default")
+            .map(|v| v.trim().to_string())
             .unwrap_or_default();
 
-        let description = re_attr_value("description")
-            .captures(tag_attrs)
-            .map(|c| c[1].trim().to_string())
+        let description = attrs
+            .get("description")
+            .map(|v| v.trim().to_string())
             .unwrap_or_default();
 
         if !name.is_empty() {
@@ -109,22 +113,14 @@ pub fn parse_aura(path: &Path, cmp_source: &str) -> Result<AuraMetadata> {
     let mut events_handled: Vec<String> = Vec::new();
 
     for caps in re_aura_event().captures_iter(cmp_source) {
-        let tag_attrs = &caps[1];
+        let attrs = parse_attrs(&caps[1]);
 
         // Prefer `name` attribute first, fall back to `event` or `type`
-        let event_name = re_attr_value("name")
-            .captures(tag_attrs)
-            .map(|c| c[1].trim().to_string())
-            .or_else(|| {
-                re_attr_value("event")
-                    .captures(tag_attrs)
-                    .map(|c| c[1].trim().to_string())
-            })
-            .or_else(|| {
-                re_attr_value("type")
-                    .captures(tag_attrs)
-                    .map(|c| c[1].trim().to_string())
-            })
+        let event_name = attrs
+            .get("name")
+            .or_else(|| attrs.get("event"))
+            .or_else(|| attrs.get("type"))
+            .map(|v| v.trim().to_string())
             .unwrap_or_default();
 
         if !event_name.is_empty() && !events_handled.contains(&event_name) {

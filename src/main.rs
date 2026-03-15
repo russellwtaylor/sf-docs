@@ -393,7 +393,32 @@ async fn main() -> Result<()> {
                 .collect();
             let object_hashes: Vec<String> = object_files
                 .par_iter()
-                .map(|f| cache::hash_source(&f.raw_source))
+                .map(|f| {
+                    let mut combined = f.raw_source.clone();
+                    if let Some(fields_dir) = f.path.parent().map(|p| p.join("fields")) {
+                        if let Ok(entries) = std::fs::read_dir(&fields_dir) {
+                            let mut field_contents: Vec<(String, String)> = entries
+                                .filter_map(|e| e.ok())
+                                .filter(|e| {
+                                    e.file_name()
+                                        .to_str()
+                                        .is_some_and(|n| n.ends_with(".field-meta.xml"))
+                                })
+                                .filter_map(|e| {
+                                    let path = e.path();
+                                    let name = path.file_name()?.to_str()?.to_string();
+                                    let content = std::fs::read_to_string(&path).ok()?;
+                                    Some((name, content))
+                                })
+                                .collect();
+                            field_contents.sort_by(|a, b| a.0.cmp(&b.0));
+                            for (_, content) in field_contents {
+                                combined.push_str(&content);
+                            }
+                        }
+                    }
+                    cache::hash_source(&combined)
+                })
                 .collect();
             let lwc_hashes: Vec<String> = lwc_files
                 .par_iter()
@@ -899,7 +924,9 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
-            // Custom metadata contexts: group by type_name (no AI docs)
+            // Custom metadata contexts: group by type_name.
+            // Custom metadata records are purely structural (field-value tables) — no AI
+            // documentation is generated for them, so there is no cache look-up or API call.
             let custom_metadata_contexts: Vec<renderer::CustomMetadataRenderContext> = cm_by_type
                 .into_iter()
                 .map(

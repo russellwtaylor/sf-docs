@@ -45,175 +45,117 @@ fn should_visit(entry: &walkdir::DirEntry) -> bool {
     }
 }
 
-impl FileScanner for ApexScanner {
-    fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
-        let mut files = Vec::new();
+/// Shared walker for simple extension-based scanners.
+///
+/// - `suffix`: file name must end with this (e.g. `".cls"`).
+/// - `exclude_if_contains`: skip files whose name contains this substring (e.g. `"-meta.xml"` for Apex/trigger files).
+/// - `ancestor_dir`: when `Some("lwc")`, only files that have an ancestor directory named `"lwc"` are included.
+fn scan_by_extension(
+    source_dir: &Path,
+    suffix: &str,
+    exclude_if_contains: Option<&str>,
+    ancestor_dir: Option<&str>,
+) -> Result<Vec<SourceFile>> {
+    let mut files = Vec::new();
 
-        for entry in WalkDir::new(source_dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_entry(should_visit)
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-
-            if !path.is_file() {
+    for entry in WalkDir::new(source_dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(should_visit)
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let file_name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
+        if !file_name.ends_with(suffix) {
+            continue;
+        }
+        if let Some(excl) = exclude_if_contains {
+            if file_name.contains(excl) {
                 continue;
             }
-
-            let file_name = match path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n.to_string(),
-                None => continue,
-            };
-
-            // Only process .cls files; skip -meta.xml companion files
-            if !file_name.ends_with(".cls") || file_name.contains("-meta.xml") {
+        }
+        if let Some(ancestor) = ancestor_dir {
+            let in_dir = path
+                .ancestors()
+                .any(|a| a.file_name().and_then(|n| n.to_str()) == Some(ancestor));
+            if !in_dir {
                 continue;
             }
-
-            let raw_source = std::fs::read_to_string(path)?;
-
-            files.push(SourceFile {
-                path: path.to_path_buf(),
-                filename: file_name,
-                raw_source,
-            });
         }
 
-        // Sort for deterministic output order
-        files.sort_by(|a, b| a.filename.cmp(&b.filename));
+        let raw_source = std::fs::read_to_string(path)?;
+        files.push(SourceFile {
+            path: path.to_path_buf(),
+            filename: file_name,
+            raw_source,
+        });
+    }
 
-        Ok(files)
+    files.sort_by(|a, b| a.filename.cmp(&b.filename));
+    Ok(files)
+}
+
+/// Reads a sibling `.js` file as `raw_source` when it exists, falling back to the
+/// file at `path` itself (used by both `LwcScanner` and `AuraScanner`).
+fn read_with_js_fallback(path: &Path, component_name: &str, display_name: &str) -> Result<String> {
+    let js_path = path
+        .parent()
+        .map(|p| p.join(format!("{component_name}.js")));
+    match js_path
+        .as_deref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+    {
+        Some(js) => Ok(js),
+        None => std::fs::read_to_string(path)
+            .with_context(|| format!("Failed to read source for {display_name}")),
+    }
+}
+
+impl FileScanner for ApexScanner {
+    fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
+        scan_by_extension(source_dir, ".cls", Some("-meta.xml"), None)
     }
 }
 
 impl FileScanner for TriggerScanner {
     fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
-        let mut files = Vec::new();
-
-        for entry in WalkDir::new(source_dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_entry(should_visit)
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let file_name = match path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n.to_string(),
-                None => continue,
-            };
-            if !file_name.ends_with(".trigger") || file_name.contains("-meta.xml") {
-                continue;
-            }
-            let raw_source = std::fs::read_to_string(path)?;
-            files.push(SourceFile {
-                path: path.to_path_buf(),
-                filename: file_name,
-                raw_source,
-            });
-        }
-
-        files.sort_by(|a, b| a.filename.cmp(&b.filename));
-        Ok(files)
+        scan_by_extension(source_dir, ".trigger", Some("-meta.xml"), None)
     }
 }
 
 impl FileScanner for FlowScanner {
     fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
-        let mut files = Vec::new();
-        for entry in WalkDir::new(source_dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_entry(should_visit)
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let file_name = match path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n.to_string(),
-                None => continue,
-            };
-            if !file_name.ends_with(".flow-meta.xml") {
-                continue;
-            }
-            let raw_source = std::fs::read_to_string(path)?;
-            files.push(SourceFile {
-                path: path.to_path_buf(),
-                filename: file_name,
-                raw_source,
-            });
-        }
-        files.sort_by(|a, b| a.filename.cmp(&b.filename));
-        Ok(files)
+        scan_by_extension(source_dir, ".flow-meta.xml", None, None)
     }
 }
 
 impl FileScanner for ValidationRuleScanner {
     fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
-        let mut files = Vec::new();
-        for entry in WalkDir::new(source_dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_entry(should_visit)
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let file_name = match path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n.to_string(),
-                None => continue,
-            };
-            if !file_name.ends_with(".validationRule-meta.xml") {
-                continue;
-            }
-            let raw_source = std::fs::read_to_string(path)?;
-            files.push(SourceFile {
-                path: path.to_path_buf(),
-                filename: file_name,
-                raw_source,
-            });
-        }
-        files.sort_by(|a, b| a.filename.cmp(&b.filename));
-        Ok(files)
+        scan_by_extension(source_dir, ".validationRule-meta.xml", None, None)
     }
 }
 
 impl FileScanner for ObjectScanner {
     fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
-        let mut files = Vec::new();
-        for entry in WalkDir::new(source_dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_entry(should_visit)
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let file_name = match path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n.to_string(),
-                None => continue,
-            };
-            if !file_name.ends_with(".object-meta.xml") {
-                continue;
-            }
-            let raw_source = std::fs::read_to_string(path)?;
-            files.push(SourceFile {
-                path: path.to_path_buf(),
-                filename: file_name,
-                raw_source,
-            });
-        }
-        files.sort_by(|a, b| a.filename.cmp(&b.filename));
-        Ok(files)
+        scan_by_extension(source_dir, ".object-meta.xml", None, None)
+    }
+}
+
+impl FileScanner for FlexiPageScanner {
+    fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
+        scan_by_extension(source_dir, ".flexipage-meta.xml", None, None)
+    }
+}
+
+impl FileScanner for CustomMetadataScanner {
+    fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
+        scan_by_extension(source_dir, ".md-meta.xml", None, Some("customMetadata"))
     }
 }
 
@@ -234,11 +176,9 @@ impl FileScanner for LwcScanner {
                 Some(n) => n.to_string(),
                 None => continue,
             };
-            // Only process LWC meta files
             if !file_name.ends_with(".js-meta.xml") {
                 continue;
             }
-            // Ensure the parent directory is inside an `lwc/` directory
             let in_lwc_dir = path
                 .ancestors()
                 .any(|a| a.file_name().and_then(|n| n.to_str()) == Some("lwc"));
@@ -249,89 +189,8 @@ impl FileScanner for LwcScanner {
             // Use the sibling .js file as raw_source if it exists (for cache hashing and AI prompt).
             // Fall back to the meta.xml content when there is no JS file.
             let component_name = file_name.trim_end_matches(".js-meta.xml");
-            let js_path = path
-                .parent()
-                .map(|p| p.join(format!("{component_name}.js")));
-            let raw_source = match js_path
-                .as_deref()
-                .and_then(|p| std::fs::read_to_string(p).ok())
-            {
-                Some(js) => js,
-                None => std::fs::read_to_string(path)
-                    .with_context(|| format!("Failed to read LWC source for {}", file_name))?,
-            };
+            let raw_source = read_with_js_fallback(path, component_name, &file_name)?;
 
-            files.push(SourceFile {
-                path: path.to_path_buf(),
-                filename: file_name,
-                raw_source,
-            });
-        }
-        files.sort_by(|a, b| a.filename.cmp(&b.filename));
-        Ok(files)
-    }
-}
-
-impl FileScanner for FlexiPageScanner {
-    fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
-        let mut files = Vec::new();
-        for entry in WalkDir::new(source_dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_entry(should_visit)
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let file_name = match path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n.to_string(),
-                None => continue,
-            };
-            if !file_name.ends_with(".flexipage-meta.xml") {
-                continue;
-            }
-            let raw_source = std::fs::read_to_string(path)?;
-            files.push(SourceFile {
-                path: path.to_path_buf(),
-                filename: file_name,
-                raw_source,
-            });
-        }
-        files.sort_by(|a, b| a.filename.cmp(&b.filename));
-        Ok(files)
-    }
-}
-
-impl FileScanner for CustomMetadataScanner {
-    fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
-        let mut files = Vec::new();
-        for entry in WalkDir::new(source_dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_entry(should_visit)
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let file_name = match path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n.to_string(),
-                None => continue,
-            };
-            if !file_name.ends_with(".md-meta.xml") {
-                continue;
-            }
-            // Only pick up files inside a `customMetadata` directory
-            let in_custom_metadata_dir = path
-                .ancestors()
-                .any(|a| a.file_name().and_then(|n| n.to_str()) == Some("customMetadata"));
-            if !in_custom_metadata_dir {
-                continue;
-            }
-            let raw_source = std::fs::read_to_string(path)?;
             files.push(SourceFile {
                 path: path.to_path_buf(),
                 filename: file_name,
@@ -360,11 +219,9 @@ impl FileScanner for AuraScanner {
                 Some(n) => n.to_string(),
                 None => continue,
             };
-            // Only process .cmp files
             if !file_name.ends_with(".cmp") {
                 continue;
             }
-            // Ensure we are inside an `aura/` directory
             let in_aura_dir = path
                 .ancestors()
                 .any(|a| a.file_name().and_then(|n| n.to_str()) == Some("aura"));
@@ -375,17 +232,7 @@ impl FileScanner for AuraScanner {
             // Use the sibling .js file as raw_source if it exists.
             // Fall back to the .cmp content when there is no JS file.
             let component_name = file_name.trim_end_matches(".cmp");
-            let js_path = path
-                .parent()
-                .map(|p| p.join(format!("{component_name}.js")));
-            let raw_source = match js_path
-                .as_deref()
-                .and_then(|p| std::fs::read_to_string(p).ok())
-            {
-                Some(js) => js,
-                None => std::fs::read_to_string(path)
-                    .with_context(|| format!("Failed to read Aura source for {}", file_name))?,
-            };
+            let raw_source = read_with_js_fallback(path, component_name, &file_name)?;
 
             files.push(SourceFile {
                 path: path.to_path_buf(),

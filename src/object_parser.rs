@@ -76,10 +76,20 @@ pub fn parse_object(path: &Path, source: &str) -> Result<ObjectMetadata> {
             for field_path in field_paths {
                 let field_source = match std::fs::read_to_string(&field_path) {
                     Ok(s) => s,
-                    Err(_) => continue,
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: could not read field file {}: {e}",
+                            field_path.display()
+                        );
+                        continue;
+                    }
                 };
-                if let Ok(field) = parse_field(&field_path, &field_source) {
-                    fields.push(field);
+                match parse_field(&field_path, &field_source) {
+                    Ok(field) => fields.push(field),
+                    Err(e) => eprintln!(
+                        "Warning: could not parse field file {}: {e}",
+                        field_path.display()
+                    ),
                 }
             }
         }
