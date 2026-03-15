@@ -211,6 +211,7 @@ fn full_pipeline_writes_markdown_output() {
             .collect(),
         flow_names: vec![],
         validation_rule_names: vec![],
+        object_names: vec![],
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -258,6 +259,7 @@ fn full_pipeline_writes_markdown_output() {
         &trigger_contexts,
         &[],
         &[],
+        &[],
     )
     .unwrap();
 
@@ -292,6 +294,7 @@ fn markdown_class_page_contains_expected_sections() {
         trigger_names: vec![],
         flow_names: vec![],
         validation_rule_names: vec![],
+        object_names: vec![],
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -309,6 +312,7 @@ fn markdown_class_page_contains_expected_sections() {
         output_dir,
         &sfdoc::cli::OutputFormat::Markdown,
         &class_contexts,
+        &[],
         &[],
         &[],
         &[],
@@ -342,6 +346,7 @@ fn markdown_index_groups_by_folder() {
         trigger_names: vec![],
         flow_names: vec![],
         validation_rule_names: vec![],
+        object_names: vec![],
     });
 
     let class_contexts: Vec<RenderContext> = class_files
@@ -363,7 +368,7 @@ fn markdown_index_groups_by_folder() {
         })
         .collect();
 
-    let index = renderer::render_index(&class_contexts, &[], &[], &[]);
+    let index = renderer::render_index(&class_contexts, &[], &[], &[], &[]);
 
     // Both classes should be linked with type-prefixed paths
     assert!(index.contains("[AccountService](classes/AccountService.md)"));
@@ -400,6 +405,7 @@ fn full_pipeline_writes_html_output() {
         trigger_names: vec![],
         flow_names: vec![],
         validation_rule_names: vec![],
+        object_names: vec![],
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -416,6 +422,7 @@ fn full_pipeline_writes_html_output() {
         output_dir,
         &sfdoc::cli::OutputFormat::Html,
         &class_contexts,
+        &[],
         &[],
         &[],
         &[],
@@ -446,6 +453,7 @@ fn html_page_contains_sidebar_and_content() {
         trigger_names: vec![],
         flow_names: vec![],
         validation_rule_names: vec![],
+        object_names: vec![],
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -462,6 +470,7 @@ fn html_page_contains_sidebar_and_content() {
         tmp.path(),
         &sfdoc::cli::OutputFormat::Html,
         &class_contexts,
+        &[],
         &[],
         &[],
         &[],
@@ -823,6 +832,7 @@ async fn e2e_scan_parse_ai_render_markdown() {
             .collect(),
         flow_names: vec![],
         validation_rule_names: vec![],
+        object_names: vec![],
     });
     let class_contexts: Vec<RenderContext> = class_files
         .iter()
@@ -870,6 +880,7 @@ async fn e2e_scan_parse_ai_render_markdown() {
         &sfdoc::cli::OutputFormat::Markdown,
         &class_contexts,
         &trigger_contexts,
+        &[],
         &[],
         &[],
     )

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::renderer::{
-    sanitize_filename, FlowRenderContext, RenderContext, TriggerRenderContext,
+    sanitize_filename, FlowRenderContext, ObjectRenderContext, RenderContext, TriggerRenderContext,
     ValidationRuleRenderContext,
 };
 
@@ -91,11 +91,13 @@ pub fn write_html_output(
     trigger_contexts: &[TriggerRenderContext],
     flow_contexts: &[FlowRenderContext],
     validation_rule_contexts: &[ValidationRuleRenderContext],
+    object_contexts: &[ObjectRenderContext],
 ) -> Result<()> {
     let classes_dir = output_dir.join("classes");
     let triggers_dir = output_dir.join("triggers");
     let flows_dir = output_dir.join("flows");
     let vr_dir = output_dir.join("validation-rules");
+    let objects_dir = output_dir.join("objects");
 
     std::fs::create_dir_all(output_dir)?;
     if !class_contexts.is_empty() {
@@ -109,6 +111,9 @@ pub fn write_html_output(
     }
     if !validation_rule_contexts.is_empty() {
         std::fs::create_dir_all(&vr_dir)?;
+    }
+    if !object_contexts.is_empty() {
+        std::fs::create_dir_all(&objects_dir)?;
     }
 
     // (name, folder) pairs — used for sidebar grouping and cross-link generation.
@@ -128,9 +133,20 @@ pub fn write_html_output(
         .iter()
         .map(|c| (c.metadata.rule_name.as_str(), c.folder.as_str()))
         .collect();
+    let obj_items: Vec<(&str, &str)> = object_contexts
+        .iter()
+        .map(|c| (c.metadata.object_name.as_str(), c.folder.as_str()))
+        .collect();
 
     for ctx in class_contexts {
-        let page = render_class_page(ctx, &class_items, &trigger_items, &flow_items, &vr_items);
+        let page = render_class_page(
+            ctx,
+            &class_items,
+            &trigger_items,
+            &flow_items,
+            &vr_items,
+            &obj_items,
+        );
         std::fs::write(
             classes_dir.join(format!(
                 "{}.html",
@@ -141,7 +157,14 @@ pub fn write_html_output(
     }
 
     for ctx in trigger_contexts {
-        let page = render_trigger_page(ctx, &class_items, &trigger_items, &flow_items, &vr_items);
+        let page = render_trigger_page(
+            ctx,
+            &class_items,
+            &trigger_items,
+            &flow_items,
+            &vr_items,
+            &obj_items,
+        );
         std::fs::write(
             triggers_dir.join(format!(
                 "{}.html",
@@ -152,7 +175,14 @@ pub fn write_html_output(
     }
 
     for ctx in flow_contexts {
-        let page = render_flow_page(ctx, &class_items, &trigger_items, &flow_items, &vr_items);
+        let page = render_flow_page(
+            ctx,
+            &class_items,
+            &trigger_items,
+            &flow_items,
+            &vr_items,
+            &obj_items,
+        );
         std::fs::write(
             flows_dir.join(format!(
                 "{}.html",
@@ -163,12 +193,36 @@ pub fn write_html_output(
     }
 
     for ctx in validation_rule_contexts {
-        let page =
-            render_validation_rule_page(ctx, &class_items, &trigger_items, &flow_items, &vr_items);
+        let page = render_validation_rule_page(
+            ctx,
+            &class_items,
+            &trigger_items,
+            &flow_items,
+            &vr_items,
+            &obj_items,
+        );
         std::fs::write(
             vr_dir.join(format!(
                 "{}.html",
                 sanitize_filename(&ctx.metadata.rule_name)
+            )),
+            page,
+        )?;
+    }
+
+    for ctx in object_contexts {
+        let page = render_object_page(
+            ctx,
+            &class_items,
+            &trigger_items,
+            &flow_items,
+            &vr_items,
+            &obj_items,
+        );
+        std::fs::write(
+            objects_dir.join(format!(
+                "{}.html",
+                sanitize_filename(&ctx.metadata.object_name)
             )),
             page,
         )?;
@@ -179,6 +233,7 @@ pub fn write_html_output(
         trigger_contexts,
         flow_contexts,
         validation_rule_contexts,
+        object_contexts,
     );
     std::fs::write(output_dir.join("index.html"), index)?;
 
@@ -195,11 +250,13 @@ fn render_class_page(
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
     vr_items: &[(&str, &str)],
+    obj_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
     let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
+    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.class_name;
@@ -388,6 +445,18 @@ fn render_class_page(
                             )
                         })
                 })
+                .or_else(|| {
+                    obj_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../objects/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
         })
         .collect();
 
@@ -409,6 +478,7 @@ fn render_class_page(
         trigger_items,
         flow_items,
         vr_items,
+        obj_items,
     )
 }
 
@@ -418,11 +488,13 @@ fn render_trigger_page(
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
     vr_items: &[(&str, &str)],
+    obj_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
     let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
+    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.trigger_name;
@@ -537,6 +609,18 @@ fn render_trigger_page(
                             )
                         })
                 })
+                .or_else(|| {
+                    obj_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../objects/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
         })
         .collect();
 
@@ -558,6 +642,7 @@ fn render_trigger_page(
         trigger_items,
         flow_items,
         vr_items,
+        obj_items,
     )
 }
 
@@ -567,11 +652,13 @@ fn render_flow_page(
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
     vr_items: &[(&str, &str)],
+    obj_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
     let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
+    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.api_name;
@@ -728,6 +815,18 @@ fn render_flow_page(
                             )
                         })
                 })
+                .or_else(|| {
+                    obj_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../objects/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
         })
         .collect();
 
@@ -749,6 +848,7 @@ fn render_flow_page(
         trigger_items,
         flow_items,
         vr_items,
+        obj_items,
     )
 }
 
@@ -758,11 +858,13 @@ fn render_validation_rule_page(
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
     vr_items: &[(&str, &str)],
+    obj_items: &[(&str, &str)],
 ) -> String {
     let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
     let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
     let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
+    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.rule_name;
@@ -872,6 +974,18 @@ fn render_validation_rule_page(
                             )
                         })
                 })
+                .or_else(|| {
+                    obj_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../objects/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
         })
         .collect();
 
@@ -893,6 +1007,184 @@ fn render_validation_rule_page(
         trigger_items,
         flow_items,
         vr_items,
+        obj_items,
+    )
+}
+
+fn render_object_page(
+    ctx: &ObjectRenderContext,
+    class_items: &[(&str, &str)],
+    trigger_items: &[(&str, &str)],
+    flow_items: &[(&str, &str)],
+    vr_items: &[(&str, &str)],
+    obj_items: &[(&str, &str)],
+) -> String {
+    let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
+    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
+    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
+    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
+    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
+    let doc = &ctx.documentation;
+    let meta = &ctx.metadata;
+    let active = &meta.object_name;
+
+    let label = if doc.label.is_empty() {
+        meta.object_name.as_str()
+    } else {
+        doc.label.as_str()
+    };
+
+    let mut body = String::new();
+
+    body.push_str(&format!("<h1>{}</h1>\n", escape(label)));
+    body.push_str("<div class=\"badges\">\n");
+    body.push_str("<span class=\"badge\">object</span>\n");
+    body.push_str(&format!(
+        "<span class=\"badge\">{}</span>\n",
+        escape(&meta.object_name)
+    ));
+    body.push_str("</div>\n");
+    body.push_str(&format!(
+        "<p class=\"summary\">{}</p>\n",
+        escape(&doc.summary)
+    ));
+
+    if !doc.purpose.is_empty() {
+        body.push_str("<h2>Purpose</h2>\n");
+        body.push_str(&format!("<p>{}</p>\n", escape(&doc.purpose)));
+    }
+
+    if !doc.description.is_empty() {
+        body.push_str("<h2>Description</h2>\n");
+        body.push_str(&format!("<p>{}</p>\n", escape(&doc.description)));
+    }
+
+    if !meta.fields.is_empty() {
+        body.push_str("<h2>Fields</h2>\n");
+        body.push_str("<table><thead><tr><th>API Name</th><th>Type</th><th>Label</th><th>Required</th></tr></thead><tbody>\n");
+        for field in &meta.fields {
+            let type_str = if (field.field_type == "Lookup" || field.field_type == "MasterDetail")
+                && !field.reference_to.is_empty()
+            {
+                format!(
+                    "{} → <code>{}</code>",
+                    escape(&field.field_type),
+                    escape(&field.reference_to)
+                )
+            } else {
+                escape(&field.field_type)
+            };
+            body.push_str(&format!(
+                "<tr><td><code>{}</code></td><td>{}</td><td>{}</td><td>{}</td></tr>\n",
+                escape(&field.api_name),
+                type_str,
+                escape(&field.label),
+                if field.required { "Yes" } else { "No" },
+            ));
+        }
+        body.push_str("</tbody></table>\n");
+    }
+
+    if !doc.key_fields.is_empty() {
+        body.push_str("<h2>Key Fields</h2>\n<ul>\n");
+        for f in &doc.key_fields {
+            body.push_str(&format!("<li>{}</li>\n", escape(f)));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    if !doc.admin_notes.is_empty() {
+        body.push_str("<h2>Admin Notes</h2>\n<ul>\n");
+        for note in &doc.admin_notes {
+            body.push_str(&format!("<li>{}</li>\n", escape(note)));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    let see_also: Vec<String> = doc
+        .relationships
+        .iter()
+        .filter_map(|rel| {
+            class_names
+                .iter()
+                .find(|&&name| rel.contains(name))
+                .map(|&name| {
+                    format!(
+                        "<a href=\"../classes/{name}.html\">{}</a> — {}",
+                        escape(name),
+                        escape(rel)
+                    )
+                })
+                .or_else(|| {
+                    trigger_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../triggers/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
+                .or_else(|| {
+                    flow_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../flows/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
+                .or_else(|| {
+                    vr_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"../validation-rules/{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
+                .or_else(|| {
+                    obj_names
+                        .iter()
+                        .find(|&&name| rel.contains(name))
+                        .map(|&name| {
+                            format!(
+                                "<a href=\"{name}.html\">{}</a> — {}",
+                                escape(name),
+                                escape(rel)
+                            )
+                        })
+                })
+        })
+        .collect();
+
+    if !see_also.is_empty() {
+        body.push_str("<h2>See Also</h2>\n<ul>\n");
+        for link in see_also {
+            body.push_str(&format!("<li>{}</li>\n", link));
+        }
+        body.push_str("</ul>\n");
+    }
+
+    wrap_page(
+        label,
+        "sfdoc",
+        &body,
+        active,
+        "../",
+        class_items,
+        trigger_items,
+        flow_items,
+        vr_items,
+        obj_items,
     )
 }
 
@@ -901,6 +1193,7 @@ fn render_index(
     trigger_contexts: &[TriggerRenderContext],
     flow_contexts: &[FlowRenderContext],
     validation_rule_contexts: &[ValidationRuleRenderContext],
+    object_contexts: &[ObjectRenderContext],
 ) -> String {
     let class_items: Vec<(&str, &str)> = class_contexts
         .iter()
@@ -918,14 +1211,19 @@ fn render_index(
         .iter()
         .map(|c| (c.metadata.rule_name.as_str(), c.folder.as_str()))
         .collect();
+    let obj_items: Vec<(&str, &str)> = object_contexts
+        .iter()
+        .map(|c| (c.metadata.object_name.as_str(), c.folder.as_str()))
+        .collect();
     let mut body = String::new();
     body.push_str("<h1>Apex Documentation</h1>\n");
     body.push_str(&format!(
-        "<p class=\"summary\">Generated documentation for {} class(es), {} trigger(s), {} flow(s), and {} validation rule(s).</p>\n",
+        "<p class=\"summary\">Generated documentation for {} class(es), {} trigger(s), {} flow(s), {} validation rule(s), and {} object(s).</p>\n",
         class_contexts.len(),
         trigger_contexts.len(),
         flow_contexts.len(),
         validation_rule_contexts.len(),
+        object_contexts.len(),
     ));
 
     if !class_contexts.is_empty() {
@@ -1072,6 +1370,30 @@ fn render_index(
         }
     }
 
+    if !object_contexts.is_empty() {
+        let mut obj_sorted: Vec<&ObjectRenderContext> = object_contexts.iter().collect();
+        obj_sorted.sort_by(|a, b| a.metadata.object_name.cmp(&b.metadata.object_name));
+
+        body.push_str("<h2>Objects</h2>\n");
+        body.push_str("<table><thead><tr><th>Object</th><th>Label</th><th>Fields</th><th>Summary</th></tr></thead><tbody>\n");
+        for ctx in obj_sorted {
+            let label = if ctx.documentation.label.is_empty() {
+                ctx.metadata.object_name.as_str()
+            } else {
+                ctx.documentation.label.as_str()
+            };
+            body.push_str(&format!(
+                "<tr><td><a href=\"objects/{}.html\">{}</a></td><td>{}</td><td>{}</td><td>{}</td></tr>\n",
+                escape(&ctx.metadata.object_name),
+                escape(&ctx.metadata.object_name),
+                escape(label),
+                ctx.metadata.fields.len(),
+                escape(&ctx.documentation.summary),
+            ));
+        }
+        body.push_str("</tbody></table>\n");
+    }
+
     wrap_page(
         "Overview",
         "sfdoc",
@@ -1082,6 +1404,7 @@ fn render_index(
         &trigger_items,
         &flow_items,
         &vr_items,
+        &obj_items,
     )
 }
 
@@ -1100,12 +1423,14 @@ fn wrap_page(
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
     vr_items: &[(&str, &str)],
+    obj_items: &[(&str, &str)],
 ) -> String {
     let sidebar = render_sidebar(
         class_items,
         trigger_items,
         flow_items,
         vr_items,
+        obj_items,
         active,
         up_prefix,
     );
@@ -1136,6 +1461,7 @@ fn render_sidebar(
     trigger_items: &[(&str, &str)],
     flow_items: &[(&str, &str)],
     vr_items: &[(&str, &str)],
+    obj_items: &[(&str, &str)],
     active: &str,
     up_prefix: &str,
 ) -> String {
@@ -1291,6 +1617,28 @@ fn render_sidebar(
             }
             s.push_str("</ul>\n");
         }
+        s.push_str("</div>\n");
+    }
+
+    if !obj_items.is_empty() {
+        let mut names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
+        names.sort_unstable();
+
+        s.push_str("<div class=\"sidebar-section\">\n");
+        s.push_str("<div class=\"sidebar-heading\">Objects</div>\n");
+        s.push_str("<ul>\n");
+        for name in names {
+            let cls = if name == active {
+                " class=\"active\""
+            } else {
+                ""
+            };
+            s.push_str(&format!(
+                "<li><a href=\"{up_prefix}objects/{name}.html\"{cls}>{}</a></li>\n",
+                escape(name)
+            ));
+        }
+        s.push_str("</ul>\n");
         s.push_str("</div>\n");
     }
 

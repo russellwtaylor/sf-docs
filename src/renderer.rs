@@ -6,7 +6,8 @@ use std::sync::Arc;
 use crate::cli::OutputFormat;
 use crate::types::{
     AllNames, ClassDocumentation, ClassMetadata, FlowDocumentation, FlowMetadata,
-    TriggerDocumentation, TriggerMetadata, ValidationRuleDocumentation, ValidationRuleMetadata,
+    ObjectDocumentation, ObjectMetadata, TriggerDocumentation, TriggerMetadata,
+    ValidationRuleDocumentation, ValidationRuleMetadata,
 };
 
 pub struct RenderContext {
@@ -41,6 +42,13 @@ pub struct ValidationRuleRenderContext {
     pub folder: String,
 }
 
+pub struct ObjectRenderContext {
+    pub metadata: ObjectMetadata,
+    pub documentation: ObjectDocumentation,
+    pub all_names: Arc<AllNames>,
+    pub folder: String,
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -58,6 +66,8 @@ fn cross_link_md(name: &str, all_names: &AllNames, from_type: &str) -> String {
         "flow"
     } else if all_names.validation_rule_names.iter().any(|n| n == name) {
         "validation_rule"
+    } else if all_names.object_names.iter().any(|n| n == name) {
+        "object"
     } else {
         // Unknown name — no link generated (caller filters via `known` set).
         return format!("{name}.md");
@@ -67,6 +77,7 @@ fn cross_link_md(name: &str, all_names: &AllNames, from_type: &str) -> String {
         "class" => "classes",
         "trigger" => "triggers",
         "flow" => "flows",
+        "object" => "objects",
         _ => "validation-rules",
     };
 
@@ -588,20 +599,131 @@ pub fn render_validation_rule_page(ctx: &ValidationRuleRenderContext) -> String 
     out
 }
 
+pub fn render_object_page(ctx: &ObjectRenderContext) -> String {
+    let doc = &ctx.documentation;
+    let meta = &ctx.metadata;
+    let known: HashSet<&str> = ctx
+        .all_names
+        .class_names
+        .iter()
+        .chain(ctx.all_names.trigger_names.iter())
+        .chain(ctx.all_names.flow_names.iter())
+        .chain(ctx.all_names.validation_rule_names.iter())
+        .chain(ctx.all_names.object_names.iter())
+        .map(|s| s.as_str())
+        .collect();
+
+    let mut out = String::new();
+
+    // Title + subtitle
+    let label = if doc.label.is_empty() {
+        meta.object_name.as_str()
+    } else {
+        doc.label.as_str()
+    };
+    out.push_str(&format!("# {label}\n\n"));
+    out.push_str(&format!("`object` · `{}`\n\n", meta.object_name));
+
+    // Summary
+    out.push_str(&format!("{}\n\n", doc.summary));
+
+    // Purpose
+    if !doc.purpose.is_empty() {
+        out.push_str("## Purpose\n\n");
+        out.push_str(&doc.purpose);
+        out.push_str("\n\n");
+    }
+
+    // Description
+    if !doc.description.is_empty() {
+        out.push_str("## Description\n\n");
+        out.push_str(&doc.description);
+        out.push_str("\n\n");
+    }
+
+    // Fields table
+    if !meta.fields.is_empty() {
+        out.push_str("## Fields\n\n");
+        out.push_str("| API Name | Type | Label | Required |\n");
+        out.push_str("|----------|------|-------|----------|\n");
+        for field in &meta.fields {
+            let type_str = if field.field_type == "Lookup" || field.field_type == "MasterDetail" {
+                if field.reference_to.is_empty() {
+                    field.field_type.clone()
+                } else {
+                    format!("{} → `{}`", field.field_type, field.reference_to)
+                }
+            } else {
+                field.field_type.clone()
+            };
+            out.push_str(&format!(
+                "| `{}` | {} | {} | {} |\n",
+                field.api_name,
+                type_str,
+                field.label,
+                if field.required { "Yes" } else { "No" },
+            ));
+        }
+        out.push('\n');
+    }
+
+    // Key Fields (AI-curated highlights)
+    if !doc.key_fields.is_empty() {
+        out.push_str("## Key Fields\n\n");
+        for f in &doc.key_fields {
+            out.push_str(&format!("- {f}\n"));
+        }
+        out.push('\n');
+    }
+
+    // Admin Notes
+    if !doc.admin_notes.is_empty() {
+        out.push_str("## Admin Notes\n\n");
+        for note in &doc.admin_notes {
+            out.push_str(&format!("- {note}\n"));
+        }
+        out.push('\n');
+    }
+
+    // See Also (cross-linked relationships)
+    let see_also: Vec<String> = doc
+        .relationships
+        .iter()
+        .filter_map(|rel| {
+            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+                let link = cross_link_md(name, &ctx.all_names, "object");
+                format!("[{name}]({link}) — {rel}")
+            })
+        })
+        .collect();
+
+    if !see_also.is_empty() {
+        out.push_str("## See Also\n\n");
+        for link in see_also {
+            out.push_str(&format!("- {link}\n"));
+        }
+        out.push('\n');
+    }
+
+    out
+}
+
 pub fn render_index(
     class_contexts: &[RenderContext],
     trigger_contexts: &[TriggerRenderContext],
     flow_contexts: &[FlowRenderContext],
     validation_rule_contexts: &[ValidationRuleRenderContext],
+    object_contexts: &[ObjectRenderContext],
 ) -> String {
     let mut out = String::new();
     out.push_str("# Apex Documentation Index\n\n");
     out.push_str(&format!(
-        "Generated documentation for {} class(es), {} trigger(s), {} flow(s), and {} validation rule(s).\n\n",
+        "Generated documentation for {} class(es), {} trigger(s), {} flow(s), {} validation rule(s), and {} object(s).\n\n",
         class_contexts.len(),
         trigger_contexts.len(),
         flow_contexts.len(),
         validation_rule_contexts.len(),
+        object_contexts.len(),
     ));
 
     // Group classes by folder, sorted alphabetically within each group.
@@ -751,6 +873,31 @@ pub fn render_index(
         }
     }
 
+    if !object_contexts.is_empty() {
+        let mut obj_sorted: Vec<&ObjectRenderContext> = object_contexts.iter().collect();
+        obj_sorted.sort_by(|a, b| a.metadata.object_name.cmp(&b.metadata.object_name));
+
+        out.push_str("## Objects\n\n");
+        out.push_str("| Object | Label | Fields | Summary |\n");
+        out.push_str("|--------|-------|--------|---------|\n");
+        for ctx in obj_sorted {
+            let label = if ctx.documentation.label.is_empty() {
+                ctx.metadata.object_name.as_str()
+            } else {
+                ctx.documentation.label.as_str()
+            };
+            out.push_str(&format!(
+                "| [{}](objects/{}.md) | {} | {} | {} |\n",
+                ctx.metadata.object_name,
+                sanitize_filename(&ctx.metadata.object_name),
+                label,
+                ctx.metadata.fields.len(),
+                ctx.documentation.summary,
+            ));
+        }
+        out.push('\n');
+    }
+
     out
 }
 
@@ -761,6 +908,7 @@ pub fn write_output(
     trigger_contexts: &[TriggerRenderContext],
     flow_contexts: &[FlowRenderContext],
     validation_rule_contexts: &[ValidationRuleRenderContext],
+    object_contexts: &[ObjectRenderContext],
 ) -> Result<()> {
     if *format == OutputFormat::Html {
         return crate::html_renderer::write_html_output(
@@ -769,6 +917,7 @@ pub fn write_output(
             trigger_contexts,
             flow_contexts,
             validation_rule_contexts,
+            object_contexts,
         );
     }
 
@@ -776,6 +925,7 @@ pub fn write_output(
     let triggers_dir = output_dir.join("triggers");
     let flows_dir = output_dir.join("flows");
     let vr_dir = output_dir.join("validation-rules");
+    let objects_dir = output_dir.join("objects");
 
     std::fs::create_dir_all(output_dir)?;
     if !class_contexts.is_empty() {
@@ -789,6 +939,9 @@ pub fn write_output(
     }
     if !validation_rule_contexts.is_empty() {
         std::fs::create_dir_all(&vr_dir)?;
+    }
+    if !object_contexts.is_empty() {
+        std::fs::create_dir_all(&objects_dir)?;
     }
 
     for ctx in class_contexts {
@@ -829,11 +982,23 @@ pub fn write_output(
         )?;
     }
 
+    for ctx in object_contexts {
+        let page = render_object_page(ctx);
+        std::fs::write(
+            objects_dir.join(format!(
+                "{}.md",
+                sanitize_filename(&ctx.metadata.object_name)
+            )),
+            page,
+        )?;
+    }
+
     let index = render_index(
         class_contexts,
         trigger_contexts,
         flow_contexts,
         validation_rule_contexts,
+        object_contexts,
     );
     std::fs::write(output_dir.join("index.md"), index)?;
 
@@ -955,6 +1120,7 @@ mod tests {
                 trigger_names: vec![],
                 flow_names: vec![],
                 validation_rule_names: vec![],
+                object_names: vec![],
             }),
             folder: "classes".to_string(),
         }
@@ -1003,7 +1169,7 @@ mod tests {
     #[test]
     fn index_contains_all_classes() {
         let ctx = sample_context();
-        let index = render_index(&[ctx], &[], &[], &[]);
+        let index = render_index(&[ctx], &[], &[], &[], &[]);
         assert!(index.contains("# Apex Documentation Index"));
         assert!(index.contains("[AccountService](classes/AccountService.md)"));
         assert!(index.contains("Handles account processing operations."));
@@ -1033,6 +1199,7 @@ mod tests {
             tmp.path(),
             &crate::cli::OutputFormat::Markdown,
             &[ctx],
+            &[],
             &[],
             &[],
             &[],

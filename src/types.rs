@@ -53,6 +53,7 @@ pub struct AllNames {
     pub trigger_names: Vec<String>,
     pub flow_names: Vec<String>,
     pub validation_rule_names: Vec<String>,
+    pub object_names: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -217,6 +218,45 @@ pub struct ValidationRuleMetadata {
     pub error_condition_formula: String,
     pub error_display_field: String,
     pub error_message: String,
+}
+
+// ---------------------------------------------------------------------------
+// Object types
+// ---------------------------------------------------------------------------
+
+/// A single field on a Salesforce custom object.
+#[derive(Debug, Clone, Default)]
+pub struct ObjectField {
+    pub api_name: String,
+    pub label: String,
+    pub field_type: String,
+    pub description: String,
+    pub help_text: String,
+    /// For Lookup/MasterDetail fields: the target object API name.
+    pub reference_to: String,
+    pub required: bool,
+}
+
+/// Structural metadata extracted from a Salesforce Custom Object.
+#[derive(Debug, Clone, Default)]
+pub struct ObjectMetadata {
+    pub object_name: String,
+    pub label: String,
+    pub description: String,
+    pub fields: Vec<ObjectField>,
+}
+
+/// AI-generated documentation for a Salesforce Custom Object.
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct ObjectDocumentation {
+    pub object_name: String,
+    pub label: String,
+    pub summary: String,
+    pub description: String,
+    pub purpose: String,
+    pub key_fields: Vec<String>,
+    pub relationships: Vec<String>,
+    pub admin_notes: Vec<String>,
 }
 
 /// AI-generated documentation for a Salesforce Validation Rule.

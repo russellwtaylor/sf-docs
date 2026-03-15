@@ -5,6 +5,8 @@ pub mod flow_parser;
 pub mod flow_prompt;
 pub mod gemini;
 pub mod html_renderer;
+pub mod object_parser;
+pub mod object_prompt;
 pub mod openai_compat;
 pub mod parser;
 pub mod prompt;
