@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::cli::OutputFormat;
 use crate::types::{
     AllNames, ClassDocumentation, ClassMetadata, FlowDocumentation, FlowMetadata,
-    TriggerDocumentation, TriggerMetadata,
+    TriggerDocumentation, TriggerMetadata, ValidationRuleDocumentation, ValidationRuleMetadata,
 };
 
 pub struct RenderContext {
@@ -33,27 +33,41 @@ pub struct FlowRenderContext {
     pub folder: String,
 }
 
+pub struct ValidationRuleRenderContext {
+    pub metadata: ValidationRuleMetadata,
+    pub documentation: ValidationRuleDocumentation,
+    pub all_names: Arc<AllNames>,
+    /// Set to `object_name` for grouping by object in the index.
+    pub folder: String,
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /// Returns the relative markdown link path from a page of `from_type` to a page named `name`.
 ///
-/// `from_type` is one of `"class"`, `"trigger"`, or `"flow"`.
+/// `from_type` is one of `"class"`, `"trigger"`, `"flow"`, or `"validation_rule"`.
 /// The function inspects `all_names` to determine which type `name` belongs to.
 fn cross_link_md(name: &str, all_names: &AllNames, from_type: &str) -> String {
     let to_type = if all_names.class_names.iter().any(|n| n == name) {
         "class"
     } else if all_names.trigger_names.iter().any(|n| n == name) {
         "trigger"
-    } else {
+    } else if all_names.flow_names.iter().any(|n| n == name) {
         "flow"
+    } else if all_names.validation_rule_names.iter().any(|n| n == name) {
+        "validation_rule"
+    } else {
+        // Unknown name — no link generated (caller filters via `known` set).
+        return format!("{name}.md");
     };
 
     let type_dir = match to_type {
         "class" => "classes",
         "trigger" => "triggers",
-        _ => "flows",
+        "flow" => "flows",
+        _ => "validation-rules",
     };
 
     if to_type == from_type {
@@ -469,18 +483,125 @@ pub fn render_flow_page(ctx: &FlowRenderContext) -> String {
     out
 }
 
+pub fn render_validation_rule_page(ctx: &ValidationRuleRenderContext) -> String {
+    let doc = &ctx.documentation;
+    let meta = &ctx.metadata;
+    let known: HashSet<&str> = ctx
+        .all_names
+        .class_names
+        .iter()
+        .chain(ctx.all_names.trigger_names.iter())
+        .chain(ctx.all_names.flow_names.iter())
+        .chain(ctx.all_names.validation_rule_names.iter())
+        .map(|s| s.as_str())
+        .collect();
+
+    let mut out = String::new();
+
+    // Title + subtitle
+    out.push_str(&format!("# {}\n\n", meta.rule_name));
+    out.push_str(&format!(
+        "`validation-rule` · `on {}` · {}\n\n",
+        meta.object_name,
+        if meta.active {
+            "`active`"
+        } else {
+            "`inactive`"
+        }
+    ));
+
+    // Summary
+    out.push_str(&format!("{}\n\n", doc.summary));
+
+    // Table of Contents
+    out.push_str("## Table of Contents\n\n");
+    out.push_str("- [When It Fires](#when-it-fires)\n");
+    out.push_str("- [What It Protects](#what-it-protects)\n");
+    out.push_str("- [Error Condition Formula](#error-condition-formula)\n");
+    out.push_str("- [Formula Explanation](#formula-explanation)\n");
+    out.push_str("- [Error Message](#error-message)\n");
+    if !doc.edge_cases.is_empty() {
+        out.push_str("- [Edge Cases](#edge-cases)\n");
+    }
+    out.push('\n');
+
+    // When It Fires
+    out.push_str("## When It Fires\n\n");
+    out.push_str(&doc.when_fires);
+    out.push_str("\n\n");
+
+    // What It Protects
+    out.push_str("## What It Protects\n\n");
+    out.push_str(&doc.what_protects);
+    out.push_str("\n\n");
+
+    // Error Condition Formula
+    out.push_str("## Error Condition Formula\n\n");
+    out.push_str("```\n");
+    out.push_str(&meta.error_condition_formula);
+    out.push_str("\n```\n\n");
+
+    // Formula Explanation
+    out.push_str("## Formula Explanation\n\n");
+    out.push_str(&doc.formula_explanation);
+    out.push_str("\n\n");
+
+    // Error Message
+    out.push_str("## Error Message\n\n");
+    out.push_str(&format!("> {}\n\n", meta.error_message));
+    if !meta.error_display_field.is_empty() {
+        out.push_str(&format!(
+            "**Displayed on field:** `{}`\n\n",
+            meta.error_display_field
+        ));
+    }
+
+    // Edge Cases
+    if !doc.edge_cases.is_empty() {
+        out.push_str("## Edge Cases\n\n");
+        for case in &doc.edge_cases {
+            out.push_str(&format!("- {case}\n"));
+        }
+        out.push('\n');
+    }
+
+    // See Also (cross-linked relationships)
+    let see_also: Vec<String> = doc
+        .relationships
+        .iter()
+        .filter_map(|rel| {
+            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+                let link = cross_link_md(name, &ctx.all_names, "validation_rule");
+                format!("[{name}]({link}) — {rel}")
+            })
+        })
+        .collect();
+
+    if !see_also.is_empty() {
+        out.push_str("## See Also\n\n");
+        for link in see_also {
+            out.push_str(&format!("- {link}\n"));
+        }
+        out.push('\n');
+    }
+
+    out
+}
+
 pub fn render_index(
     class_contexts: &[RenderContext],
     trigger_contexts: &[TriggerRenderContext],
     flow_contexts: &[FlowRenderContext],
+    validation_rule_contexts: &[ValidationRuleRenderContext],
 ) -> String {
     let mut out = String::new();
     out.push_str("# Apex Documentation Index\n\n");
     out.push_str(&format!(
-        "Generated documentation for {} class(es), {} trigger(s), and {} flow(s).\n\n",
+        "Generated documentation for {} class(es), {} trigger(s), {} flow(s), and {} validation rule(s).\n\n",
         class_contexts.len(),
         trigger_contexts.len(),
         flow_contexts.len(),
+        validation_rule_contexts.len(),
     ));
 
     // Group classes by folder, sorted alphabetically within each group.
@@ -589,6 +710,47 @@ pub fn render_index(
         }
     }
 
+    if !validation_rule_contexts.is_empty() {
+        // Group validation rules by object_name (stored in folder), sorted within each group.
+        let mut vr_by_folder: BTreeMap<&str, Vec<&ValidationRuleRenderContext>> = BTreeMap::new();
+        for ctx in validation_rule_contexts {
+            vr_by_folder
+                .entry(ctx.folder.as_str())
+                .or_default()
+                .push(ctx);
+        }
+        for group in vr_by_folder.values_mut() {
+            group.sort_by(|a, b| a.metadata.rule_name.cmp(&b.metadata.rule_name));
+        }
+
+        out.push_str("## Validation Rules\n\n");
+        let multi_vr_folder = vr_by_folder.len() > 1;
+        for (folder, rules) in &vr_by_folder {
+            if multi_vr_folder {
+                let label = if folder.is_empty() { "(root)" } else { folder };
+                out.push_str(&format!("### {label}\n\n"));
+            }
+            out.push_str("| Rule | Object | Status | Summary |\n");
+            out.push_str("|------|--------|--------|---------|\n");
+            for ctx in rules {
+                let status = if ctx.metadata.active {
+                    "active"
+                } else {
+                    "inactive"
+                };
+                out.push_str(&format!(
+                    "| [{}](validation-rules/{}.md) | `{}` | {} | {} |\n",
+                    ctx.metadata.rule_name,
+                    sanitize_filename(&ctx.metadata.rule_name),
+                    ctx.metadata.object_name,
+                    status,
+                    ctx.documentation.summary,
+                ));
+            }
+            out.push('\n');
+        }
+    }
+
     out
 }
 
@@ -598,6 +760,7 @@ pub fn write_output(
     class_contexts: &[RenderContext],
     trigger_contexts: &[TriggerRenderContext],
     flow_contexts: &[FlowRenderContext],
+    validation_rule_contexts: &[ValidationRuleRenderContext],
 ) -> Result<()> {
     if *format == OutputFormat::Html {
         return crate::html_renderer::write_html_output(
@@ -605,12 +768,14 @@ pub fn write_output(
             class_contexts,
             trigger_contexts,
             flow_contexts,
+            validation_rule_contexts,
         );
     }
 
     let classes_dir = output_dir.join("classes");
     let triggers_dir = output_dir.join("triggers");
     let flows_dir = output_dir.join("flows");
+    let vr_dir = output_dir.join("validation-rules");
 
     std::fs::create_dir_all(output_dir)?;
     if !class_contexts.is_empty() {
@@ -621,6 +786,9 @@ pub fn write_output(
     }
     if !flow_contexts.is_empty() {
         std::fs::create_dir_all(&flows_dir)?;
+    }
+    if !validation_rule_contexts.is_empty() {
+        std::fs::create_dir_all(&vr_dir)?;
     }
 
     for ctx in class_contexts {
@@ -653,7 +821,20 @@ pub fn write_output(
         )?;
     }
 
-    let index = render_index(class_contexts, trigger_contexts, flow_contexts);
+    for ctx in validation_rule_contexts {
+        let page = render_validation_rule_page(ctx);
+        std::fs::write(
+            vr_dir.join(format!("{}.md", sanitize_filename(&ctx.metadata.rule_name))),
+            page,
+        )?;
+    }
+
+    let index = render_index(
+        class_contexts,
+        trigger_contexts,
+        flow_contexts,
+        validation_rule_contexts,
+    );
     std::fs::write(output_dir.join("index.md"), index)?;
 
     Ok(())
@@ -773,6 +954,7 @@ mod tests {
                 class_names: vec!["AccountService".to_string(), "AccountRepository".to_string()],
                 trigger_names: vec![],
                 flow_names: vec![],
+                validation_rule_names: vec![],
             }),
             folder: "classes".to_string(),
         }
@@ -821,7 +1003,7 @@ mod tests {
     #[test]
     fn index_contains_all_classes() {
         let ctx = sample_context();
-        let index = render_index(&[ctx], &[], &[]);
+        let index = render_index(&[ctx], &[], &[], &[]);
         assert!(index.contains("# Apex Documentation Index"));
         assert!(index.contains("[AccountService](classes/AccountService.md)"));
         assert!(index.contains("Handles account processing operations."));
@@ -851,6 +1033,7 @@ mod tests {
             tmp.path(),
             &crate::cli::OutputFormat::Markdown,
             &[ctx],
+            &[],
             &[],
             &[],
         )

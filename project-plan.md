@@ -53,7 +53,7 @@ todos:
       status: done
     - id: validation-rules
       content: "Phase 17: Validation Rule documentation — XML scanner/parser, formula explanation, per-object grouping"
-      status: pending
+      status: done
     - id: custom-objects
       content: "Phase 18: Custom Object documentation — object/field metadata, link validation rules, flows, Apex"
       status: pending
@@ -99,9 +99,11 @@ flowchart LR
     subgraph input [Input — SFDX Project]
         Cls[".cls files"]
         Trg[".trigger files"]
+        Flw[".flow-meta.xml"]
+        VR[".validationRule-meta.xml"]
     end
 
-    Cls & Trg --> Scanner
+    Cls & Trg & Flw & VR --> Scanner
 ```
 
 ---
@@ -116,18 +118,22 @@ sfdoc/
     cli.rs                # clap CLI definitions (Commands, GenerateArgs, AuthArgs)
     config.rs             # API key storage and resolution (keychain + env var)
     providers.rs          # Provider enum — default models, env vars, base URLs
-    scanner.rs            # File discovery (FileScanner trait, ApexScanner, TriggerScanner)
-    parser.rs             # Regex-based Apex class structural parser
-    trigger_parser.rs     # Apex trigger structural parser
-    prompt.rs             # AI prompt construction for Apex classes
-    trigger_prompt.rs     # AI prompt construction for Apex triggers
-    gemini.rs             # Google Gemini API client
-    openai_compat.rs      # OpenAI-compatible client (Groq, OpenAI, Ollama)
-    retry.rs              # Exponential backoff with Retry-After header support
-    renderer.rs           # Markdown generation and cross-linking
-    html_renderer.rs      # Self-contained HTML site generator
-    cache.rs              # SHA-256 incremental build cache (.sfdoc-cache.json)
-    types.rs              # Shared data structures (ApexFile, ClassMetadata, etc.)
+    scanner.rs                    # File discovery (FileScanner trait and all scanners)
+    parser.rs                     # Regex-based Apex class structural parser
+    trigger_parser.rs             # Apex trigger structural parser
+    flow_parser.rs                # Salesforce Flow XML structural parser (quick-xml)
+    validation_rule_parser.rs     # Salesforce Validation Rule XML structural parser
+    prompt.rs                     # AI prompt construction for Apex classes
+    trigger_prompt.rs             # AI prompt construction for Apex triggers
+    flow_prompt.rs                # AI prompt construction for Flows
+    validation_rule_prompt.rs     # AI prompt construction for Validation Rules
+    gemini.rs                     # Google Gemini API client
+    openai_compat.rs              # OpenAI-compatible client (Groq, OpenAI, Ollama)
+    retry.rs                      # Exponential backoff with Retry-After header support
+    renderer.rs                   # Markdown generation and cross-linking
+    html_renderer.rs              # Self-contained HTML site generator
+    cache.rs                      # SHA-256 incremental build cache (.sfdoc-cache.json)
+    types.rs                      # Shared data structures (ApexFile, ClassMetadata, etc.)
   README.md
   project-plan.md
 ```
@@ -254,6 +260,17 @@ sfdoc/
 - HTML index groups with `<h3>` headings per folder group
 - HTML sidebar groups entries by folder with subtle uppercase folder labels; single-folder projects remain flat
 - Markdown output defaults to `docs/`, HTML output defaults to `site/` — both formats coexist without overwriting each other; `--output` overrides the default for either format
+
+### Phase 17: Validation Rule Documentation ✅
+
+- `ValidationRuleScanner` — discovers `*.validationRule-meta.xml` under the `objects/` subtree; sorted by path for deterministic output
+- `validation_rule_parser.rs` — streaming quick-xml parser that extracts rule name (from filename), object name (from directory structure), active status, description, error condition formula (including multi-line), error display field, and error message; returns proper errors on invalid UTF-8 instead of silently substituting empty strings
+- `ValidationRuleMetadata` and `ValidationRuleDocumentation` types in `types.rs`
+- `validation_rule_prompt.rs` — dedicated AI prompt asking for: one-sentence summary, when the rule fires (admin-friendly), what data-quality concern it protects, step-by-step formula explanation, edge cases, and referenced fields/objects
+- Renderer template per rule: active/inactive badge, formula code block, error message, AI description, edge cases, See Also cross-links
+- Per-object grouping in the Markdown and HTML index; inactive rules clearly flagged; output to `validation-rules/` subdirectory
+- `AllNames.validation_rule_names` added for full cross-linking across all four asset types
+- Cache support: `validation_rule_entries` map with hash + model invalidation, backward-compatible with old cache files
 
 ---
 

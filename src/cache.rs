@@ -5,7 +5,9 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::path::Path;
 
-use crate::types::{ClassDocumentation, FlowDocumentation, TriggerDocumentation};
+use crate::types::{
+    ClassDocumentation, FlowDocumentation, TriggerDocumentation, ValidationRuleDocumentation,
+};
 
 const CACHE_FILE: &str = ".sfdoc-cache.json";
 
@@ -24,6 +26,10 @@ pub struct Cache {
     /// cache files written before flow support was added.
     #[serde(default)]
     flow_entries: HashMap<String, FlowCacheEntry>,
+    /// Validation rule entries are in a separate map so the field can be absent in
+    /// cache files written before validation rule support was added.
+    #[serde(default)]
+    validation_rule_entries: HashMap<String, ValidationRuleCacheEntry>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -41,6 +47,13 @@ pub struct FlowCacheEntry {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+pub struct ValidationRuleCacheEntry {
+    pub hash: String,
+    pub model: String,
+    pub documentation: ValidationRuleDocumentation,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct CacheEntry {
     pub hash: String,
     pub model: String,
@@ -54,7 +67,14 @@ impl Cache {
         let path = output_dir.join(CACHE_FILE);
         let data = match std::fs::read_to_string(&path) {
             Ok(d) => d,
-            Err(_) => return Self::default(), // file missing or unreadable — silent, normal first run
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Self::default(),
+            Err(e) => {
+                eprintln!(
+                    "Warning: could not read cache file at {}: {e}",
+                    path.display()
+                );
+                return Self::default();
+            }
         };
         match serde_json::from_str(&data) {
             Ok(cache) => cache,
@@ -166,6 +186,36 @@ impl Cache {
             },
         );
     }
+
+    /// Returns the cached validation rule entry if hash and model both match.
+    pub fn get_validation_rule_if_fresh<'a>(
+        &'a self,
+        key: &str,
+        hash: &str,
+        model: &str,
+    ) -> Option<&'a ValidationRuleCacheEntry> {
+        self.validation_rule_entries
+            .get(key)
+            .filter(|e| e.hash == hash && e.model == model)
+    }
+
+    /// Insert or update a validation rule entry after a successful API call.
+    pub fn update_validation_rule(
+        &mut self,
+        key: String,
+        hash: String,
+        model: &str,
+        documentation: ValidationRuleDocumentation,
+    ) {
+        self.validation_rule_entries.insert(
+            key,
+            ValidationRuleCacheEntry {
+                hash,
+                model: model.to_owned(),
+                documentation,
+            },
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -177,7 +227,7 @@ pub fn hash_source(source: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(source.as_bytes());
     hasher.finalize().iter().fold(String::new(), |mut s, b| {
-        write!(s, "{b:02x}").unwrap();
+        let _ = write!(s, "{b:02x}");
         s
     })
 }

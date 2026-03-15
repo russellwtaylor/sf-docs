@@ -1,5 +1,6 @@
 use sfdoc::{
     cache, cli, config, flow_parser, gemini, openai_compat, parser, providers, renderer, scanner,
+    validation_rule_parser,
 };
 use sfdoc::{trigger_parser, types};
 
@@ -17,8 +18,11 @@ use config::{delete_api_key, has_stored_key, resolve_api_key, save_api_key};
 use gemini::GeminiClient;
 use openai_compat::OpenAiCompatClient;
 use providers::Provider;
-use scanner::{ApexScanner, FileScanner, FlowScanner, TriggerScanner};
-use types::{AllNames, ApexFile, ClassDocumentation, FlowDocumentation, TriggerDocumentation};
+use scanner::{ApexScanner, FileScanner, FlowScanner, TriggerScanner, ValidationRuleScanner};
+use types::{
+    AllNames, ApexFile, ClassDocumentation, FlowDocumentation, TriggerDocumentation,
+    ValidationRuleDocumentation,
+};
 
 /// Unified client enum for dispatch without dynamic dispatch overhead.
 enum DocClient {
@@ -59,6 +63,17 @@ impl DocClient {
             DocClient::OpenAiCompat(c) => c.document_flow(file, metadata).await,
         }
     }
+
+    async fn document_validation_rule(
+        &self,
+        file: &ApexFile,
+        metadata: &types::ValidationRuleMetadata,
+    ) -> Result<ValidationRuleDocumentation> {
+        match self {
+            DocClient::Gemini(c) => c.document_validation_rule(file, metadata).await,
+            DocClient::OpenAiCompat(c) => c.document_validation_rule(file, metadata).await,
+        }
+    }
 }
 
 #[tokio::main]
@@ -95,37 +110,54 @@ async fn main() -> Result<()> {
                 eprintln!("Concurrency: {}", args.concurrency);
             }
 
-            // Scan for .cls files
+            // Scan for all supported source types.
             let scanner = ApexScanner;
             let files = scanner
                 .scan(&args.source_dir)
                 .with_context(|| format!("Failed to scan {}", args.source_dir.display()))?;
+            let trigger_files = TriggerScanner.scan(&args.source_dir).with_context(|| {
+                format!("Failed to scan triggers in {}", args.source_dir.display())
+            })?;
+            let flow_files = FlowScanner.scan(&args.source_dir).with_context(|| {
+                format!("Failed to scan flows in {}", args.source_dir.display())
+            })?;
+            let vr_files = ValidationRuleScanner
+                .scan(&args.source_dir)
+                .with_context(|| {
+                    format!(
+                        "Failed to scan validation rules in {}",
+                        args.source_dir.display()
+                    )
+                })?;
 
-            if files.is_empty() {
-                anyhow::bail!("No .cls files found in {}", args.source_dir.display());
+            // Require at least one file of any supported type.
+            if files.is_empty()
+                && trigger_files.is_empty()
+                && flow_files.is_empty()
+                && vr_files.is_empty()
+            {
+                anyhow::bail!(
+                    "No supported source files found in {} (expected .cls, .trigger, .flow-meta.xml, or .validationRule-meta.xml)",
+                    args.source_dir.display()
+                );
             }
 
-            println!("Found {} Apex class file(s)", files.len());
+            if !files.is_empty() {
+                println!("Found {} Apex class file(s)", files.len());
+            }
             if args.verbose {
                 for f in &files {
                     eprintln!("  {}", f.path.display());
                 }
             }
-
-            // Scan for .trigger files (non-fatal if none found)
-            let trigger_files = TriggerScanner.scan(&args.source_dir).with_context(|| {
-                format!("Failed to scan triggers in {}", args.source_dir.display())
-            })?;
             if !trigger_files.is_empty() {
                 println!("Found {} Apex trigger file(s)", trigger_files.len());
             }
-
-            // Scan for .flow-meta.xml files (non-fatal if none found)
-            let flow_files = FlowScanner.scan(&args.source_dir).with_context(|| {
-                format!("Failed to scan flows in {}", args.source_dir.display())
-            })?;
             if !flow_files.is_empty() {
                 println!("Found {} Flow file(s)", flow_files.len());
+            }
+            if !vr_files.is_empty() {
+                println!("Found {} Validation Rule file(s)", vr_files.len());
             }
 
             // Parse classes, triggers, and flows in parallel using rayon.
@@ -147,6 +179,10 @@ async fn main() -> Result<()> {
                     flow_parser::parse_flow(api_name, &f.raw_source)
                 })
                 .collect::<Result<_>>()?;
+            let vr_meta: Vec<_> = vr_files
+                .par_iter()
+                .map(|f| validation_rule_parser::parse_validation_rule(&f.path, &f.raw_source))
+                .collect::<Result<_>>()?;
 
             // Wrap in Arc so task closures share the data without cloning raw_source.
             let files = Arc::new(files);
@@ -155,6 +191,8 @@ async fn main() -> Result<()> {
             let trigger_meta = Arc::new(trigger_meta);
             let flow_files = Arc::new(flow_files);
             let flow_meta = Arc::new(flow_meta);
+            let vr_files = Arc::new(vr_files);
+            let vr_meta = Arc::new(vr_meta);
 
             // Shared cross-linking index
             let all_names = Arc::new(AllNames {
@@ -164,6 +202,7 @@ async fn main() -> Result<()> {
                     .map(|m| m.trigger_name.clone())
                     .collect(),
                 flow_names: flow_meta.iter().map(|m| m.api_name.clone()).collect(),
+                validation_rule_names: vr_meta.iter().map(|m| m.rule_name.clone()).collect(),
             });
 
             // Load incremental build cache (empty if --force or first run)
@@ -183,6 +222,10 @@ async fn main() -> Result<()> {
                 .map(|f| cache::hash_source(&f.raw_source))
                 .collect();
             let flow_hashes: Vec<String> = flow_files
+                .par_iter()
+                .map(|f| cache::hash_source(&f.raw_source))
+                .collect();
+            let vr_hashes: Vec<String> = vr_files
                 .par_iter()
                 .map(|f| cache::hash_source(&f.raw_source))
                 .collect();
@@ -219,40 +262,57 @@ async fn main() -> Result<()> {
                 }
             }
 
+            let mut vr_work: Vec<usize> = Vec::new();
+            let mut vr_docs: Vec<Option<ValidationRuleDocumentation>> = vec![None; vr_files.len()];
+            for (i, (f, h)) in vr_files.iter().zip(vr_hashes.iter()).enumerate() {
+                if let Some(e) =
+                    cache.get_validation_rule_if_fresh(&f.path.to_string_lossy(), h, &model)
+                {
+                    vr_docs[i] = Some(e.documentation.clone());
+                } else {
+                    vr_work.push(i);
+                }
+            }
+
             let skipped = (files.len() - class_work.len())
                 + (trigger_files.len() - trigger_work.len())
-                + (flow_files.len() - flow_work.len());
+                + (flow_files.len() - flow_work.len())
+                + (vr_files.len() - vr_work.len());
             if skipped > 0 {
                 println!("{skipped} file(s) up-to-date — skipping API calls");
             }
 
-            if !class_work.is_empty() || !trigger_work.is_empty() || !flow_work.is_empty() {
+            if !class_work.is_empty()
+                || !trigger_work.is_empty()
+                || !flow_work.is_empty()
+                || !vr_work.is_empty()
+            {
                 let api_key = resolve_api_key(provider)?;
                 let client = match provider {
                     Provider::Gemini => DocClient::Gemini(Arc::new(GeminiClient::new(
                         api_key,
                         &model,
                         args.concurrency,
-                    ))),
+                    )?)),
                     _ => DocClient::OpenAiCompat(Arc::new(OpenAiCompatClient::new(
                         api_key,
                         &model,
                         provider.base_url(),
                         args.concurrency,
                         provider.display_name(),
-                    ))),
+                    )?)),
                 };
                 let client = Arc::new(client);
 
-                let total_work = (class_work.len() + trigger_work.len() + flow_work.len()) as u64;
+                let total_work =
+                    (class_work.len() + trigger_work.len() + flow_work.len() + vr_work.len())
+                        as u64;
                 let pb = Arc::new(ProgressBar::new(total_work));
-                pb.set_style(
-                    ProgressStyle::with_template(
-                        "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
-                    )
-                    .expect("invalid progress bar template")
-                    .progress_chars("#>-"),
-                );
+                if let Ok(style) = ProgressStyle::with_template(
+                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
+                ) {
+                    pb.set_style(style.progress_chars("#>-"));
+                }
 
                 // Unified work queue: classes and triggers race for the same concurrency
                 // slots, so the semaphore is never underutilised when one type dominates.
@@ -260,6 +320,7 @@ async fn main() -> Result<()> {
                     Class(usize, ClassDocumentation),
                     Trigger(usize, TriggerDocumentation),
                     Flow(usize, FlowDocumentation),
+                    ValidationRule(usize, ValidationRuleDocumentation),
                 }
 
                 let mut tasks: JoinSet<Result<WorkResult>> = JoinSet::new();
@@ -305,6 +366,20 @@ async fn main() -> Result<()> {
                     });
                 }
 
+                for &idx in &vr_work {
+                    let client = Arc::clone(&client);
+                    let vr_files = Arc::clone(&vr_files);
+                    let vr_meta = Arc::clone(&vr_meta);
+                    let pb_task = Arc::clone(&pb);
+                    tasks.spawn(async move {
+                        let doc = client
+                            .document_validation_rule(&vr_files[idx], &vr_meta[idx])
+                            .await?;
+                        pb_task.inc(1);
+                        Ok(WorkResult::ValidationRule(idx, doc))
+                    });
+                }
+
                 // Collect results as they complete (not in spawn order).
                 while let Some(res) = tasks.join_next().await {
                     match res {
@@ -341,6 +416,16 @@ async fn main() -> Result<()> {
                                 );
                                 flow_docs[idx] = Some(doc);
                             }
+                            WorkResult::ValidationRule(idx, doc) => {
+                                let key = vr_files[idx].path.to_string_lossy().into_owned();
+                                cache.update_validation_rule(
+                                    key,
+                                    vr_hashes[idx].clone(),
+                                    &model,
+                                    doc.clone(),
+                                );
+                                vr_docs[idx] = Some(doc);
+                            }
                         },
                     }
                 }
@@ -362,24 +447,18 @@ async fn main() -> Result<()> {
             }
 
             // Build render contexts (tasks are all done; Arc::try_unwrap reclaims the Vecs).
-            let files = Arc::try_unwrap(files).map_err(|_| {
-                anyhow::anyhow!("unexpected Arc alias on files after tasks completed")
-            })?;
-            let class_meta = Arc::try_unwrap(class_meta).map_err(|_| {
-                anyhow::anyhow!("unexpected Arc alias on class_meta after tasks completed")
-            })?;
-            let trigger_files = Arc::try_unwrap(trigger_files).map_err(|_| {
-                anyhow::anyhow!("unexpected Arc alias on trigger_files after tasks completed")
-            })?;
-            let trigger_meta = Arc::try_unwrap(trigger_meta).map_err(|_| {
-                anyhow::anyhow!("unexpected Arc alias on trigger_meta after tasks completed")
-            })?;
-            let flow_files = Arc::try_unwrap(flow_files).map_err(|_| {
-                anyhow::anyhow!("unexpected Arc alias on flow_files after tasks completed")
-            })?;
-            let flow_meta = Arc::try_unwrap(flow_meta).map_err(|_| {
-                anyhow::anyhow!("unexpected Arc alias on flow_meta after tasks completed")
-            })?;
+            const ARC_ERR: &str =
+                "Internal error: could not reclaim resources after documentation generation. Please retry.";
+            let files = Arc::try_unwrap(files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let class_meta = Arc::try_unwrap(class_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let trigger_files =
+                Arc::try_unwrap(trigger_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let trigger_meta =
+                Arc::try_unwrap(trigger_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let flow_files = Arc::try_unwrap(flow_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let flow_meta = Arc::try_unwrap(flow_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let vr_files = Arc::try_unwrap(vr_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+            let vr_meta = Arc::try_unwrap(vr_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
 
             let class_contexts: Vec<renderer::RenderContext> = files
                 .into_iter()
@@ -423,6 +502,20 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
+            let vr_contexts: Vec<renderer::ValidationRuleRenderContext> = vr_files
+                .into_iter()
+                .zip(vr_meta)
+                .zip(vr_docs)
+                .filter_map(|((_, meta), doc)| {
+                    doc.map(|d| renderer::ValidationRuleRenderContext {
+                        folder: meta.object_name.clone(),
+                        metadata: meta,
+                        documentation: d,
+                        all_names: Arc::clone(&all_names),
+                    })
+                })
+                .collect();
+
             // Render and write output
             renderer::write_output(
                 &output_dir,
@@ -430,6 +523,7 @@ async fn main() -> Result<()> {
                 &class_contexts,
                 &trigger_contexts,
                 &flow_contexts,
+                &vr_contexts,
             )?;
             println!("Documentation written to {}", output_dir.display());
 
