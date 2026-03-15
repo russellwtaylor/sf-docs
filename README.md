@@ -363,6 +363,94 @@ open docs/index.md
 - **CI/CD** — Set your provider's environment variable as a secret (`GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENAI_API_KEY`) and add `sfdoc generate` as a pipeline step. The incremental cache means only changed files are re-documented on each run.
 - **Custom layouts** — Use `--source-dir` if your classes are not under the default SFDX path.
 
+## GitHub Actions + GitHub Wiki
+
+You can automate documentation generation so every push to `main` regenerates your docs and publishes them to your repository's [GitHub Wiki](https://docs.github.com/en/communities/documenting-your-project-with-wikis).
+
+### Prerequisites
+
+1. **Enable the wiki** on your GitHub repo (Settings → Features → Wikis)
+2. **Create at least one wiki page** manually — GitHub doesn't create the wiki git repo until you do
+3. **Add your API key as a secret** (Settings → Secrets and variables → Actions):
+   - `GEMINI_API_KEY`, `GROQ_API_KEY`, or `OPENAI_API_KEY` depending on your provider
+
+### Workflow file
+
+Create `.github/workflows/generate-docs.yml` in your Salesforce repository:
+
+```yaml
+name: Generate SF Docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # allow manual runs from the Actions tab
+
+jobs:
+  generate-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install sfdoc
+        run: cargo install --git https://github.com/russellwtaylor/sf-docs sfdoc
+
+      - name: Generate docs
+        run: sfdoc generate --output wiki-output/
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Push to GitHub Wiki
+        run: |
+          git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git wiki
+          cp -r wiki-output/. wiki/
+          cd wiki
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Update docs from ${{ github.sha }}" || echo "No changes to commit"
+          git push
+```
+
+### Permissions
+
+`GITHUB_TOKEN` can push to the wiki by default. If the push step fails with a permissions error, go to Settings → Actions → General → Workflow permissions and select **Read and write permissions**.
+
+### Scheduling
+
+To regenerate docs on a schedule (e.g. nightly) instead of on every push, replace the `on:` block:
+
+```yaml
+on:
+  schedule:
+    - cron: '0 2 * * *'    # daily at 2 AM UTC
+  workflow_dispatch:
+```
+
+### Using a different provider
+
+Swap out the `env:` block and `--provider` flag in the generate step:
+
+```yaml
+      - name: Generate docs
+        run: sfdoc generate --output wiki-output/ --provider groq
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+```
+
 ## Project structure
 
 ```
