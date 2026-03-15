@@ -53,7 +53,7 @@ pub struct GenerateArgs {
     pub model: Option<String>,
 
     /// Maximum number of parallel API requests
-    #[arg(long, default_value_t = 3)]
+    #[arg(long, default_value_t = 3, value_parser = parse_concurrency)]
     pub concurrency: usize,
 
     /// Output format
@@ -67,6 +67,17 @@ pub struct GenerateArgs {
     /// Enable verbose logging
     #[arg(long, short)]
     pub verbose: bool,
+}
+
+fn parse_concurrency(s: &str) -> Result<usize, String> {
+    let n: usize = s
+        .parse()
+        .map_err(|_| format!("'{s}' is not a valid integer"))?;
+    if n == 0 {
+        Err("--concurrency must be at least 1".to_string())
+    } else {
+        Ok(n)
+    }
 }
 
 #[derive(clap::Args, Debug)]

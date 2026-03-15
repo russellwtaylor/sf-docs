@@ -85,21 +85,21 @@ pub struct AuraRenderContext {
 /// `from_type` is one of `"class"`, `"trigger"`, `"flow"`, or `"validation_rule"`.
 /// The function inspects `all_names` to determine which type `name` belongs to.
 fn cross_link_md(name: &str, all_names: &AllNames, from_type: &str) -> String {
-    let to_type = if all_names.class_names.iter().any(|n| n == name) {
+    let to_type = if all_names.class_names.contains(name) {
         "class"
-    } else if all_names.trigger_names.iter().any(|n| n == name) {
+    } else if all_names.trigger_names.contains(name) {
         "trigger"
-    } else if all_names.flow_names.iter().any(|n| n == name) {
+    } else if all_names.flow_names.contains(name) {
         "flow"
-    } else if all_names.validation_rule_names.iter().any(|n| n == name) {
+    } else if all_names.validation_rule_names.contains(name) {
         "validation_rule"
-    } else if all_names.object_names.iter().any(|n| n == name) {
+    } else if all_names.object_names.contains(name) {
         "object"
-    } else if all_names.lwc_names.iter().any(|n| n == name) {
+    } else if all_names.lwc_names.contains(name) {
         "lwc"
-    } else if all_names.flexipage_names.iter().any(|n| n == name) {
+    } else if all_names.flexipage_names.contains(name) {
         "flexipage"
-    } else if all_names.aura_names.iter().any(|n| n == name) {
+    } else if all_names.aura_names.contains(name) {
         "aura"
     } else {
         // Unknown name — no link generated (caller filters via `known` set).
@@ -1734,15 +1734,17 @@ mod tests {
                 relationships: vec!["AccountRepository is used for data access".to_string()],
             },
             all_names: Arc::new(AllNames {
-                class_names: vec!["AccountService".to_string(), "AccountRepository".to_string()],
-                trigger_names: vec![],
-                flow_names: vec![],
-                validation_rule_names: vec![],
-                object_names: vec![],
-                lwc_names: vec![],
-                flexipage_names: vec![],
-                aura_names: vec![],
-                custom_metadata_type_names: vec![],
+                class_names: ["AccountService".to_string(), "AccountRepository".to_string()]
+                    .into_iter()
+                    .collect(),
+                trigger_names: HashSet::new(),
+                flow_names: HashSet::new(),
+                validation_rule_names: HashSet::new(),
+                object_names: HashSet::new(),
+                lwc_names: HashSet::new(),
+                flexipage_names: HashSet::new(),
+                aura_names: HashSet::new(),
+                custom_metadata_type_names: HashSet::new(),
                 interface_implementors: std::collections::HashMap::new(),
             }),
             folder: "classes".to_string(),

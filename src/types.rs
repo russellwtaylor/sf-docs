@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::PathBuf;
 
 /// A discovered source file with its raw content (used for all file types).
@@ -51,15 +52,15 @@ pub struct PropertyMetadata {
 
 /// Shared cross-linking index passed to every render context.
 pub struct AllNames {
-    pub class_names: Vec<String>,
-    pub trigger_names: Vec<String>,
-    pub flow_names: Vec<String>,
-    pub validation_rule_names: Vec<String>,
-    pub object_names: Vec<String>,
-    pub lwc_names: Vec<String>,
-    pub flexipage_names: Vec<String>,
-    pub aura_names: Vec<String>,
-    pub custom_metadata_type_names: Vec<String>,
+    pub class_names: HashSet<String>,
+    pub trigger_names: HashSet<String>,
+    pub flow_names: HashSet<String>,
+    pub validation_rule_names: HashSet<String>,
+    pub object_names: HashSet<String>,
+    pub lwc_names: HashSet<String>,
+    pub flexipage_names: HashSet<String>,
+    pub aura_names: HashSet<String>,
+    pub custom_metadata_type_names: HashSet<String>,
     /// Maps interface name → Vec of class names that implement it.
     pub interface_implementors: std::collections::HashMap<String, Vec<String>>,
 }

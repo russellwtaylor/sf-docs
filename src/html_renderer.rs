@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use crate::renderer::{
     sanitize_filename, AuraRenderContext, CustomMetadataRenderContext, FlexiPageRenderContext,
@@ -396,8 +397,6 @@ fn render_class_page(
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
-    let _flexipage_names: Vec<&str> = flexipage_items.iter().map(|&(n, _)| n).collect();
-    let _aura_names: Vec<&str> = aura_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.class_name;
@@ -548,7 +547,8 @@ fn render_class_page(
                 .find(|&&name| rel.contains(name))
                 .map(|&name| {
                     format!(
-                        "<a href=\"{name}.html\">{}</a> — {}",
+                        "<a href=\"{}.html\">{}</a> — {}",
+                        escape(name),
                         escape(name),
                         escape(rel)
                     )
@@ -559,7 +559,8 @@ fn render_class_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../triggers/{name}.html\">{}</a> — {}",
+                                "<a href=\"../triggers/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -571,7 +572,8 @@ fn render_class_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../flows/{name}.html\">{}</a> — {}",
+                                "<a href=\"../flows/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -583,7 +585,8 @@ fn render_class_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../validation-rules/{name}.html\">{}</a> — {}",
+                                "<a href=\"../validation-rules/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -595,7 +598,8 @@ fn render_class_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../objects/{name}.html\">{}</a> — {}",
+                                "<a href=\"../objects/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -607,7 +611,8 @@ fn render_class_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../lwc/{name}.html\">{}</a> — {}",
+                                "<a href=\"../lwc/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -676,8 +681,6 @@ fn render_trigger_page(
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
-    let _flexipage_names: Vec<&str> = flexipage_items.iter().map(|&(n, _)| n).collect();
-    let _aura_names: Vec<&str> = aura_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.trigger_name;
@@ -751,7 +754,8 @@ fn render_trigger_page(
                 .find(|&&name| rel.contains(name))
                 .map(|&name| {
                     format!(
-                        "<a href=\"../classes/{name}.html\">{}</a> — {}",
+                        "<a href=\"../classes/{}.html\">{}</a> — {}",
+                        escape(name),
                         escape(name),
                         escape(rel)
                     )
@@ -762,7 +766,8 @@ fn render_trigger_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"{name}.html\">{}</a> — {}",
+                                "<a href=\"{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -774,7 +779,8 @@ fn render_trigger_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../flows/{name}.html\">{}</a> — {}",
+                                "<a href=\"../flows/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -786,7 +792,8 @@ fn render_trigger_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../validation-rules/{name}.html\">{}</a> — {}",
+                                "<a href=\"../validation-rules/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -798,7 +805,8 @@ fn render_trigger_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../objects/{name}.html\">{}</a> — {}",
+                                "<a href=\"../objects/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -810,7 +818,8 @@ fn render_trigger_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../lwc/{name}.html\">{}</a> — {}",
+                                "<a href=\"../lwc/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -862,8 +871,6 @@ fn render_flow_page(
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
-    let _flexipage_names: Vec<&str> = flexipage_items.iter().map(|&(n, _)| n).collect();
-    let _aura_names: Vec<&str> = aura_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.api_name;
@@ -979,7 +986,8 @@ fn render_flow_page(
                 .find(|&&name| rel.contains(name))
                 .map(|&name| {
                     format!(
-                        "<a href=\"../classes/{name}.html\">{}</a> — {}",
+                        "<a href=\"../classes/{}.html\">{}</a> — {}",
+                        escape(name),
                         escape(name),
                         escape(rel)
                     )
@@ -990,7 +998,8 @@ fn render_flow_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../triggers/{name}.html\">{}</a> — {}",
+                                "<a href=\"../triggers/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1002,7 +1011,8 @@ fn render_flow_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"{name}.html\">{}</a> — {}",
+                                "<a href=\"{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1014,7 +1024,8 @@ fn render_flow_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../validation-rules/{name}.html\">{}</a> — {}",
+                                "<a href=\"../validation-rules/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1026,7 +1037,8 @@ fn render_flow_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../objects/{name}.html\">{}</a> — {}",
+                                "<a href=\"../objects/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1038,7 +1050,8 @@ fn render_flow_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../lwc/{name}.html\">{}</a> — {}",
+                                "<a href=\"../lwc/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1090,8 +1103,6 @@ fn render_validation_rule_page(
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
-    let _flexipage_names: Vec<&str> = flexipage_items.iter().map(|&(n, _)| n).collect();
-    let _aura_names: Vec<&str> = aura_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.rule_name;
@@ -1160,7 +1171,8 @@ fn render_validation_rule_page(
                 .find(|&&name| rel.contains(name))
                 .map(|&name| {
                     format!(
-                        "<a href=\"../classes/{name}.html\">{}</a> — {}",
+                        "<a href=\"../classes/{}.html\">{}</a> — {}",
+                        escape(name),
                         escape(name),
                         escape(rel)
                     )
@@ -1171,7 +1183,8 @@ fn render_validation_rule_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../triggers/{name}.html\">{}</a> — {}",
+                                "<a href=\"../triggers/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1183,7 +1196,8 @@ fn render_validation_rule_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../flows/{name}.html\">{}</a> — {}",
+                                "<a href=\"../flows/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1195,7 +1209,8 @@ fn render_validation_rule_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"{name}.html\">{}</a> — {}",
+                                "<a href=\"{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1207,7 +1222,8 @@ fn render_validation_rule_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../objects/{name}.html\">{}</a> — {}",
+                                "<a href=\"../objects/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1219,7 +1235,8 @@ fn render_validation_rule_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../lwc/{name}.html\">{}</a> — {}",
+                                "<a href=\"../lwc/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1271,8 +1288,6 @@ fn render_object_page(
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
-    let _flexipage_names: Vec<&str> = flexipage_items.iter().map(|&(n, _)| n).collect();
-    let _aura_names: Vec<&str> = aura_items.iter().map(|&(n, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.object_name;
@@ -1359,7 +1374,8 @@ fn render_object_page(
                 .find(|&&name| rel.contains(name))
                 .map(|&name| {
                     format!(
-                        "<a href=\"../classes/{name}.html\">{}</a> — {}",
+                        "<a href=\"../classes/{}.html\">{}</a> — {}",
+                        escape(name),
                         escape(name),
                         escape(rel)
                     )
@@ -1370,7 +1386,8 @@ fn render_object_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../triggers/{name}.html\">{}</a> — {}",
+                                "<a href=\"../triggers/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1382,7 +1399,8 @@ fn render_object_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../flows/{name}.html\">{}</a> — {}",
+                                "<a href=\"../flows/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1394,7 +1412,8 @@ fn render_object_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../validation-rules/{name}.html\">{}</a> — {}",
+                                "<a href=\"../validation-rules/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1406,7 +1425,8 @@ fn render_object_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"{name}.html\">{}</a> — {}",
+                                "<a href=\"{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1418,7 +1438,8 @@ fn render_object_page(
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
                             format!(
-                                "<a href=\"../lwc/{name}.html\">{}</a> — {}",
+                                "<a href=\"../lwc/{}.html\">{}</a> — {}",
+                                escape(name),
                                 escape(name),
                                 escape(rel)
                             )
@@ -1470,8 +1491,6 @@ fn render_lwc_page(
     let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
     let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
     let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
-    let _flexipage_names: Vec<&str> = flexipage_items.iter().map(|&(n, _)| n).collect();
-    let _aura_names: Vec<&str> = aura_items.iter().map(|&(n, _)| n).collect();
 
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
@@ -1545,8 +1564,10 @@ fn render_lwc_page(
                 .map(|&name| {
                     let (_, folder) = class_items.iter().find(|&&(n, _)| n == name).unwrap();
                     format!(
-                        "<a href=\"../classes/{folder}/{name}.html\">{rel}</a>",
-                        rel = escape(rel)
+                        "<a href=\"../classes/{}/{}.html\">{}</a>",
+                        escape(folder),
+                        escape(name),
+                        escape(rel)
                     )
                 })
                 .or_else(|| {
@@ -1557,8 +1578,10 @@ fn render_lwc_page(
                             let (_, folder) =
                                 trigger_items.iter().find(|&&(n, _)| n == name).unwrap();
                             format!(
-                                "<a href=\"../triggers/{folder}/{name}.html\">{rel}</a>",
-                                rel = escape(rel)
+                                "<a href=\"../triggers/{}/{}.html\">{}</a>",
+                                escape(folder),
+                                escape(name),
+                                escape(rel)
                             )
                         })
                 })
@@ -1569,8 +1592,10 @@ fn render_lwc_page(
                         .map(|&name| {
                             let (_, folder) = flow_items.iter().find(|&&(n, _)| n == name).unwrap();
                             format!(
-                                "<a href=\"../flows/{folder}/{name}.html\">{rel}</a>",
-                                rel = escape(rel)
+                                "<a href=\"../flows/{}/{}.html\">{}</a>",
+                                escape(folder),
+                                escape(name),
+                                escape(rel)
                             )
                         })
                 })
@@ -1581,8 +1606,10 @@ fn render_lwc_page(
                         .map(|&name| {
                             let (_, folder) = vr_items.iter().find(|&&(n, _)| n == name).unwrap();
                             format!(
-                                "<a href=\"../validation-rules/{folder}/{name}.html\">{rel}</a>",
-                                rel = escape(rel)
+                                "<a href=\"../validation-rules/{}/{}.html\">{}</a>",
+                                escape(folder),
+                                escape(name),
+                                escape(rel)
                             )
                         })
                 })
@@ -1593,8 +1620,10 @@ fn render_lwc_page(
                         .map(|&name| {
                             let (_, folder) = obj_items.iter().find(|&&(n, _)| n == name).unwrap();
                             format!(
-                                "<a href=\"../objects/{folder}/{name}.html\">{rel}</a>",
-                                rel = escape(rel)
+                                "<a href=\"../objects/{}/{}.html\">{}</a>",
+                                escape(folder),
+                                escape(name),
+                                escape(rel)
                             )
                         })
                 })
@@ -1605,8 +1634,10 @@ fn render_lwc_page(
                         .map(|&name| {
                             let (_, folder) = lwc_items.iter().find(|&&(n, _)| n == name).unwrap();
                             format!(
-                                "<a href=\"../lwc/{folder}/{name}.html\">{rel}</a>",
-                                rel = escape(rel)
+                                "<a href=\"../lwc/{}/{}.html\">{}</a>",
+                                escape(folder),
+                                escape(name),
+                                escape(rel)
                             )
                         })
                 })
@@ -2417,7 +2448,8 @@ fn render_sidebar(
                     ""
                 };
                 s.push_str(&format!(
-                    "<li><a href=\"{up_prefix}classes/{name}.html\"{cls}>{}</a></li>\n",
+                    "<li><a href=\"{up_prefix}classes/{}.html\"{cls}>{}</a></li>\n",
+                    escape(name),
                     escape(name)
                 ));
             }
@@ -2454,7 +2486,8 @@ fn render_sidebar(
                     ""
                 };
                 s.push_str(&format!(
-                    "<li><a href=\"{up_prefix}triggers/{name}.html\"{cls}>{}</a></li>\n",
+                    "<li><a href=\"{up_prefix}triggers/{}.html\"{cls}>{}</a></li>\n",
+                    escape(name),
                     escape(name)
                 ));
             }
@@ -2491,7 +2524,8 @@ fn render_sidebar(
                     ""
                 };
                 s.push_str(&format!(
-                    "<li><a href=\"{up_prefix}flows/{name}.html\"{cls}>{}</a></li>\n",
+                    "<li><a href=\"{up_prefix}flows/{}.html\"{cls}>{}</a></li>\n",
+                    escape(name),
                     escape(name)
                 ));
             }
@@ -2528,7 +2562,8 @@ fn render_sidebar(
                     ""
                 };
                 s.push_str(&format!(
-                    "<li><a href=\"{up_prefix}validation-rules/{name}.html\"{cls}>{}</a></li>\n",
+                    "<li><a href=\"{up_prefix}validation-rules/{}.html\"{cls}>{}</a></li>\n",
+                    escape(name),
                     escape(name)
                 ));
             }
@@ -2551,7 +2586,8 @@ fn render_sidebar(
                 ""
             };
             s.push_str(&format!(
-                "<li><a href=\"{up_prefix}objects/{name}.html\"{cls}>{}</a></li>\n",
+                "<li><a href=\"{up_prefix}objects/{}.html\"{cls}>{}</a></li>\n",
+                escape(name),
                 escape(name)
             ));
         }
@@ -2587,7 +2623,8 @@ fn render_sidebar(
                     ""
                 };
                 s.push_str(&format!(
-                    "<li><a href=\"{up_prefix}lwc/{name}.html\"{cls}>{}</a></li>\n",
+                    "<li><a href=\"{up_prefix}lwc/{}.html\"{cls}>{}</a></li>\n",
+                    escape(name),
                     escape(name)
                 ));
             }
@@ -2610,7 +2647,8 @@ fn render_sidebar(
                 ""
             };
             s.push_str(&format!(
-                "<li><a href=\"{up_prefix}flexipages/{name}.html\"{cls}>{}</a></li>\n",
+                "<li><a href=\"{up_prefix}flexipages/{}.html\"{cls}>{}</a></li>\n",
+                escape(name),
                 escape(name)
             ));
         }
@@ -2632,7 +2670,8 @@ fn render_sidebar(
                 ""
             };
             s.push_str(&format!(
-                "<li><a href=\"{up_prefix}aura/{name}.html\"{cls}>{}</a></li>\n",
+                "<li><a href=\"{up_prefix}aura/{}.html\"{cls}>{}</a></li>\n",
+                escape(name),
                 escape(name)
             ));
         }
@@ -2665,19 +2704,27 @@ fn strip_code_fence(s: &str) -> String {
     trimmed.to_string()
 }
 
+/// Returns compiled keyword regexes paired with their replacement strings, compiled once.
+fn keyword_highlighters() -> &'static Vec<(regex::Regex, String)> {
+    static HIGHLIGHTERS: OnceLock<Vec<(regex::Regex, String)>> = OnceLock::new();
+    HIGHLIGHTERS.get_or_init(|| {
+        APEX_KEYWORDS
+            .iter()
+            .filter_map(|&kw| {
+                regex::Regex::new(&format!(r"\b{kw}\b"))
+                    .ok()
+                    .map(|re| (re, format!("<span class=\"kw\">{kw}</span>")))
+            })
+            .collect()
+    })
+}
+
 /// Wrap Apex keywords in `<span class="kw">` for syntax highlighting.
 /// Input must already be HTML-escaped.
 fn highlight_apex(source: &str) -> String {
-    let escaped = escape(source);
-    let mut result = escaped;
-    for kw in APEX_KEYWORDS {
-        // Replace whole-word occurrences only (avoid matching substrings)
-        let pattern = format!(r"\b{kw}\b");
-        if let Ok(re) = regex::Regex::new(&pattern) {
-            result = re
-                .replace_all(&result, format!("<span class=\"kw\">{kw}</span>").as_str())
-                .into_owned();
-        }
+    let mut result = escape(source);
+    for (re, replacement) in keyword_highlighters() {
+        result = re.replace_all(&result, replacement.as_str()).into_owned();
     }
     result
 }

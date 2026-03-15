@@ -4,6 +4,7 @@
 /// using fixture source files under `tests/fixtures/`.  HTTP calls to the AI
 /// provider are intercepted by a local `httpmock` server so no real API key is
 /// required.
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -215,13 +216,13 @@ fn full_pipeline_writes_markdown_output() {
             .iter()
             .map(|m| m.trigger_name.clone())
             .collect(),
-        flow_names: vec![],
-        validation_rule_names: vec![],
-        object_names: vec![],
-        lwc_names: vec![],
-        flexipage_names: vec![],
-        aura_names: vec![],
-        custom_metadata_type_names: vec![],
+        flow_names: HashSet::new(),
+        validation_rule_names: HashSet::new(),
+        object_names: HashSet::new(),
+        lwc_names: HashSet::new(),
+        flexipage_names: HashSet::new(),
+        aura_names: HashSet::new(),
+        custom_metadata_type_names: HashSet::new(),
         interface_implementors: std::collections::HashMap::new(),
     });
 
@@ -306,14 +307,14 @@ fn markdown_class_page_contains_expected_sections() {
         .collect();
     let all_names = Arc::new(AllNames {
         class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
-        trigger_names: vec![],
-        flow_names: vec![],
-        validation_rule_names: vec![],
-        object_names: vec![],
-        lwc_names: vec![],
-        flexipage_names: vec![],
-        aura_names: vec![],
-        custom_metadata_type_names: vec![],
+        trigger_names: HashSet::new(),
+        flow_names: HashSet::new(),
+        validation_rule_names: HashSet::new(),
+        object_names: HashSet::new(),
+        lwc_names: HashSet::new(),
+        flexipage_names: HashSet::new(),
+        aura_names: HashSet::new(),
+        custom_metadata_type_names: HashSet::new(),
         interface_implementors: std::collections::HashMap::new(),
     });
 
@@ -367,14 +368,14 @@ fn markdown_index_groups_by_folder() {
 
     let all_names = Arc::new(AllNames {
         class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
-        trigger_names: vec![],
-        flow_names: vec![],
-        validation_rule_names: vec![],
-        object_names: vec![],
-        lwc_names: vec![],
-        flexipage_names: vec![],
-        aura_names: vec![],
-        custom_metadata_type_names: vec![],
+        trigger_names: HashSet::new(),
+        flow_names: HashSet::new(),
+        validation_rule_names: HashSet::new(),
+        object_names: HashSet::new(),
+        lwc_names: HashSet::new(),
+        flexipage_names: HashSet::new(),
+        aura_names: HashSet::new(),
+        custom_metadata_type_names: HashSet::new(),
         interface_implementors: std::collections::HashMap::new(),
     });
 
@@ -431,14 +432,14 @@ fn full_pipeline_writes_html_output() {
         .collect();
     let all_names = Arc::new(AllNames {
         class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
-        trigger_names: vec![],
-        flow_names: vec![],
-        validation_rule_names: vec![],
-        object_names: vec![],
-        lwc_names: vec![],
-        flexipage_names: vec![],
-        aura_names: vec![],
-        custom_metadata_type_names: vec![],
+        trigger_names: HashSet::new(),
+        flow_names: HashSet::new(),
+        validation_rule_names: HashSet::new(),
+        object_names: HashSet::new(),
+        lwc_names: HashSet::new(),
+        flexipage_names: HashSet::new(),
+        aura_names: HashSet::new(),
+        custom_metadata_type_names: HashSet::new(),
         interface_implementors: std::collections::HashMap::new(),
     });
     let class_contexts: Vec<RenderContext> = class_files
@@ -488,14 +489,14 @@ fn html_page_contains_sidebar_and_content() {
         .collect();
     let all_names = Arc::new(AllNames {
         class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
-        trigger_names: vec![],
-        flow_names: vec![],
-        validation_rule_names: vec![],
-        object_names: vec![],
-        lwc_names: vec![],
-        flexipage_names: vec![],
-        aura_names: vec![],
-        custom_metadata_type_names: vec![],
+        trigger_names: HashSet::new(),
+        flow_names: HashSet::new(),
+        validation_rule_names: HashSet::new(),
+        object_names: HashSet::new(),
+        lwc_names: HashSet::new(),
+        flexipage_names: HashSet::new(),
+        aura_names: HashSet::new(),
+        custom_metadata_type_names: HashSet::new(),
         interface_implementors: std::collections::HashMap::new(),
     });
     let class_contexts: Vec<RenderContext> = class_files
@@ -877,13 +878,13 @@ async fn e2e_scan_parse_ai_render_markdown() {
             .iter()
             .map(|m| m.trigger_name.clone())
             .collect(),
-        flow_names: vec![],
-        validation_rule_names: vec![],
-        object_names: vec![],
-        lwc_names: vec![],
-        flexipage_names: vec![],
-        aura_names: vec![],
-        custom_metadata_type_names: vec![],
+        flow_names: HashSet::new(),
+        validation_rule_names: HashSet::new(),
+        object_names: HashSet::new(),
+        lwc_names: HashSet::new(),
+        flexipage_names: HashSet::new(),
+        aura_names: HashSet::new(),
+        custom_metadata_type_names: HashSet::new(),
         interface_implementors: std::collections::HashMap::new(),
     });
     let class_contexts: Vec<RenderContext> = class_files
@@ -1002,15 +1003,15 @@ fn flow_pipeline_writes_markdown_output() {
     let doc = stub_flow_doc("My_Flow");
 
     let all_names = Arc::new(AllNames {
-        class_names: vec![],
-        trigger_names: vec![],
-        flow_names: vec!["My_Flow".to_string()],
-        validation_rule_names: vec![],
-        object_names: vec![],
-        lwc_names: vec![],
-        flexipage_names: vec![],
-        aura_names: vec![],
-        custom_metadata_type_names: vec![],
+        class_names: HashSet::new(),
+        trigger_names: HashSet::new(),
+        flow_names: ["My_Flow".to_string()].into_iter().collect(),
+        validation_rule_names: HashSet::new(),
+        object_names: HashSet::new(),
+        lwc_names: HashSet::new(),
+        flexipage_names: HashSet::new(),
+        aura_names: HashSet::new(),
+        custom_metadata_type_names: HashSet::new(),
         interface_implementors: std::collections::HashMap::new(),
     });
 
@@ -1110,15 +1111,15 @@ fn validation_rule_pipeline_writes_markdown_output() {
     let doc = stub_vr_doc(&meta.rule_name, &meta.object_name);
 
     let all_names = Arc::new(AllNames {
-        class_names: vec![],
-        trigger_names: vec![],
-        flow_names: vec![],
-        validation_rule_names: vec![meta.rule_name.clone()],
-        object_names: vec![],
-        lwc_names: vec![],
-        flexipage_names: vec![],
-        aura_names: vec![],
-        custom_metadata_type_names: vec![],
+        class_names: HashSet::new(),
+        trigger_names: HashSet::new(),
+        flow_names: HashSet::new(),
+        validation_rule_names: [meta.rule_name.clone()].into_iter().collect(),
+        object_names: HashSet::new(),
+        lwc_names: HashSet::new(),
+        flexipage_names: HashSet::new(),
+        aura_names: HashSet::new(),
+        custom_metadata_type_names: HashSet::new(),
         interface_implementors: std::collections::HashMap::new(),
     });
 
@@ -1197,15 +1198,15 @@ fn object_pipeline_writes_markdown_output() {
     let doc = stub_object_doc(&meta.object_name);
 
     let all_names = Arc::new(AllNames {
-        class_names: vec![],
-        trigger_names: vec![],
-        flow_names: vec![],
-        validation_rule_names: vec![],
-        object_names: vec![meta.object_name.clone()],
-        lwc_names: vec![],
-        flexipage_names: vec![],
-        aura_names: vec![],
-        custom_metadata_type_names: vec![],
+        class_names: HashSet::new(),
+        trigger_names: HashSet::new(),
+        flow_names: HashSet::new(),
+        validation_rule_names: HashSet::new(),
+        object_names: [meta.object_name.clone()].into_iter().collect(),
+        lwc_names: HashSet::new(),
+        flexipage_names: HashSet::new(),
+        aura_names: HashSet::new(),
+        custom_metadata_type_names: HashSet::new(),
         interface_implementors: std::collections::HashMap::new(),
     });
 
@@ -1302,15 +1303,15 @@ fn lwc_pipeline_writes_markdown_output() {
     let doc = stub_lwc_doc(&meta.component_name);
 
     let all_names = Arc::new(AllNames {
-        class_names: vec![],
-        trigger_names: vec![],
-        flow_names: vec![],
-        validation_rule_names: vec![],
-        object_names: vec![],
-        lwc_names: vec![meta.component_name.clone()],
-        flexipage_names: vec![],
-        aura_names: vec![],
-        custom_metadata_type_names: vec![],
+        class_names: HashSet::new(),
+        trigger_names: HashSet::new(),
+        flow_names: HashSet::new(),
+        validation_rule_names: HashSet::new(),
+        object_names: HashSet::new(),
+        lwc_names: [meta.component_name.clone()].into_iter().collect(),
+        flexipage_names: HashSet::new(),
+        aura_names: HashSet::new(),
+        custom_metadata_type_names: HashSet::new(),
         interface_implementors: std::collections::HashMap::new(),
     });
 
@@ -1379,15 +1380,15 @@ fn lwc_pipeline_writes_html_output() {
     let doc = stub_lwc_doc(&meta.component_name);
 
     let all_names = Arc::new(AllNames {
-        class_names: vec![],
-        trigger_names: vec![],
-        flow_names: vec![],
-        validation_rule_names: vec![],
-        object_names: vec![],
-        lwc_names: vec![meta.component_name.clone()],
-        flexipage_names: vec![],
-        aura_names: vec![],
-        custom_metadata_type_names: vec![],
+        class_names: HashSet::new(),
+        trigger_names: HashSet::new(),
+        flow_names: HashSet::new(),
+        validation_rule_names: HashSet::new(),
+        object_names: HashSet::new(),
+        lwc_names: [meta.component_name.clone()].into_iter().collect(),
+        flexipage_names: HashSet::new(),
+        aura_names: HashSet::new(),
+        custom_metadata_type_names: HashSet::new(),
         interface_implementors: std::collections::HashMap::new(),
     });
 

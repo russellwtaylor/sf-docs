@@ -59,7 +59,7 @@ fn scan_by_extension(
     let mut files = Vec::new();
 
     for entry in WalkDir::new(source_dir)
-        .follow_links(true)
+        .follow_links(false)
         .into_iter()
         .filter_entry(should_visit)
         .filter_map(|e| e.ok())
