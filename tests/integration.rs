@@ -710,7 +710,14 @@ async fn openai_compat_client_documents_class() {
             .unwrap(),
     };
     let meta = parser::parse_apex_class(&file.raw_source).unwrap();
-    let doc = client.document_class(&file, &meta).await.unwrap();
+    let doc: sfdoc::types::ClassDocumentation = sfdoc::doc_client::document(
+        &client,
+        sfdoc::prompt::SYSTEM_PROMPT,
+        &sfdoc::prompt::build_prompt(&file, &meta),
+        &meta.class_name,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(doc.class_name, "AccountService");
     assert_eq!(doc.summary, expected_doc.summary);
@@ -749,7 +756,14 @@ async fn openai_compat_client_documents_trigger() {
         raw_source: file.raw_source.clone(),
     };
     let meta = trigger_parser::parse_apex_trigger(&file.raw_source).unwrap();
-    let doc = client.document_trigger(&apex_file, &meta).await.unwrap();
+    let doc: sfdoc::types::TriggerDocumentation = sfdoc::doc_client::document(
+        &client,
+        sfdoc::trigger_prompt::TRIGGER_SYSTEM_PROMPT,
+        &sfdoc::trigger_prompt::build_trigger_prompt(&apex_file, &meta),
+        &meta.trigger_name,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(doc.trigger_name, "AccountTrigger");
     assert_eq!(doc.sobject, "Account");
@@ -782,7 +796,13 @@ async fn openai_compat_client_returns_error_on_non_200() {
         raw_source: "public class AccountService {}".to_string(),
     };
     let meta = parser::parse_apex_class(&file.raw_source).unwrap();
-    let result = client.document_class(&file, &meta).await;
+    let result: Result<sfdoc::types::ClassDocumentation, _> = sfdoc::doc_client::document(
+        &client,
+        sfdoc::prompt::SYSTEM_PROMPT,
+        &sfdoc::prompt::build_prompt(&file, &meta),
+        &meta.class_name,
+    )
+    .await;
     assert!(result.is_err(), "expected error on HTTP 400");
 }
 
@@ -866,12 +886,26 @@ async fn e2e_scan_parse_ai_render_markdown() {
     // Call AI
     let mut class_docs = Vec::new();
     for (file, meta) in class_files.iter().zip(class_meta.iter()) {
-        let doc = client.document_class(file, meta).await.unwrap();
+        let doc: ClassDocumentation = sfdoc::doc_client::document(
+            client.as_ref(),
+            sfdoc::prompt::SYSTEM_PROMPT,
+            &sfdoc::prompt::build_prompt(file, meta),
+            &meta.class_name,
+        )
+        .await
+        .unwrap();
         class_docs.push(doc);
     }
     let mut trigger_docs = Vec::new();
     for (file, meta) in trigger_files.iter().zip(trigger_meta.iter()) {
-        let doc = client.document_trigger(file, meta).await.unwrap();
+        let doc: TriggerDocumentation = sfdoc::doc_client::document(
+            client.as_ref(),
+            sfdoc::trigger_prompt::TRIGGER_SYSTEM_PROMPT,
+            &sfdoc::trigger_prompt::build_trigger_prompt(file, meta),
+            &meta.trigger_name,
+        )
+        .await
+        .unwrap();
         trigger_docs.push(doc);
     }
 

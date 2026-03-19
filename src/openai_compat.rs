@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -6,22 +7,7 @@ use std::time::Duration;
 use tokio::sync::Semaphore;
 
 use crate::rate_limit::RpmLimiter;
-
-use crate::aura_prompt::{build_aura_prompt, AURA_SYSTEM_PROMPT};
-use crate::flexipage_prompt::{build_flexipage_prompt, FLEXIPAGE_SYSTEM_PROMPT};
-use crate::flow_prompt::{build_flow_prompt, FLOW_SYSTEM_PROMPT};
-use crate::lwc_prompt::{build_lwc_prompt, LWC_SYSTEM_PROMPT};
-use crate::object_prompt::{build_object_prompt, OBJECT_SYSTEM_PROMPT};
-use crate::prompt::{build_prompt, SYSTEM_PROMPT};
 use crate::retry::{self, MAX_RETRIES};
-use crate::trigger_prompt::{build_trigger_prompt, TRIGGER_SYSTEM_PROMPT};
-use crate::types::{
-    AuraDocumentation, AuraMetadata, ClassDocumentation, ClassMetadata, FlexiPageDocumentation,
-    FlexiPageMetadata, FlowDocumentation, FlowMetadata, LwcDocumentation, LwcMetadata,
-    ObjectDocumentation, ObjectMetadata, SourceFile, TriggerDocumentation, TriggerMetadata,
-    ValidationRuleDocumentation, ValidationRuleMetadata,
-};
-use crate::validation_rule_prompt::{build_validation_rule_prompt, VALIDATION_RULE_SYSTEM_PROMPT};
 
 // ---------------------------------------------------------------------------
 // OpenAI-compatible API shapes (Groq, OpenAI, Ollama)
@@ -105,7 +91,7 @@ impl OpenAiCompatClient {
 
     /// Send a single (system, user) prompt to the OpenAI-compatible endpoint with retry logic.
     /// Returns the raw JSON string from the first choice's message content.
-    async fn send_with_retry(&self, system_prompt: &str, user_prompt: &str) -> Result<String> {
+    async fn send_request_impl(&self, system_prompt: &str, user_prompt: &str) -> Result<String> {
         let request = ChatRequest {
             model: self.model.clone(),
             messages: vec![
@@ -191,145 +177,16 @@ impl OpenAiCompatClient {
         }
     }
 
-    pub async fn document_class(
-        &self,
-        file: &SourceFile,
-        metadata: &ClassMetadata,
-    ) -> Result<ClassDocumentation> {
+}
+
+#[async_trait]
+impl crate::doc_client::DocClient for OpenAiCompatClient {
+    async fn send_request(&self, system_prompt: &str, user_prompt: &str) -> Result<String> {
         let _permit = self.semaphore.acquire().await?;
-        let raw = self
-            .send_with_retry(SYSTEM_PROMPT, &build_prompt(file, metadata))
-            .await?;
-        serde_json::from_str(&raw).with_context(|| {
-            format!(
-                "Failed to parse {} JSON for class '{}':\n{raw}",
-                self.provider_name, metadata.class_name
-            )
-        })
+        self.send_request_impl(system_prompt, user_prompt).await
     }
 
-    pub async fn document_trigger(
-        &self,
-        file: &SourceFile,
-        metadata: &TriggerMetadata,
-    ) -> Result<TriggerDocumentation> {
-        let _permit = self.semaphore.acquire().await?;
-        let raw = self
-            .send_with_retry(TRIGGER_SYSTEM_PROMPT, &build_trigger_prompt(file, metadata))
-            .await?;
-        serde_json::from_str(&raw).with_context(|| {
-            format!(
-                "Failed to parse {} JSON for trigger '{}':\n{raw}",
-                self.provider_name, metadata.trigger_name
-            )
-        })
-    }
-
-    pub async fn document_flow(
-        &self,
-        file: &SourceFile,
-        metadata: &FlowMetadata,
-    ) -> Result<FlowDocumentation> {
-        let _permit = self.semaphore.acquire().await?;
-        let raw = self
-            .send_with_retry(FLOW_SYSTEM_PROMPT, &build_flow_prompt(file, metadata))
-            .await?;
-        serde_json::from_str(&raw).with_context(|| {
-            format!(
-                "Failed to parse {} JSON for flow '{}':\n{raw}",
-                self.provider_name, metadata.api_name
-            )
-        })
-    }
-
-    pub async fn document_validation_rule(
-        &self,
-        file: &SourceFile,
-        metadata: &ValidationRuleMetadata,
-    ) -> Result<ValidationRuleDocumentation> {
-        let _permit = self.semaphore.acquire().await?;
-        let raw = self
-            .send_with_retry(
-                VALIDATION_RULE_SYSTEM_PROMPT,
-                &build_validation_rule_prompt(file, metadata),
-            )
-            .await?;
-        serde_json::from_str(&raw).with_context(|| {
-            format!(
-                "Failed to parse {} JSON for validation rule '{}':\n{raw}",
-                self.provider_name, metadata.rule_name
-            )
-        })
-    }
-
-    pub async fn document_object(
-        &self,
-        file: &SourceFile,
-        metadata: &ObjectMetadata,
-    ) -> Result<ObjectDocumentation> {
-        let _permit = self.semaphore.acquire().await?;
-        let raw = self
-            .send_with_retry(OBJECT_SYSTEM_PROMPT, &build_object_prompt(file, metadata))
-            .await?;
-        serde_json::from_str(&raw).with_context(|| {
-            format!(
-                "Failed to parse {} JSON for object '{}':\n{raw}",
-                self.provider_name, metadata.object_name
-            )
-        })
-    }
-
-    pub async fn document_lwc(
-        &self,
-        file: &SourceFile,
-        metadata: &LwcMetadata,
-    ) -> Result<LwcDocumentation> {
-        let _permit = self.semaphore.acquire().await?;
-        let raw = self
-            .send_with_retry(LWC_SYSTEM_PROMPT, &build_lwc_prompt(file, metadata))
-            .await?;
-        serde_json::from_str(&raw).with_context(|| {
-            format!(
-                "Failed to parse {} JSON for LWC component '{}':\n{raw}",
-                self.provider_name, metadata.component_name
-            )
-        })
-    }
-
-    pub async fn document_flexipage(
-        &self,
-        file: &SourceFile,
-        metadata: &FlexiPageMetadata,
-    ) -> Result<FlexiPageDocumentation> {
-        let _permit = self.semaphore.acquire().await?;
-        let raw = self
-            .send_with_retry(
-                FLEXIPAGE_SYSTEM_PROMPT,
-                &build_flexipage_prompt(file, metadata),
-            )
-            .await?;
-        serde_json::from_str(&raw).with_context(|| {
-            format!(
-                "Failed to parse {} JSON for FlexiPage '{}':\n{raw}",
-                self.provider_name, metadata.api_name
-            )
-        })
-    }
-
-    pub async fn document_aura(
-        &self,
-        file: &SourceFile,
-        metadata: &AuraMetadata,
-    ) -> Result<AuraDocumentation> {
-        let _permit = self.semaphore.acquire().await?;
-        let raw = self
-            .send_with_retry(AURA_SYSTEM_PROMPT, &build_aura_prompt(file, metadata))
-            .await?;
-        serde_json::from_str(&raw).with_context(|| {
-            format!(
-                "Failed to parse {} JSON for Aura component '{}':\n{raw}",
-                self.provider_name, metadata.component_name
-            )
-        })
+    fn provider_name(&self) -> &str {
+        &self.provider_name
     }
 }
