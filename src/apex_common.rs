@@ -46,3 +46,47 @@ pub const APEX_BUILTINS: &[&str] = &[
     "Network",
     "ConnectApi",
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn type_ref_regex_matches_pascal_case() {
+        let text = "AccountService handler = new AccountService();";
+        let matches: Vec<String> = re_type_ref()
+            .captures_iter(text)
+            .map(|c| c[1].to_string())
+            .collect();
+        assert!(matches.contains(&"AccountService".to_string()));
+    }
+
+    #[test]
+    fn type_ref_regex_does_not_match_lowercase() {
+        let text = "string name = 'hello';";
+        let matches: Vec<String> = re_type_ref()
+            .captures_iter(text)
+            .map(|c| c[1].to_string())
+            .collect();
+        // Only PascalCase (starting uppercase) should match
+        assert!(matches.is_empty() || !matches.iter().any(|m| m == "string"));
+    }
+
+    #[test]
+    fn builtins_list_contains_common_types() {
+        assert!(APEX_BUILTINS.contains(&"String"));
+        assert!(APEX_BUILTINS.contains(&"Integer"));
+        assert!(APEX_BUILTINS.contains(&"Boolean"));
+        assert!(APEX_BUILTINS.contains(&"List"));
+        assert!(APEX_BUILTINS.contains(&"Map"));
+        assert!(APEX_BUILTINS.contains(&"Set"));
+        assert!(APEX_BUILTINS.contains(&"SObject"));
+        assert!(APEX_BUILTINS.contains(&"Database"));
+    }
+
+    #[test]
+    fn builtins_list_does_not_contain_custom_types() {
+        assert!(!APEX_BUILTINS.contains(&"AccountService"));
+        assert!(!APEX_BUILTINS.contains(&"MyCustomType"));
+    }
+}
