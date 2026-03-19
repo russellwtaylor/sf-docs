@@ -123,14 +123,25 @@ fn read_with_js_fallback(path: &Path, component_name: &str, display_name: &str) 
     let js_path = path
         .parent()
         .map(|p| p.join(format!("{component_name}.js")));
-    match js_path
-        .as_deref()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-    {
-        Some(js) => Ok(js),
-        None => std::fs::read_to_string(path)
-            .with_context(|| format!("Failed to read source for {display_name}")),
+    if let Some(js) = js_path.as_deref().filter(|p| p.exists()) {
+        if let Ok(meta) = std::fs::metadata(js) {
+            if meta.len() > MAX_FILE_SIZE {
+                eprintln!(
+                    "Warning: skipping oversized JS file {} ({:.1} MB > {} MB limit)",
+                    js.display(),
+                    meta.len() as f64 / (1024.0 * 1024.0),
+                    MAX_FILE_SIZE / (1024 * 1024)
+                );
+                return std::fs::read_to_string(path)
+                    .with_context(|| format!("Failed to read source for {display_name}"));
+            }
+        }
+        if let Ok(content) = std::fs::read_to_string(js) {
+            return Ok(content);
+        }
     }
+    std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read source for {display_name}"))
 }
 
 impl FileScanner for ApexScanner {

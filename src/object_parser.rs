@@ -73,7 +73,18 @@ pub fn parse_object(path: &Path, source: &str) -> Result<ObjectMetadata> {
                 })
                 .collect();
             field_paths.sort();
+            const MAX_FIELD_FILE_SIZE: u64 = 10 * 1024 * 1024;
             for field_path in field_paths {
+                if let Ok(meta) = std::fs::metadata(&field_path) {
+                    if meta.len() > MAX_FIELD_FILE_SIZE {
+                        eprintln!(
+                            "Warning: skipping oversized field file {} ({:.1} MB)",
+                            field_path.display(),
+                            meta.len() as f64 / (1024.0 * 1024.0)
+                        );
+                        continue;
+                    }
+                }
                 let field_source = match std::fs::read_to_string(&field_path) {
                     Ok(s) => s,
                     Err(e) => {
