@@ -1786,4 +1786,105 @@ mod tests {
         assert!(tmp.path().join("classes/AccountService.md").exists());
         assert!(tmp.path().join("index.md").exists());
     }
+
+    // -----------------------------------------------------------------------
+    // Edge cases & additional coverage
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn class_page_with_no_methods_skips_methods_section() {
+        let mut ctx = sample_context();
+        ctx.metadata.methods.clear();
+        ctx.documentation.methods.clear();
+        let page = render_class_page(&ctx);
+        assert!(!page.contains("## Methods"));
+    }
+
+    #[test]
+    fn class_page_with_no_properties_skips_properties_section() {
+        let mut ctx = sample_context();
+        ctx.metadata.properties.clear();
+        ctx.documentation.properties.clear();
+        let page = render_class_page(&ctx);
+        assert!(!page.contains("## Properties"));
+    }
+
+    #[test]
+    fn class_page_with_no_usage_examples_skips_section() {
+        let mut ctx = sample_context();
+        ctx.documentation.usage_examples.clear();
+        let page = render_class_page(&ctx);
+        assert!(!page.contains("## Usage Examples"));
+    }
+
+    #[test]
+    fn class_page_interface_badge() {
+        let mut ctx = sample_context();
+        ctx.metadata.is_interface = true;
+        let page = render_class_page(&ctx);
+        assert!(page.contains("interface"), "interface badge missing");
+    }
+
+    #[test]
+    fn class_page_abstract_badge() {
+        let mut ctx = sample_context();
+        ctx.metadata.is_abstract = true;
+        let page = render_class_page(&ctx);
+        assert!(page.contains("abstract"));
+    }
+
+    #[test]
+    fn class_page_implements_badge() {
+        let ctx = sample_context();
+        let page = render_class_page(&ctx);
+        assert!(page.contains("Queueable"));
+    }
+
+    #[test]
+    fn index_with_empty_bundle() {
+        let bundle = DocumentationBundle {
+            classes: &[],
+            triggers: &[],
+            flows: &[],
+            validation_rules: &[],
+            objects: &[],
+            lwc: &[],
+            flexipages: &[],
+            custom_metadata: &[],
+            aura: &[],
+        };
+        let index = render_index(&bundle);
+        assert!(index.contains("# Apex Documentation Index"));
+    }
+
+    #[test]
+    fn write_output_html_creates_index() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let ctx = sample_context();
+        let bundle = DocumentationBundle {
+            classes: &[ctx],
+            triggers: &[],
+            flows: &[],
+            validation_rules: &[],
+            objects: &[],
+            lwc: &[],
+            flexipages: &[],
+            custom_metadata: &[],
+            aura: &[],
+        };
+        write_output(tmp.path(), &crate::cli::OutputFormat::Html, &bundle).unwrap();
+        assert!(tmp.path().join("index.html").exists());
+    }
+
+    #[test]
+    fn sanitize_filename_removes_special_chars() {
+        assert_eq!(sanitize_filename("Hello World"), "HelloWorld");
+        assert_eq!(sanitize_filename("test/path"), "testpath");
+        assert_eq!(sanitize_filename("normal"), "normal");
+    }
+
+    #[test]
+    fn sanitize_filename_preserves_underscores_and_hyphens() {
+        assert_eq!(sanitize_filename("my-file_name"), "my-file_name");
+    }
 }
