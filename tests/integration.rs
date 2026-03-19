@@ -20,10 +20,21 @@ use sfdoc::renderer::{
 use sfdoc::scanner::{ApexScanner, FileScanner, FlowScanner, LwcScanner, TriggerScanner};
 use sfdoc::trigger_parser;
 use sfdoc::types::{
-    AllNames, ClassDocumentation, FlowDocumentation, LwcDocumentation, LwcPropDocumentation,
-    MethodDocumentation, ObjectDocumentation, PropertyDocumentation, TriggerDocumentation,
-    TriggerEventDocumentation, ValidationRuleDocumentation,
+    AllNames, AuraDocumentation, ClassDocumentation, FlexiPageDocumentation, FlowDocumentation,
+    LwcDocumentation,
+    LwcPropDocumentation, MethodDocumentation, ObjectDocumentation, PropertyDocumentation,
+    TriggerDocumentation, TriggerEventDocumentation, ValidationRuleDocumentation,
 };
+
+use sfdoc::aura_parser;
+use sfdoc::custom_metadata_parser;
+use sfdoc::flexipage_parser;
+use sfdoc::object_parser;
+use sfdoc::validation_rule_parser;
+use sfdoc::scanner::{
+    AuraScanner, CustomMetadataScanner, FlexiPageScanner, ObjectScanner, ValidationRuleScanner,
+};
+use sfdoc::cli::OutputFormat;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -78,6 +89,70 @@ fn stub_trigger_doc(trigger_name: &str, sobject: &str) -> TriggerDocumentation {
             description: "Runs before insert.".to_string(),
         }],
         handler_classes: vec!["AccountService".to_string()],
+        usage_notes: vec![],
+        relationships: vec![],
+    }
+}
+
+fn flow_fixtures_dir() -> &'static Path {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/flows"))
+}
+
+fn object_fixtures_dir() -> &'static Path {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/objects"))
+}
+
+fn validation_rule_fixtures_dir() -> &'static Path {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/validation-rules")
+    })
+}
+
+fn lwc_fixtures_dir() -> &'static Path {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/lwc"))
+}
+
+fn flexipage_fixtures_dir() -> &'static Path {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/flexipages"))
+}
+
+fn aura_fixtures_dir() -> &'static Path {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/aura"))
+}
+
+fn custom_metadata_fixtures_dir() -> &'static Path {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/customMetadata")
+    })
+}
+
+#[allow(dead_code)]
+fn stub_flexipage_doc(api_name: &str) -> FlexiPageDocumentation {
+    FlexiPageDocumentation {
+        api_name: api_name.to_string(),
+        label: format!("{} Label", api_name),
+        summary: format!("Summary for {api_name}."),
+        description: format!("Description for {api_name}."),
+        usage_context: "Record pages".to_string(),
+        key_components: vec![],
+        relationships: vec![],
+    }
+}
+
+#[allow(dead_code)]
+fn stub_aura_doc(component_name: &str) -> AuraDocumentation {
+    AuraDocumentation {
+        component_name: component_name.to_string(),
+        summary: format!("Summary for {component_name}."),
+        description: format!("Description for {component_name}."),
+        attributes: vec![],
         usage_notes: vec![],
         relationships: vec![],
     }
@@ -1458,4 +1533,370 @@ fn lwc_pipeline_writes_html_output() {
         html.contains("LWC") || html.contains("Components"),
         "LWC sidebar section missing"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Fixture-based scanner + parser tests for all metadata types
+// ---------------------------------------------------------------------------
+
+#[test]
+fn flow_scanner_finds_flow_fixture() {
+    let files = FlowScanner.scan(flow_fixtures_dir()).unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].filename, "Account_Onboarding.flow-meta.xml");
+}
+
+#[test]
+fn flow_fixture_parses_correctly() {
+    let files = FlowScanner.scan(flow_fixtures_dir()).unwrap();
+    let file = &files[0];
+    let api_name = file.filename.trim_end_matches(".flow-meta.xml");
+    let meta = flow_parser::parse_flow(api_name, &file.raw_source).unwrap();
+    assert_eq!(meta.label, "Account Onboarding");
+    assert_eq!(meta.process_type, "AutoLaunchedFlow");
+    assert_eq!(meta.variables.len(), 1);
+    assert_eq!(meta.decisions, 1);
+    assert_eq!(meta.screens, 1);
+    assert_eq!(meta.record_operations.len(), 2);
+    assert_eq!(meta.action_calls.len(), 1);
+}
+
+#[test]
+fn object_scanner_finds_object_fixture() {
+    let files = ObjectScanner.scan(object_fixtures_dir()).unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].filename, "Invoice__c.object-meta.xml");
+}
+
+#[test]
+fn object_fixture_parses_with_fields() {
+    let files = ObjectScanner.scan(object_fixtures_dir()).unwrap();
+    let file = &files[0];
+    let meta = object_parser::parse_object(&file.path, &file.raw_source).unwrap();
+    assert_eq!(meta.object_name, "Invoice__c");
+    assert_eq!(meta.label, "Invoice");
+    assert!(meta.description.contains("invoices"));
+    assert_eq!(meta.fields.len(), 2);
+    let status = meta.fields.iter().find(|f| f.api_name == "Status__c").unwrap();
+    assert_eq!(status.field_type, "Picklist");
+    assert!(status.required);
+    let account = meta.fields.iter().find(|f| f.api_name == "Account__c").unwrap();
+    assert_eq!(account.field_type, "Lookup");
+    assert_eq!(account.reference_to, "Account");
+    assert!(!account.help_text.is_empty());
+}
+
+#[test]
+fn validation_rule_scanner_finds_fixture() {
+    let files = ValidationRuleScanner.scan(validation_rule_fixtures_dir()).unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].filename, "Require_Email.validationRule-meta.xml");
+}
+
+#[test]
+fn validation_rule_fixture_parses_correctly() {
+    let files = ValidationRuleScanner.scan(validation_rule_fixtures_dir()).unwrap();
+    let file = &files[0];
+    let meta =
+        validation_rule_parser::parse_validation_rule(&file.path, &file.raw_source).unwrap();
+    assert_eq!(meta.rule_name, "Require_Email");
+    assert_eq!(meta.object_name, "Account");
+    assert!(meta.active);
+    assert!(meta.error_condition_formula.contains("ISPICKVAL"));
+    assert!(meta.error_message.contains("Email is required"));
+}
+
+#[test]
+fn lwc_scanner_finds_lwc_fixture() {
+    let files = LwcScanner.scan(lwc_fixtures_dir()).unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].filename, "myButton.js-meta.xml");
+}
+
+#[test]
+fn lwc_fixture_parses_api_props_and_slots() {
+    let files = LwcScanner.scan(lwc_fixtures_dir()).unwrap();
+    let file = &files[0];
+    let meta = lwc_parser::parse_lwc(&file.path, &file.raw_source).unwrap();
+    assert_eq!(meta.component_name, "myButton");
+    let prop_names: Vec<&str> = meta
+        .api_props
+        .iter()
+        .filter(|p| !p.is_method)
+        .map(|p| p.name.as_str())
+        .collect();
+    assert!(
+        prop_names.contains(&"label"),
+        "missing @api label: {:?}",
+        prop_names
+    );
+    assert!(
+        prop_names.contains(&"variant"),
+        "missing @api variant: {:?}",
+        prop_names
+    );
+    assert!(
+        prop_names.contains(&"disabled"),
+        "missing @api disabled: {:?}",
+        prop_names
+    );
+    let method_names: Vec<&str> = meta
+        .api_props
+        .iter()
+        .filter(|p| p.is_method)
+        .map(|p| p.name.as_str())
+        .collect();
+    assert!(
+        method_names.contains(&"focus"),
+        "missing @api focus(): {:?}",
+        method_names
+    );
+    assert!(
+        meta.slots.contains(&"icon".to_string()),
+        "missing named slot 'icon': {:?}",
+        meta.slots
+    );
+    assert!(
+        meta.slots.contains(&"default".to_string()),
+        "missing default slot: {:?}",
+        meta.slots
+    );
+    assert!(
+        meta.referenced_components.contains(&"tooltip".to_string()),
+        "missing c-tooltip ref: {:?}",
+        meta.referenced_components
+    );
+}
+
+#[test]
+fn flexipage_scanner_finds_fixture() {
+    let files = FlexiPageScanner.scan(flexipage_fixtures_dir()).unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(
+        files[0].filename,
+        "Account_Record_Page.flexipage-meta.xml"
+    );
+}
+
+#[test]
+fn flexipage_fixture_parses_correctly() {
+    let files = FlexiPageScanner.scan(flexipage_fixtures_dir()).unwrap();
+    let file = &files[0];
+    let api_name = file.filename.trim_end_matches(".flexipage-meta.xml");
+    let meta = flexipage_parser::parse_flexipage(api_name, &file.raw_source).unwrap();
+    assert_eq!(meta.label, "Account Record Page");
+    assert_eq!(meta.page_type, "RecordPage");
+    assert_eq!(meta.sobject, "Account");
+    assert!(meta.component_names.contains(&"accountDetails".to_string()));
+    assert!(meta.component_names.contains(&"relatedContacts".to_string()));
+    assert!(meta
+        .component_names
+        .contains(&"force:detailPanel".to_string()));
+}
+
+#[test]
+fn aura_scanner_finds_fixture() {
+    let files = AuraScanner.scan(aura_fixtures_dir()).unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(files[0].filename, "myAuraComp.cmp");
+}
+
+#[test]
+fn aura_fixture_parses_correctly() {
+    let files = AuraScanner.scan(aura_fixtures_dir()).unwrap();
+    let file = &files[0];
+    let meta = aura_parser::parse_aura(&file.path, &file.raw_source).unwrap();
+    assert_eq!(meta.component_name, "myAuraComp");
+    assert_eq!(meta.extends.as_deref(), Some("c:baseComponent"));
+    assert_eq!(meta.attributes.len(), 2);
+    assert!(meta.attributes.iter().any(|a| a.name == "recordId"));
+    assert!(meta
+        .attributes
+        .iter()
+        .any(|a| a.name == "title" && a.default == "Details"));
+    assert!(meta.events_handled.contains(&"onSave".to_string()));
+}
+
+#[test]
+fn custom_metadata_scanner_finds_fixture() {
+    let files = CustomMetadataScanner
+        .scan(custom_metadata_fixtures_dir())
+        .unwrap();
+    assert_eq!(files.len(), 1);
+    assert_eq!(
+        files[0].filename,
+        "Integration_Settings__mdt.Default.md-meta.xml"
+    );
+}
+
+#[test]
+fn custom_metadata_fixture_parses_correctly() {
+    let files = CustomMetadataScanner
+        .scan(custom_metadata_fixtures_dir())
+        .unwrap();
+    let file = &files[0];
+    let rec =
+        custom_metadata_parser::parse_custom_metadata_record(&file.path, &file.raw_source)
+            .unwrap();
+    assert_eq!(rec.type_name, "Integration_Settings__mdt");
+    assert_eq!(rec.record_name, "Default");
+    assert_eq!(rec.label, "Default Settings");
+    assert_eq!(rec.values.len(), 3);
+    assert!(rec
+        .values
+        .iter()
+        .any(|(f, v)| f == "Endpoint__c" && v == "https://api.example.com"));
+    assert!(rec
+        .values
+        .iter()
+        .any(|(f, v)| f == "Timeout__c" && v == "30"));
+    assert!(rec
+        .values
+        .iter()
+        .any(|(f, v)| f == "Enabled__c" && v == "true"));
+}
+
+// ---------------------------------------------------------------------------
+// Cross-linking and mixed-type rendering
+// ---------------------------------------------------------------------------
+
+#[test]
+fn all_names_all_known_names_union() {
+    let all = AllNames {
+        class_names: ["ClassA".to_string()].into_iter().collect(),
+        trigger_names: ["TriggerA".to_string()].into_iter().collect(),
+        flow_names: ["FlowA".to_string()].into_iter().collect(),
+        validation_rule_names: ["RuleA".to_string()].into_iter().collect(),
+        object_names: ["ObjectA".to_string()].into_iter().collect(),
+        lwc_names: ["lwcA".to_string()].into_iter().collect(),
+        flexipage_names: ["PageA".to_string()].into_iter().collect(),
+        aura_names: ["AuraA".to_string()].into_iter().collect(),
+        custom_metadata_type_names: HashSet::new(),
+        interface_implementors: std::collections::HashMap::new(),
+    };
+    let known = all.all_known_names();
+    assert!(known.contains("ClassA"));
+    assert!(known.contains("TriggerA"));
+    assert!(known.contains("FlowA"));
+    assert!(known.contains("RuleA"));
+    assert!(known.contains("ObjectA"));
+    assert!(known.contains("lwcA"));
+    assert!(known.contains("PageA"));
+    assert!(known.contains("AuraA"));
+    assert_eq!(known.len(), 8);
+}
+
+#[test]
+fn mixed_bundle_renders_index_with_all_sections() {
+    let all_names = Arc::new(AllNames {
+        class_names: ["AccountService".to_string()].into_iter().collect(),
+        trigger_names: ["AccountTrigger".to_string()].into_iter().collect(),
+        flow_names: ["My_Flow".to_string()].into_iter().collect(),
+        validation_rule_names: HashSet::new(),
+        object_names: HashSet::new(),
+        lwc_names: ["myButton".to_string()].into_iter().collect(),
+        flexipage_names: HashSet::new(),
+        aura_names: HashSet::new(),
+        custom_metadata_type_names: HashSet::new(),
+        interface_implementors: std::collections::HashMap::new(),
+    });
+
+    let class_ctx = RenderContext {
+        metadata: parser::parse_apex_class("public class AccountService { }").unwrap(),
+        documentation: stub_class_doc("AccountService"),
+        all_names: all_names.clone(),
+        folder: "classes".to_string(),
+    };
+
+    let trigger_ctx = TriggerRenderContext {
+        metadata: trigger_parser::parse_apex_trigger(
+            "trigger AccountTrigger on Account (before insert) { }",
+        )
+        .unwrap(),
+        documentation: stub_trigger_doc("AccountTrigger", "Account"),
+        all_names: all_names.clone(),
+        folder: "triggers".to_string(),
+    };
+
+    let flow_ctx = FlowRenderContext {
+        metadata: sfdoc::types::FlowMetadata {
+            api_name: "My_Flow".to_string(),
+            label: "My Flow".to_string(),
+            ..Default::default()
+        },
+        documentation: stub_flow_doc("My_Flow"),
+        all_names: all_names.clone(),
+        folder: "flows".to_string(),
+    };
+
+    let lwc_ctx = LwcRenderContext {
+        metadata: sfdoc::types::LwcMetadata {
+            component_name: "myButton".to_string(),
+            ..Default::default()
+        },
+        documentation: stub_lwc_doc("myButton"),
+        all_names: all_names.clone(),
+        folder: "lwc".to_string(),
+    };
+
+    let bundle = renderer::DocumentationBundle {
+        classes: &[class_ctx],
+        triggers: &[trigger_ctx],
+        flows: &[flow_ctx],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[lwc_ctx],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
+
+    let index = renderer::render_index(&bundle);
+    assert!(index.contains("AccountService"), "index missing class");
+    assert!(
+        index.contains("AccountTrigger"),
+        "index missing trigger"
+    );
+    assert!(
+        index.contains("My_Flow") || index.contains("My Flow"),
+        "index missing flow"
+    );
+    assert!(index.contains("myButton"), "index missing LWC");
+}
+
+#[test]
+fn mixed_bundle_writes_all_output_dirs() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let all_names = Arc::new(AllNames {
+        class_names: ["Svc".to_string()].into_iter().collect(),
+        trigger_names: HashSet::new(),
+        flow_names: HashSet::new(),
+        validation_rule_names: HashSet::new(),
+        object_names: HashSet::new(),
+        lwc_names: HashSet::new(),
+        flexipage_names: HashSet::new(),
+        aura_names: HashSet::new(),
+        custom_metadata_type_names: HashSet::new(),
+        interface_implementors: std::collections::HashMap::new(),
+    });
+    let class_ctx = RenderContext {
+        metadata: parser::parse_apex_class("public class Svc { }").unwrap(),
+        documentation: stub_class_doc("Svc"),
+        all_names: all_names.clone(),
+        folder: "classes".to_string(),
+    };
+    let bundle = renderer::DocumentationBundle {
+        classes: &[class_ctx],
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
+    renderer::write_output(tmp.path(), &OutputFormat::Markdown, &bundle).unwrap();
+    assert!(tmp.path().join("classes/Svc.md").exists());
+    assert!(tmp.path().join("index.md").exists());
 }
