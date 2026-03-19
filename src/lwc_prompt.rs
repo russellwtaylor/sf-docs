@@ -66,8 +66,9 @@ pub fn build_lwc_prompt(file: &SourceFile, metadata: &LwcMetadata) -> String {
         prompt.push_str("```javascript\n");
         // Truncate very long files to avoid overly large prompts
         const MAX_JS_CHARS: usize = 6_000;
-        if file.raw_source.len() > MAX_JS_CHARS {
-            prompt.push_str(&file.raw_source[..MAX_JS_CHARS]);
+        if file.raw_source.chars().count() > MAX_JS_CHARS {
+            let truncated: String = file.raw_source.chars().take(MAX_JS_CHARS).collect();
+            prompt.push_str(&truncated);
             prompt.push_str("\n// ... (truncated)\n");
         } else {
             prompt.push_str(&file.raw_source);
