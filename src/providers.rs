@@ -105,7 +105,11 @@ mod tests {
     #[test]
     fn all_providers_have_default_models() {
         for provider in Provider::all() {
-            assert!(!provider.default_model().is_empty(), "{:?} missing default model", provider);
+            assert!(
+                !provider.default_model().is_empty(),
+                "{:?} missing default model",
+                provider
+            );
         }
     }
 

@@ -562,9 +562,14 @@ public class OverloadService {
 
     #[test]
     fn multiple_implements() {
-        let src = "public class Multi implements Queueable, Schedulable, Database.Batchable<SObject> { }";
+        let src =
+            "public class Multi implements Queueable, Schedulable, Database.Batchable<SObject> { }";
         let meta = parse_apex_class(src).unwrap();
-        assert!(meta.implements.len() >= 2, "expected at least 2 interfaces, got {:?}", meta.implements);
+        assert!(
+            meta.implements.len() >= 2,
+            "expected at least 2 interfaces, got {:?}",
+            meta.implements
+        );
     }
 
     #[test]
@@ -586,7 +591,11 @@ public class OverloadService {
         let meta = parse_apex_class(src).unwrap();
         let names: Vec<&str> = meta.methods.iter().map(|m| m.name.as_str()).collect();
         assert!(names.contains(&"realMethod"));
-        assert!(!names.contains(&"hiddenMethod"), "comment method should not be parsed: {:?}", names);
+        assert!(
+            !names.contains(&"hiddenMethod"),
+            "comment method should not be parsed: {:?}",
+            names
+        );
     }
 
     #[test]

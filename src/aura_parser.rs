@@ -261,7 +261,10 @@ mod tests {
         assert_eq!(result.attributes[0].name, "mode");
         assert_eq!(result.attributes[0].attr_type, "String");
         assert_eq!(result.attributes[0].default, "view");
-        assert_eq!(result.attributes[0].description, "Display mode: view or edit");
+        assert_eq!(
+            result.attributes[0].description,
+            "Display mode: view or edit"
+        );
     }
 
     #[test]
@@ -300,7 +303,14 @@ mod tests {
 </aura:component>"#;
         let path = setup_component(&tmp, "myComp", cmp);
         let result = parse_aura(&path, cmp).unwrap();
-        assert_eq!(result.events_handled.iter().filter(|e| e.as_str() == "c:myEvent").count(), 1);
+        assert_eq!(
+            result
+                .events_handled
+                .iter()
+                .filter(|e| e.as_str() == "c:myEvent")
+                .count(),
+            1
+        );
     }
 
     #[test]

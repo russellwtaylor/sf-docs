@@ -207,7 +207,9 @@ mod tests {
     </flexiPageRegions>
 </FlexiPage>"#;
         let meta = parse_flexipage("Page", src).unwrap();
-        assert!(meta.component_names.contains(&"force:detailPanel".to_string()));
+        assert!(meta
+            .component_names
+            .contains(&"force:detailPanel".to_string()));
     }
 
     #[test]
@@ -224,7 +226,13 @@ mod tests {
     </flexiPageRegions>
 </FlexiPage>"#;
         let meta = parse_flexipage("Page", src).unwrap();
-        assert_eq!(meta.component_names.iter().filter(|n| n.as_str() == "myComp").count(), 1);
+        assert_eq!(
+            meta.component_names
+                .iter()
+                .filter(|n| n.as_str() == "myComp")
+                .count(),
+            1
+        );
     }
 
     #[test]

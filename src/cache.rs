@@ -276,8 +276,8 @@ mod tests {
     }
 
     use crate::types::{
-        TriggerDocumentation, FlowDocumentation, ValidationRuleDocumentation,
-        ObjectDocumentation, LwcDocumentation,
+        FlowDocumentation, LwcDocumentation, ObjectDocumentation, TriggerDocumentation,
+        ValidationRuleDocumentation,
     };
 
     // -----------------------------------------------------------------------
@@ -286,7 +286,9 @@ mod tests {
 
     #[test]
     fn load_from_nonexistent_dir_returns_empty_cache() {
-        let cache = Cache::load(std::path::Path::new("/nonexistent/path/that/does/not/exist"));
+        let cache = Cache::load(std::path::Path::new(
+            "/nonexistent/path/that/does/not/exist",
+        ));
         assert!(cache.get_if_fresh("anything", "hash", "model").is_none());
     }
 
@@ -331,11 +333,18 @@ mod tests {
             usage_notes: vec![],
             relationships: vec![],
         };
-        cache.update_trigger("AccountTrigger.trigger".to_string(), "abc123".to_string(), "model-1", doc);
+        cache.update_trigger(
+            "AccountTrigger.trigger".to_string(),
+            "abc123".to_string(),
+            "model-1",
+            doc,
+        );
         cache.save(tmp.path()).unwrap();
 
         let loaded = Cache::load(tmp.path());
-        let entry = loaded.get_trigger_if_fresh("AccountTrigger.trigger", "abc123", "model-1").unwrap();
+        let entry = loaded
+            .get_trigger_if_fresh("AccountTrigger.trigger", "abc123", "model-1")
+            .unwrap();
         assert_eq!(entry.documentation.trigger_name, "AccountTrigger");
     }
 
@@ -358,8 +367,12 @@ mod tests {
         cache.save(tmp.path()).unwrap();
 
         let loaded = Cache::load(tmp.path());
-        assert!(loaded.get_flow_if_fresh("My_Flow", "hash1", "model-1").is_some());
-        assert!(loaded.get_flow_if_fresh("My_Flow", "wrong", "model-1").is_none());
+        assert!(loaded
+            .get_flow_if_fresh("My_Flow", "hash1", "model-1")
+            .is_some());
+        assert!(loaded
+            .get_flow_if_fresh("My_Flow", "wrong", "model-1")
+            .is_none());
     }
 
     #[test]
@@ -380,7 +393,9 @@ mod tests {
         cache.save(tmp.path()).unwrap();
 
         let loaded = Cache::load(tmp.path());
-        assert!(loaded.get_validation_rule_if_fresh("Rule1", "h1", "m1").is_some());
+        assert!(loaded
+            .get_validation_rule_if_fresh("Rule1", "h1", "m1")
+            .is_some());
     }
 
     #[test]
@@ -401,7 +416,9 @@ mod tests {
         cache.save(tmp.path()).unwrap();
 
         let loaded = Cache::load(tmp.path());
-        assert!(loaded.get_object_if_fresh("Invoice__c", "h2", "m2").is_some());
+        assert!(loaded
+            .get_object_if_fresh("Invoice__c", "h2", "m2")
+            .is_some());
     }
 
     #[test]
@@ -462,6 +479,13 @@ mod tests {
         cache.update("Foo.cls".to_string(), "hash2".to_string(), "model", doc2);
 
         assert!(cache.get_if_fresh("Foo.cls", "hash1", "model").is_none());
-        assert_eq!(cache.get_if_fresh("Foo.cls", "hash2", "model").unwrap().documentation.summary, "Version 2");
+        assert_eq!(
+            cache
+                .get_if_fresh("Foo.cls", "hash2", "model")
+                .unwrap()
+                .documentation
+                .summary,
+            "Version 2"
+        );
     }
 }

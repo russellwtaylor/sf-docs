@@ -21,20 +21,20 @@ use sfdoc::scanner::{ApexScanner, FileScanner, FlowScanner, LwcScanner, TriggerS
 use sfdoc::trigger_parser;
 use sfdoc::types::{
     AllNames, AuraDocumentation, ClassDocumentation, FlexiPageDocumentation, FlowDocumentation,
-    LwcDocumentation,
-    LwcPropDocumentation, MethodDocumentation, ObjectDocumentation, PropertyDocumentation,
-    TriggerDocumentation, TriggerEventDocumentation, ValidationRuleDocumentation,
+    LwcDocumentation, LwcPropDocumentation, MethodDocumentation, ObjectDocumentation,
+    PropertyDocumentation, TriggerDocumentation, TriggerEventDocumentation,
+    ValidationRuleDocumentation,
 };
 
 use sfdoc::aura_parser;
+use sfdoc::cli::OutputFormat;
 use sfdoc::custom_metadata_parser;
 use sfdoc::flexipage_parser;
 use sfdoc::object_parser;
-use sfdoc::validation_rule_parser;
 use sfdoc::scanner::{
     AuraScanner, CustomMetadataScanner, FlexiPageScanner, ObjectScanner, ValidationRuleScanner,
 };
-use sfdoc::cli::OutputFormat;
+use sfdoc::validation_rule_parser;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -128,9 +128,7 @@ fn aura_fixtures_dir() -> &'static Path {
 
 fn custom_metadata_fixtures_dir() -> &'static Path {
     static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
-    DIR.get_or_init(|| {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/customMetadata")
-    })
+    DIR.get_or_init(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/customMetadata"))
 }
 
 #[allow(dead_code)]
@@ -1577,10 +1575,18 @@ fn object_fixture_parses_with_fields() {
     assert_eq!(meta.label, "Invoice");
     assert!(meta.description.contains("invoices"));
     assert_eq!(meta.fields.len(), 2);
-    let status = meta.fields.iter().find(|f| f.api_name == "Status__c").unwrap();
+    let status = meta
+        .fields
+        .iter()
+        .find(|f| f.api_name == "Status__c")
+        .unwrap();
     assert_eq!(status.field_type, "Picklist");
     assert!(status.required);
-    let account = meta.fields.iter().find(|f| f.api_name == "Account__c").unwrap();
+    let account = meta
+        .fields
+        .iter()
+        .find(|f| f.api_name == "Account__c")
+        .unwrap();
     assert_eq!(account.field_type, "Lookup");
     assert_eq!(account.reference_to, "Account");
     assert!(!account.help_text.is_empty());
@@ -1588,17 +1594,20 @@ fn object_fixture_parses_with_fields() {
 
 #[test]
 fn validation_rule_scanner_finds_fixture() {
-    let files = ValidationRuleScanner.scan(validation_rule_fixtures_dir()).unwrap();
+    let files = ValidationRuleScanner
+        .scan(validation_rule_fixtures_dir())
+        .unwrap();
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].filename, "Require_Email.validationRule-meta.xml");
 }
 
 #[test]
 fn validation_rule_fixture_parses_correctly() {
-    let files = ValidationRuleScanner.scan(validation_rule_fixtures_dir()).unwrap();
+    let files = ValidationRuleScanner
+        .scan(validation_rule_fixtures_dir())
+        .unwrap();
     let file = &files[0];
-    let meta =
-        validation_rule_parser::parse_validation_rule(&file.path, &file.raw_source).unwrap();
+    let meta = validation_rule_parser::parse_validation_rule(&file.path, &file.raw_source).unwrap();
     assert_eq!(meta.rule_name, "Require_Email");
     assert_eq!(meta.object_name, "Account");
     assert!(meta.active);
@@ -1672,10 +1681,7 @@ fn lwc_fixture_parses_api_props_and_slots() {
 fn flexipage_scanner_finds_fixture() {
     let files = FlexiPageScanner.scan(flexipage_fixtures_dir()).unwrap();
     assert_eq!(files.len(), 1);
-    assert_eq!(
-        files[0].filename,
-        "Account_Record_Page.flexipage-meta.xml"
-    );
+    assert_eq!(files[0].filename, "Account_Record_Page.flexipage-meta.xml");
 }
 
 #[test]
@@ -1688,7 +1694,9 @@ fn flexipage_fixture_parses_correctly() {
     assert_eq!(meta.page_type, "RecordPage");
     assert_eq!(meta.sobject, "Account");
     assert!(meta.component_names.contains(&"accountDetails".to_string()));
-    assert!(meta.component_names.contains(&"relatedContacts".to_string()));
+    assert!(meta
+        .component_names
+        .contains(&"relatedContacts".to_string()));
     assert!(meta
         .component_names
         .contains(&"force:detailPanel".to_string()));
@@ -1736,8 +1744,7 @@ fn custom_metadata_fixture_parses_correctly() {
         .unwrap();
     let file = &files[0];
     let rec =
-        custom_metadata_parser::parse_custom_metadata_record(&file.path, &file.raw_source)
-            .unwrap();
+        custom_metadata_parser::parse_custom_metadata_record(&file.path, &file.raw_source).unwrap();
     assert_eq!(rec.type_name, "Integration_Settings__mdt");
     assert_eq!(rec.record_name, "Default");
     assert_eq!(rec.label, "Default Settings");
@@ -1853,10 +1860,7 @@ fn mixed_bundle_renders_index_with_all_sections() {
 
     let index = renderer::render_index(&bundle);
     assert!(index.contains("AccountService"), "index missing class");
-    assert!(
-        index.contains("AccountTrigger"),
-        "index missing trigger"
-    );
+    assert!(index.contains("AccountTrigger"), "index missing trigger");
     assert!(
         index.contains("My_Flow") || index.contains("My Flow"),
         "index missing flow"

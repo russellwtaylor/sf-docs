@@ -208,7 +208,11 @@ trigger AccountTrigger on Account (before insert, before update, after insert, a
     MyHelper h2 = new MyHelper();
 }"#;
         let meta = parse_apex_trigger(src).unwrap();
-        let count = meta.references.iter().filter(|r| r.as_str() == "MyHelper").count();
+        let count = meta
+            .references
+            .iter()
+            .filter(|r| r.as_str() == "MyHelper")
+            .count();
         assert_eq!(count, 1, "references should be deduplicated");
     }
 }

@@ -376,7 +376,10 @@ mod tests {
         let js = "@api recordId = '001xxx';";
         let meta = setup_component(&tmp, "myComp", js, "");
         let result = parse_lwc(&meta, js).unwrap();
-        assert!(result.api_props.iter().any(|p| p.name == "recordId" && !p.is_method));
+        assert!(result
+            .api_props
+            .iter()
+            .any(|p| p.name == "recordId" && !p.is_method));
     }
 
     #[test]
@@ -390,8 +393,18 @@ mod tests {
         "#;
         let meta = setup_component(&tmp, "myComp", js, "");
         let result = parse_lwc(&meta, js).unwrap();
-        let props: Vec<&str> = result.api_props.iter().filter(|p| !p.is_method).map(|p| p.name.as_str()).collect();
-        let methods: Vec<&str> = result.api_props.iter().filter(|p| p.is_method).map(|p| p.name.as_str()).collect();
+        let props: Vec<&str> = result
+            .api_props
+            .iter()
+            .filter(|p| !p.is_method)
+            .map(|p| p.name.as_str())
+            .collect();
+        let methods: Vec<&str> = result
+            .api_props
+            .iter()
+            .filter(|p| p.is_method)
+            .map(|p| p.name.as_str())
+            .collect();
         assert!(props.contains(&"label"));
         assert!(props.contains(&"variant"));
         assert!(methods.contains(&"focus"));
@@ -418,9 +431,15 @@ mod tests {
         let meta = setup_component(&tmp, "myComp", "", html);
         let result = parse_lwc(&meta, "").unwrap();
         assert_eq!(result.referenced_components.len(), 3);
-        assert!(result.referenced_components.contains(&"myButton".to_string()));
-        assert!(result.referenced_components.contains(&"myInput".to_string()));
-        assert!(result.referenced_components.contains(&"dataTable".to_string()));
+        assert!(result
+            .referenced_components
+            .contains(&"myButton".to_string()));
+        assert!(result
+            .referenced_components
+            .contains(&"myInput".to_string()));
+        assert!(result
+            .referenced_components
+            .contains(&"dataTable".to_string()));
     }
 
     #[test]

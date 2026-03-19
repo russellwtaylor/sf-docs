@@ -247,8 +247,16 @@ mod tests {
     <errorMessage>Amount must be &gt;= 0.</errorMessage>
 </ValidationRule>"#;
         let meta = parse_validation_rule(&path, src).unwrap();
-        assert!(meta.error_condition_formula.contains("<"), "XML entities should be unescaped: {}", meta.error_condition_formula);
-        assert!(meta.error_message.contains(">="), "XML entities should be unescaped: {}", meta.error_message);
+        assert!(
+            meta.error_condition_formula.contains("<"),
+            "XML entities should be unescaped: {}",
+            meta.error_condition_formula
+        );
+        assert!(
+            meta.error_message.contains(">="),
+            "XML entities should be unescaped: {}",
+            meta.error_message
+        );
     }
 
     #[test]

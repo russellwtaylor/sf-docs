@@ -620,7 +620,11 @@ mod tests {
     fn trigger_scanner_excludes_cls_files() {
         let tmp = TempDir::new().unwrap();
         write_file(tmp.path(), "MyClass.cls", "public class MyClass {}");
-        write_file(tmp.path(), "MyTrigger.trigger", "trigger MyTrigger on Account (before insert) {}");
+        write_file(
+            tmp.path(),
+            "MyTrigger.trigger",
+            "trigger MyTrigger on Account (before insert) {}",
+        );
 
         let files = TriggerScanner.scan(tmp.path()).unwrap();
         assert_eq!(files.len(), 1);
@@ -632,7 +636,11 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         write_file(tmp.path(), "My.flow-meta.xml", "<Flow/>");
         write_file(tmp.path(), "My.object-meta.xml", "<CustomObject/>");
-        write_file(tmp.path(), "My.validationRule-meta.xml", "<ValidationRule/>");
+        write_file(
+            tmp.path(),
+            "My.validationRule-meta.xml",
+            "<ValidationRule/>",
+        );
 
         let files = FlowScanner.scan(tmp.path()).unwrap();
         assert_eq!(files.len(), 1);
@@ -642,7 +650,11 @@ mod tests {
     #[test]
     fn validation_rule_scanner_only_finds_vr_files() {
         let tmp = TempDir::new().unwrap();
-        write_file(tmp.path(), "Rule.validationRule-meta.xml", "<ValidationRule/>");
+        write_file(
+            tmp.path(),
+            "Rule.validationRule-meta.xml",
+            "<ValidationRule/>",
+        );
         write_file(tmp.path(), "Flow.flow-meta.xml", "<Flow/>");
 
         let files = ValidationRuleScanner.scan(tmp.path()).unwrap();

@@ -346,11 +346,13 @@ mod tests {
         fs::write(
             obj_dir.join("fields").join("Zebra__c.field-meta.xml"),
             make_field_xml("Zebra", "Text"),
-        ).unwrap();
+        )
+        .unwrap();
         fs::write(
             obj_dir.join("fields").join("Alpha__c.field-meta.xml"),
             make_field_xml("Alpha", "Number"),
-        ).unwrap();
+        )
+        .unwrap();
 
         let meta = parse_object(&obj_path, &xml).unwrap();
         assert_eq!(meta.fields.len(), 2);
@@ -374,7 +376,11 @@ mod tests {
     <inlineHelpText>Enter a helpful tip here.</inlineHelpText>
     <required>false</required>
 </CustomField>"#;
-        fs::write(obj_dir.join("fields").join("Tip__c.field-meta.xml"), field_xml).unwrap();
+        fs::write(
+            obj_dir.join("fields").join("Tip__c.field-meta.xml"),
+            field_xml,
+        )
+        .unwrap();
 
         let meta = parse_object(&obj_path, &xml).unwrap();
         assert_eq!(meta.fields[0].help_text, "Enter a helpful tip here.");
@@ -393,7 +399,11 @@ mod tests {
     <label>NoReq</label>
     <type>Text</type>
 </CustomField>"#;
-        fs::write(obj_dir.join("fields").join("NoReq__c.field-meta.xml"), field_xml).unwrap();
+        fs::write(
+            obj_dir.join("fields").join("NoReq__c.field-meta.xml"),
+            field_xml,
+        )
+        .unwrap();
 
         let meta = parse_object(&obj_path, &xml).unwrap();
         assert!(!meta.fields[0].required);
@@ -428,7 +438,8 @@ mod tests {
         fs::write(
             obj_dir.join("fields").join("Real__c.field-meta.xml"),
             make_field_xml("Real", "Text"),
-        ).unwrap();
+        )
+        .unwrap();
 
         let meta = parse_object(&obj_path, &xml).unwrap();
         assert_eq!(meta.fields.len(), 1);
