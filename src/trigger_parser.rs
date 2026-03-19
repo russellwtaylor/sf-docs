@@ -2,6 +2,7 @@ use anyhow::Result;
 use regex::Regex;
 use std::sync::OnceLock;
 
+use crate::apex_common::{re_type_ref, APEX_BUILTINS};
 use crate::types::{TriggerEvent, TriggerMetadata};
 
 // ---------------------------------------------------------------------------
@@ -20,51 +21,6 @@ fn re_apexdoc() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"/\*\*[\s\S]*?\*/").unwrap())
 }
-
-fn re_type_ref() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"\b([A-Z][a-zA-Z0-9_]+)\b").unwrap())
-}
-
-const APEX_BUILTINS: &[&str] = &[
-    "String",
-    "Integer",
-    "Long",
-    "Double",
-    "Decimal",
-    "Boolean",
-    "Date",
-    "DateTime",
-    "Time",
-    "Blob",
-    "Id",
-    "Object",
-    "List",
-    "Map",
-    "Set",
-    "SObject",
-    "Schema",
-    "Database",
-    "System",
-    "Math",
-    "JSON",
-    "Type",
-    "Exception",
-    "DmlException",
-    "QueryException",
-    "Test",
-    "ApexPages",
-    "PageReference",
-    "SelectOption",
-    "Messaging",
-    "Approval",
-    "UserInfo",
-    "Label",
-    "Site",
-    "Network",
-    "ConnectApi",
-    "Trigger",
-];
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -94,6 +50,7 @@ pub fn parse_apex_trigger(source: &str) -> Result<TriggerMetadata> {
         .map(|c| c[1].to_string())
         .filter(|name| {
             !APEX_BUILTINS.contains(&name.as_str())
+                && name != "Trigger"
                 && name != &meta.trigger_name
                 && name != &meta.sobject
                 && name.len() > 2

@@ -1,3 +1,4 @@
+pub mod apex_common;
 pub mod aura_parser;
 pub mod aura_prompt;
 pub mod cache;
