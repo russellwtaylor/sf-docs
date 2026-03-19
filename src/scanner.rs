@@ -579,4 +579,136 @@ mod tests {
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].filename, "Small.cls");
     }
+
+    // -----------------------------------------------------------------------
+    // Additional edge cases
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn empty_directory_returns_empty_vec() {
+        let tmp = TempDir::new().unwrap();
+        let files = ApexScanner.scan(tmp.path()).unwrap();
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn scanner_skips_sfdx_directory() {
+        let tmp = TempDir::new().unwrap();
+        let sfdx_dir = tmp.path().join(".sfdx");
+        fs::create_dir_all(&sfdx_dir).unwrap();
+        write_file(&sfdx_dir, "Hidden.cls", "public class Hidden {}");
+        write_file(tmp.path(), "Visible.cls", "public class Visible {}");
+
+        let files = ApexScanner.scan(tmp.path()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "Visible.cls");
+    }
+
+    #[test]
+    fn deeply_nested_files_found() {
+        let tmp = TempDir::new().unwrap();
+        let deep = tmp.path().join("a").join("b").join("c").join("d");
+        fs::create_dir_all(&deep).unwrap();
+        write_file(&deep, "Deep.cls", "public class Deep {}");
+
+        let files = ApexScanner.scan(tmp.path()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "Deep.cls");
+    }
+
+    #[test]
+    fn trigger_scanner_excludes_cls_files() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "MyClass.cls", "public class MyClass {}");
+        write_file(tmp.path(), "MyTrigger.trigger", "trigger MyTrigger on Account (before insert) {}");
+
+        let files = TriggerScanner.scan(tmp.path()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "MyTrigger.trigger");
+    }
+
+    #[test]
+    fn flow_scanner_excludes_other_meta_xml() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "My.flow-meta.xml", "<Flow/>");
+        write_file(tmp.path(), "My.object-meta.xml", "<CustomObject/>");
+        write_file(tmp.path(), "My.validationRule-meta.xml", "<ValidationRule/>");
+
+        let files = FlowScanner.scan(tmp.path()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "My.flow-meta.xml");
+    }
+
+    #[test]
+    fn validation_rule_scanner_only_finds_vr_files() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "Rule.validationRule-meta.xml", "<ValidationRule/>");
+        write_file(tmp.path(), "Flow.flow-meta.xml", "<Flow/>");
+
+        let files = ValidationRuleScanner.scan(tmp.path()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "Rule.validationRule-meta.xml");
+    }
+
+    #[test]
+    fn flexipage_scanner_finds_flexipage_files() {
+        let tmp = TempDir::new().unwrap();
+        write_file(tmp.path(), "Page.flexipage-meta.xml", "<FlexiPage/>");
+        write_file(tmp.path(), "Other.flow-meta.xml", "<Flow/>");
+
+        let files = FlexiPageScanner.scan(tmp.path()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "Page.flexipage-meta.xml");
+    }
+
+    #[test]
+    fn custom_metadata_scanner_requires_custom_metadata_ancestor() {
+        let tmp = TempDir::new().unwrap();
+        let cm_dir = tmp.path().join("customMetadata");
+        fs::create_dir_all(&cm_dir).unwrap();
+        write_file(&cm_dir, "Type__mdt.Record.md-meta.xml", "<CustomMetadata/>");
+        write_file(tmp.path(), "Other.md-meta.xml", "<CustomMetadata/>");
+
+        let files = CustomMetadataScanner.scan(tmp.path()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "Type__mdt.Record.md-meta.xml");
+    }
+
+    #[test]
+    fn aura_scanner_requires_aura_ancestor() {
+        let tmp = TempDir::new().unwrap();
+        let aura_dir = tmp.path().join("aura").join("myComp");
+        fs::create_dir_all(&aura_dir).unwrap();
+        write_file(&aura_dir, "myComp.cmp", "<aura:component/>");
+        let other = tmp.path().join("other");
+        fs::create_dir_all(&other).unwrap();
+        write_file(&other, "other.cmp", "<aura:component/>");
+
+        let files = AuraScanner.scan(tmp.path()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "myComp.cmp");
+    }
+
+    #[test]
+    fn aura_scanner_reads_sibling_js_as_source() {
+        let tmp = TempDir::new().unwrap();
+        let comp_dir = tmp.path().join("aura").join("myComp");
+        fs::create_dir_all(&comp_dir).unwrap();
+        write_file(&comp_dir, "myComp.cmp", "<aura:component/>");
+        write_file(&comp_dir, "myComp.js", "({ handleClick: function() {} })");
+
+        let files = AuraScanner.scan(tmp.path()).unwrap();
+        assert_eq!(files.len(), 1);
+        assert!(files[0].raw_source.contains("handleClick"));
+    }
+
+    #[test]
+    fn raw_source_preserves_file_content() {
+        let tmp = TempDir::new().unwrap();
+        let content = "public class Preserved {\n    // exact content\n}";
+        write_file(tmp.path(), "Preserved.cls", content);
+
+        let files = ApexScanner.scan(tmp.path()).unwrap();
+        assert_eq!(files[0].raw_source, content);
+    }
 }

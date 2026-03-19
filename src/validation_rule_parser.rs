@@ -211,4 +211,60 @@ mod tests {
         let meta = parse_validation_rule(&path, INACTIVE_RULE).unwrap();
         assert!(meta.error_display_field.is_empty());
     }
+
+    // -----------------------------------------------------------------------
+    // Edge cases & negative tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn empty_xml_returns_defaults() {
+        let path = make_path("Account", "Empty_Rule");
+        let src = r#"<?xml version="1.0"?><ValidationRule></ValidationRule>"#;
+        let meta = parse_validation_rule(&path, src).unwrap();
+        assert_eq!(meta.rule_name, "Empty_Rule");
+        assert_eq!(meta.object_name, "Account");
+        assert!(meta.active); // default is true
+        assert!(meta.description.is_empty());
+        assert!(meta.error_condition_formula.is_empty());
+    }
+
+    #[test]
+    fn rule_name_derived_from_deep_nested_path() {
+        let path = PathBuf::from("force-app/main/default/objects/My_Object__c/validationRules/Complex_Rule_Name.validationRule-meta.xml");
+        let src = r#"<?xml version="1.0"?><ValidationRule><active>true</active></ValidationRule>"#;
+        let meta = parse_validation_rule(&path, src).unwrap();
+        assert_eq!(meta.rule_name, "Complex_Rule_Name");
+        assert_eq!(meta.object_name, "My_Object__c");
+    }
+
+    #[test]
+    fn formula_with_html_entities() {
+        let path = make_path("Account", "Entity_Rule");
+        let src = r#"<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <active>true</active>
+    <errorConditionFormula>Amount__c &lt; 0</errorConditionFormula>
+    <errorMessage>Amount must be &gt;= 0.</errorMessage>
+</ValidationRule>"#;
+        let meta = parse_validation_rule(&path, src).unwrap();
+        assert!(meta.error_condition_formula.contains("<"), "XML entities should be unescaped: {}", meta.error_condition_formula);
+        assert!(meta.error_message.contains(">="), "XML entities should be unescaped: {}", meta.error_message);
+    }
+
+    #[test]
+    fn path_with_no_parent_gives_unknown_object() {
+        let path = PathBuf::from("Orphan_Rule.validationRule-meta.xml");
+        let src = r#"<?xml version="1.0"?><ValidationRule><active>false</active></ValidationRule>"#;
+        let meta = parse_validation_rule(&path, src).unwrap();
+        assert_eq!(meta.rule_name, "Orphan_Rule");
+    }
+
+    #[test]
+    fn minimal_xml_has_empty_description() {
+        let path = make_path("Contact", "No_Desc");
+        let src = r#"<?xml version="1.0"?><ValidationRule><active>true</active><errorMessage>Required</errorMessage></ValidationRule>"#;
+        let meta = parse_validation_rule(&path, src).unwrap();
+        assert!(meta.description.is_empty());
+        assert!(meta.error_display_field.is_empty());
+    }
 }

@@ -163,4 +163,78 @@ mod tests {
             "expected Endpoint__c field"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Edge cases & negative tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn filename_without_dot_gives_empty_record_name() {
+        let path = PathBuf::from("SinglePart.md-meta.xml");
+        let src = r#"<?xml version="1.0"?><CustomMetadata><label>Test</label></CustomMetadata>"#;
+        let rec = parse_custom_metadata_record(&path, src).unwrap();
+        assert_eq!(rec.type_name, "SinglePart");
+        assert!(rec.record_name.is_empty());
+    }
+
+    #[test]
+    fn empty_xml_returns_defaults() {
+        let path = PathBuf::from("Type__mdt.Record.md-meta.xml");
+        let src = r#"<?xml version="1.0"?><CustomMetadata></CustomMetadata>"#;
+        let rec = parse_custom_metadata_record(&path, src).unwrap();
+        assert_eq!(rec.type_name, "Type__mdt");
+        assert_eq!(rec.record_name, "Record");
+        assert!(rec.label.is_empty());
+        assert!(rec.values.is_empty());
+    }
+
+    #[test]
+    fn value_with_empty_field_skipped() {
+        let path = PathBuf::from("T__mdt.R.md-meta.xml");
+        let src = r#"<?xml version="1.0"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Test</label>
+    <values>
+        <field></field>
+        <value>should be skipped</value>
+    </values>
+    <values>
+        <field>Valid__c</field>
+        <value>kept</value>
+    </values>
+</CustomMetadata>"#;
+        let rec = parse_custom_metadata_record(&path, src).unwrap();
+        assert_eq!(rec.values.len(), 1);
+        assert_eq!(rec.values[0].0, "Valid__c");
+    }
+
+    #[test]
+    fn multiple_values_preserved_in_order() {
+        let path = PathBuf::from("Config__mdt.Main.md-meta.xml");
+        let src = r#"<?xml version="1.0"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Main Config</label>
+    <values><field>First__c</field><value>1</value></values>
+    <values><field>Second__c</field><value>2</value></values>
+    <values><field>Third__c</field><value>3</value></values>
+</CustomMetadata>"#;
+        let rec = parse_custom_metadata_record(&path, src).unwrap();
+        assert_eq!(rec.values.len(), 3);
+        assert_eq!(rec.values[0].0, "First__c");
+        assert_eq!(rec.values[1].0, "Second__c");
+        assert_eq!(rec.values[2].0, "Third__c");
+    }
+
+    #[test]
+    fn protected_field_does_not_affect_parsing() {
+        let rec = parse_custom_metadata_record(&sample_path(), SAMPLE_XML).unwrap();
+        assert!(!rec.values.iter().any(|(f, _)| f == "protected"));
+    }
+
+    #[test]
+    fn value_with_xsi_type_attribute_still_reads_text() {
+        let rec = parse_custom_metadata_record(&sample_path(), SAMPLE_XML).unwrap();
+        let timeout = rec.values.iter().find(|(f, _)| f == "Timeout__c").unwrap();
+        assert_eq!(timeout.1, "30");
+    }
 }

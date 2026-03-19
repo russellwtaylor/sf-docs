@@ -490,4 +490,168 @@ public class OverloadService {
             overloads
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Edge cases & negative tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn empty_source_returns_default_metadata() {
+        let meta = parse_apex_class("").unwrap();
+        assert!(meta.class_name.is_empty());
+        assert!(meta.methods.is_empty());
+        assert!(meta.properties.is_empty());
+    }
+
+    #[test]
+    fn whitespace_only_source_returns_default_metadata() {
+        let meta = parse_apex_class("   \n\t\n  ").unwrap();
+        assert!(meta.class_name.is_empty());
+    }
+
+    #[test]
+    fn parses_with_sharing_class() {
+        let src = "public with sharing class MyService { }";
+        let meta = parse_apex_class(src).unwrap();
+        assert_eq!(meta.class_name, "MyService");
+        assert_eq!(meta.access_modifier, "public");
+    }
+
+    #[test]
+    fn parses_without_sharing_class() {
+        let src = "public without sharing class SystemService { }";
+        let meta = parse_apex_class(src).unwrap();
+        assert_eq!(meta.class_name, "SystemService");
+    }
+
+    #[test]
+    fn parses_inherited_sharing_class() {
+        let src = "public inherited sharing class DelegateService { }";
+        let meta = parse_apex_class(src).unwrap();
+        assert_eq!(meta.class_name, "DelegateService");
+    }
+
+    #[test]
+    fn parses_global_access_modifier() {
+        let src = "global class WebServiceHandler { }";
+        let meta = parse_apex_class(src).unwrap();
+        assert_eq!(meta.access_modifier, "global");
+    }
+
+    #[test]
+    fn parses_private_inner_class_style() {
+        let src = "private class InnerHelper { }";
+        let meta = parse_apex_class(src).unwrap();
+        assert_eq!(meta.access_modifier, "private");
+        assert_eq!(meta.class_name, "InnerHelper");
+    }
+
+    #[test]
+    fn no_extends_gives_none() {
+        let src = "public class Simple { }";
+        let meta = parse_apex_class(src).unwrap();
+        assert!(meta.extends.is_none());
+    }
+
+    #[test]
+    fn no_implements_gives_empty_vec() {
+        let src = "public class Simple { }";
+        let meta = parse_apex_class(src).unwrap();
+        assert!(meta.implements.is_empty());
+    }
+
+    #[test]
+    fn multiple_implements() {
+        let src = "public class Multi implements Queueable, Schedulable, Database.Batchable<SObject> { }";
+        let meta = parse_apex_class(src).unwrap();
+        assert!(meta.implements.len() >= 2, "expected at least 2 interfaces, got {:?}", meta.implements);
+    }
+
+    #[test]
+    fn method_with_no_params() {
+        let src = r#"public class Svc {
+    public void doWork() { }
+}"#;
+        let meta = parse_apex_class(src).unwrap();
+        let m = meta.methods.iter().find(|m| m.name == "doWork").unwrap();
+        assert!(m.params.is_empty());
+    }
+
+    #[test]
+    fn strips_single_line_comments_before_parsing() {
+        let src = r#"public class Svc {
+    // public void hiddenMethod() { }
+    public void realMethod() { }
+}"#;
+        let meta = parse_apex_class(src).unwrap();
+        let names: Vec<&str> = meta.methods.iter().map(|m| m.name.as_str()).collect();
+        assert!(names.contains(&"realMethod"));
+        assert!(!names.contains(&"hiddenMethod"), "comment method should not be parsed: {:?}", names);
+    }
+
+    #[test]
+    fn strips_block_comments_before_parsing() {
+        let src = r#"public class Svc {
+    /* public void hidden() { } */
+    public void visible() { }
+}"#;
+        let meta = parse_apex_class(src).unwrap();
+        let names: Vec<&str> = meta.methods.iter().map(|m| m.name.as_str()).collect();
+        assert!(names.contains(&"visible"));
+    }
+
+    #[test]
+    fn skips_control_flow_keywords_as_methods() {
+        let src = r#"public class Svc {
+    public void process() {
+        if (true) { }
+        for (Integer i = 0; i < 10; i++) { }
+        while (true) { }
+    }
+}"#;
+        let meta = parse_apex_class(src).unwrap();
+        let names: Vec<&str> = meta.methods.iter().map(|m| m.name.as_str()).collect();
+        assert!(!names.contains(&"if"));
+        assert!(!names.contains(&"for"));
+        assert!(!names.contains(&"while"));
+    }
+
+    #[test]
+    fn parses_override_method() {
+        let src = r#"public class Child extends Parent {
+    public override void process() { }
+}"#;
+        let meta = parse_apex_class(src).unwrap();
+        assert!(meta.methods.iter().any(|m| m.name == "process"));
+    }
+
+    #[test]
+    fn parses_abstract_method_declaration() {
+        let src = r#"public abstract class Base {
+    public abstract void execute();
+}"#;
+        let meta = parse_apex_class(src).unwrap();
+        assert!(meta.is_abstract);
+    }
+
+    #[test]
+    fn references_exclude_builtin_types() {
+        let src = r#"public class Svc {
+    public String name;
+    public Integer count;
+    public CustomType__c custom;
+}"#;
+        let meta = parse_apex_class(src).unwrap();
+        assert!(!meta.references.contains(&"String".to_string()));
+        assert!(!meta.references.contains(&"Integer".to_string()));
+    }
+
+    #[test]
+    fn references_exclude_self_class_name() {
+        let src = r#"public class AccountService {
+    public AccountService getInstance() { return new AccountService(); }
+}"#;
+        let meta = parse_apex_class(src).unwrap();
+        assert!(!meta.references.contains(&"AccountService".to_string()));
+    }
 }

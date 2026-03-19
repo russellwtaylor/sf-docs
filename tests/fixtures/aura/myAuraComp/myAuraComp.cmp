@@ -1,0 +1,9 @@
+<aura:component extends="c:baseComponent" implements="flexipage:availableForRecordHome">
+    <aura:attribute name="recordId" type="Id" description="The record to display"/>
+    <aura:attribute name="title" type="String" default="Details"/>
+    <aura:registerEvent name="onSave" type="c:saveEvent"/>
+    <aura:handler event="c:refreshEvent" action="{!c.handleRefresh}"/>
+    <div class="slds-card">
+        <h2>{!v.title}</h2>
+    </div>
+</aura:component>

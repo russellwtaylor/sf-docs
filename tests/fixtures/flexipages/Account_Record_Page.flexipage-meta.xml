@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FlexiPage xmlns="http://soap.sforce.com/2006/04/metadata">
+    <masterLabel>Account Record Page</masterLabel>
+    <type>RecordPage</type>
+    <sobjectType>Account</sobjectType>
+    <description>Custom record page for accounts.</description>
+    <flexiPageRegions>
+        <componentInstances>
+            <componentInstance>
+                <componentName>c__accountDetails</componentName>
+            </componentInstance>
+            <componentInstance>
+                <componentName>c__relatedContacts</componentName>
+            </componentInstance>
+            <componentInstance>
+                <componentName>force:detailPanel</componentName>
+            </componentInstance>
+        </componentInstances>
+    </flexiPageRegions>
+</FlexiPage>

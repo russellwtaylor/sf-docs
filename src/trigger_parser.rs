@@ -140,4 +140,75 @@ trigger AccountTrigger on Account (before insert, before update, after insert, a
         let meta = parse_apex_trigger(src).unwrap();
         assert_eq!(meta.events, vec![TriggerEvent::BeforeDelete]);
     }
+
+    // -----------------------------------------------------------------------
+    // Edge cases & negative tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn empty_source_returns_default_metadata() {
+        let meta = parse_apex_trigger("").unwrap();
+        assert!(meta.trigger_name.is_empty());
+        assert!(meta.sobject.is_empty());
+        assert!(meta.events.is_empty());
+    }
+
+    #[test]
+    fn all_seven_events_parsed() {
+        let src = "trigger T on Obj (before insert, before update, before delete, after insert, after update, after delete, after undelete) {}";
+        let meta = parse_apex_trigger(src).unwrap();
+        assert_eq!(meta.events.len(), 7);
+        assert!(meta.events.contains(&TriggerEvent::BeforeInsert));
+        assert!(meta.events.contains(&TriggerEvent::BeforeDelete));
+        assert!(meta.events.contains(&TriggerEvent::AfterUndelete));
+    }
+
+    #[test]
+    fn unknown_event_is_ignored() {
+        let src = "trigger T on Obj (before insert, before merge) {}";
+        let meta = parse_apex_trigger(src).unwrap();
+        assert_eq!(meta.events.len(), 1);
+        assert_eq!(meta.events[0], TriggerEvent::BeforeInsert);
+    }
+
+    #[test]
+    fn references_exclude_trigger_keyword_and_sobject() {
+        let src = r#"trigger AccountTrigger on Account (before insert) {
+    AccountService svc = new AccountService();
+}"#;
+        let meta = parse_apex_trigger(src).unwrap();
+        assert!(!meta.references.contains(&"Trigger".to_string()));
+        assert!(!meta.references.contains(&"Account".to_string()));
+        assert!(!meta.references.contains(&"AccountTrigger".to_string()));
+        assert!(meta.references.contains(&"AccountService".to_string()));
+    }
+
+    #[test]
+    fn trigger_event_as_str_values() {
+        assert_eq!(TriggerEvent::BeforeInsert.as_str(), "before insert");
+        assert_eq!(TriggerEvent::BeforeUpdate.as_str(), "before update");
+        assert_eq!(TriggerEvent::BeforeDelete.as_str(), "before delete");
+        assert_eq!(TriggerEvent::AfterInsert.as_str(), "after insert");
+        assert_eq!(TriggerEvent::AfterUpdate.as_str(), "after update");
+        assert_eq!(TriggerEvent::AfterDelete.as_str(), "after delete");
+        assert_eq!(TriggerEvent::AfterUndelete.as_str(), "after undelete");
+    }
+
+    #[test]
+    fn no_apexdoc_gives_empty_comments() {
+        let src = "trigger T on Obj (after insert) { }";
+        let meta = parse_apex_trigger(src).unwrap();
+        assert!(meta.existing_comments.is_empty());
+    }
+
+    #[test]
+    fn multiple_class_references_deduplicated() {
+        let src = r#"trigger T on Account (before insert) {
+    MyHelper h1 = new MyHelper();
+    MyHelper h2 = new MyHelper();
+}"#;
+        let meta = parse_apex_trigger(src).unwrap();
+        let count = meta.references.iter().filter(|r| r.as_str() == "MyHelper").count();
+        assert_eq!(count, 1, "references should be deduplicated");
+    }
 }

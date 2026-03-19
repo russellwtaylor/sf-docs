@@ -97,3 +97,89 @@ impl fmt::Display for Provider {
         write!(f, "{}", self.display_name())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_providers_have_default_models() {
+        for provider in Provider::all() {
+            assert!(!provider.default_model().is_empty(), "{:?} missing default model", provider);
+        }
+    }
+
+    #[test]
+    fn all_providers_have_display_names() {
+        for provider in Provider::all() {
+            assert!(!provider.display_name().is_empty());
+        }
+    }
+
+    #[test]
+    fn all_providers_have_keychain_keys() {
+        for provider in Provider::all() {
+            assert!(!provider.keychain_key().is_empty());
+        }
+    }
+
+    #[test]
+    fn all_providers_have_cli_names() {
+        for provider in Provider::all() {
+            assert!(!provider.cli_name().is_empty());
+        }
+    }
+
+    #[test]
+    fn gemini_has_no_base_url() {
+        assert!(Provider::Gemini.base_url().is_none());
+    }
+
+    #[test]
+    fn openai_compat_providers_have_base_urls() {
+        assert!(Provider::Groq.base_url().is_some());
+        assert!(Provider::OpenAi.base_url().is_some());
+        assert!(Provider::Ollama.base_url().is_some());
+    }
+
+    #[test]
+    fn ollama_does_not_require_api_key() {
+        assert!(!Provider::Ollama.requires_api_key());
+    }
+
+    #[test]
+    fn non_ollama_providers_require_api_key() {
+        assert!(Provider::Gemini.requires_api_key());
+        assert!(Provider::Groq.requires_api_key());
+        assert!(Provider::OpenAi.requires_api_key());
+    }
+
+    #[test]
+    fn ollama_has_no_env_var() {
+        assert!(Provider::Ollama.env_var().is_none());
+    }
+
+    #[test]
+    fn non_ollama_providers_have_env_vars() {
+        assert!(Provider::Gemini.env_var().is_some());
+        assert!(Provider::Groq.env_var().is_some());
+        assert!(Provider::OpenAi.env_var().is_some());
+    }
+
+    #[test]
+    fn display_trait_uses_display_name() {
+        assert_eq!(format!("{}", Provider::Gemini), "Google Gemini");
+        assert_eq!(format!("{}", Provider::Ollama), "Ollama (local)");
+    }
+
+    #[test]
+    fn all_returns_four_providers() {
+        assert_eq!(Provider::all().len(), 4);
+    }
+
+    #[test]
+    fn provider_equality() {
+        assert_eq!(Provider::Gemini, Provider::Gemini);
+        assert_ne!(Provider::Gemini, Provider::Groq);
+    }
+}
