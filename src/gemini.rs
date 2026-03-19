@@ -184,7 +184,6 @@ impl GeminiClient {
             anyhow::bail!("Gemini API error {status}: {body}");
         }
     }
-
 }
 
 #[async_trait]

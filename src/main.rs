@@ -469,7 +469,9 @@ async fn main() -> Result<()> {
                     _ => Arc::new(OpenAiCompatClient::new(
                         api_key,
                         &model,
-                        provider.base_url().expect("non-Gemini provider must have a base URL"),
+                        provider
+                            .base_url()
+                            .expect("non-Gemini provider must have a base URL"),
                         args.concurrency,
                         provider.display_name(),
                         args.rpm,

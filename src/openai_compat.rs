@@ -176,7 +176,6 @@ impl OpenAiCompatClient {
             anyhow::bail!("{} API error {status}: {body}", self.provider_name);
         }
     }
-
 }
 
 #[async_trait]

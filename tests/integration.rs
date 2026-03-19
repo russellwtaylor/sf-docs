@@ -275,12 +275,7 @@ fn full_pipeline_writes_markdown_output() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(
-        output_dir,
-        &sfdoc::cli::OutputFormat::Markdown,
-        &bundle,
-    )
-    .unwrap();
+    renderer::write_output(output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
 
     // Every class and trigger gets its own page
     assert!(
@@ -343,12 +338,7 @@ fn markdown_class_page_contains_expected_sections() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(
-        output_dir,
-        &sfdoc::cli::OutputFormat::Markdown,
-        &bundle,
-    )
-    .unwrap();
+    renderer::write_output(output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
 
     let content = std::fs::read_to_string(output_dir.join("classes/AccountService.md")).unwrap();
     assert!(content.contains("# AccountService"), "missing title");
@@ -481,12 +471,7 @@ fn full_pipeline_writes_html_output() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(
-        output_dir,
-        &sfdoc::cli::OutputFormat::Html,
-        &bundle,
-    )
-    .unwrap();
+    renderer::write_output(output_dir, &sfdoc::cli::OutputFormat::Html, &bundle).unwrap();
 
     assert!(output_dir.join("index.html").exists(), "index.html missing");
     assert!(
@@ -541,12 +526,7 @@ fn html_page_contains_sidebar_and_content() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(
-        tmp.path(),
-        &sfdoc::cli::OutputFormat::Html,
-        &bundle,
-    )
-    .unwrap();
+    renderer::write_output(tmp.path(), &sfdoc::cli::OutputFormat::Html, &bundle).unwrap();
 
     let html = std::fs::read_to_string(tmp.path().join("classes/AccountService.html")).unwrap();
     assert!(html.contains("<nav"), "missing nav sidebar");
@@ -1000,12 +980,7 @@ async fn e2e_scan_parse_ai_render_markdown() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(
-        tmp.path(),
-        &sfdoc::cli::OutputFormat::Markdown,
-        &bundle,
-    )
-    .unwrap();
+    renderer::write_output(tmp.path(), &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
 
     // Assert
     assert!(tmp.path().join("classes/AccountService.md").exists());
@@ -1097,12 +1072,7 @@ fn flow_pipeline_writes_markdown_output() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(
-        &output_dir,
-        &sfdoc::cli::OutputFormat::Markdown,
-        &bundle,
-    )
-    .unwrap();
+    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
 
     assert!(
         output_dir.join("flows/My_Flow.md").exists(),
@@ -1208,12 +1178,7 @@ fn validation_rule_pipeline_writes_markdown_output() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(
-        &output_dir,
-        &sfdoc::cli::OutputFormat::Markdown,
-        &bundle,
-    )
-    .unwrap();
+    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
 
     let expected_path = output_dir
         .join("validation-rules")
@@ -1298,12 +1263,7 @@ fn object_pipeline_writes_markdown_output() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(
-        &output_dir,
-        &sfdoc::cli::OutputFormat::Markdown,
-        &bundle,
-    )
-    .unwrap();
+    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
 
     assert!(
         output_dir
@@ -1406,12 +1366,7 @@ fn lwc_pipeline_writes_markdown_output() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(
-        &output_dir,
-        &sfdoc::cli::OutputFormat::Markdown,
-        &bundle,
-    )
-    .unwrap();
+    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
 
     assert!(
         output_dir
@@ -1486,12 +1441,7 @@ fn lwc_pipeline_writes_html_output() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(
-        &output_dir,
-        &sfdoc::cli::OutputFormat::Html,
-        &bundle,
-    )
-    .unwrap();
+    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Html, &bundle).unwrap();
 
     assert!(
         output_dir

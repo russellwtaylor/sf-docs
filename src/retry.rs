@@ -95,17 +95,17 @@ mod tests {
         // attempt 0: cap=5, half=2, range [2, 5]
         for _ in 0..20 {
             let d = retry_delay_secs(None, "no hint here", 0);
-            assert!(d >= 2 && d <= 5, "attempt 0 delay {d} out of [2, 5]");
+            assert!((2..=5).contains(&d), "attempt 0 delay {d} out of [2, 5]");
         }
         // attempt 1: cap=10, half=5, range [5, 10]
         for _ in 0..20 {
             let d = retry_delay_secs(None, "no hint here", 1);
-            assert!(d >= 5 && d <= 10, "attempt 1 delay {d} out of [5, 10]");
+            assert!((5..=10).contains(&d), "attempt 1 delay {d} out of [5, 10]");
         }
         // attempt 2: cap=20, half=10, range [10, 20]
         for _ in 0..20 {
             let d = retry_delay_secs(None, "no hint here", 2);
-            assert!(d >= 10 && d <= 20, "attempt 2 delay {d} out of [10, 20]");
+            assert!((10..=20).contains(&d), "attempt 2 delay {d} out of [10, 20]");
         }
     }
 
@@ -159,7 +159,7 @@ mod tests {
         // "retry in" present but no number before "s" — should fall through to backoff.
         let d = retry_delay_secs(None, "retry in the future sometime", 0);
         assert!(
-            d >= 2 && d <= 5,
+            (2..=5).contains(&d),
             "delay {d} should be in backoff range [2, 5]"
         );
     }
@@ -174,12 +174,12 @@ mod tests {
         // attempt 3: cap=40, half=20, range [20, 40]
         for _ in 0..20 {
             let d = retry_delay_secs(None, "no hint", 3);
-            assert!(d >= 20 && d <= 40, "attempt 3 delay {d} out of [20, 40]");
+            assert!((20..=40).contains(&d), "attempt 3 delay {d} out of [20, 40]");
         }
         // attempt 4: cap=80, half=40, range [40, 80]
         for _ in 0..20 {
             let d = retry_delay_secs(None, "no hint", 4);
-            assert!(d >= 40 && d <= 80, "attempt 4 delay {d} out of [40, 80]");
+            assert!((40..=80).contains(&d), "attempt 4 delay {d} out of [40, 80]");
         }
     }
 

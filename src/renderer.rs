@@ -1782,12 +1782,7 @@ mod tests {
             custom_metadata: &[],
             aura: &[],
         };
-        write_output(
-            tmp.path(),
-            &crate::cli::OutputFormat::Markdown,
-            &bundle,
-        )
-        .unwrap();
+        write_output(tmp.path(), &crate::cli::OutputFormat::Markdown, &bundle).unwrap();
         assert!(tmp.path().join("classes/AccountService.md").exists());
         assert!(tmp.path().join("index.md").exists());
     }

@@ -179,11 +179,7 @@ impl FileScanner for CustomMetadataScanner {
 ///
 /// - `suffix`: file name must end with this (e.g. `".js-meta.xml"`, `".cmp"`).
 /// - `ancestor`: required ancestor directory name (e.g. `"lwc"`, `"aura"`).
-fn scan_component(
-    source_dir: &Path,
-    suffix: &str,
-    ancestor: &str,
-) -> Result<Vec<SourceFile>> {
+fn scan_component(source_dir: &Path, suffix: &str, ancestor: &str) -> Result<Vec<SourceFile>> {
     let mut files = Vec::new();
     for entry in WalkDir::new(source_dir)
         .follow_links(false)
