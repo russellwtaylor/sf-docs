@@ -1,0 +1,72 @@
+---
+description: Always-apply project context for sfdoc
+globs: ["**/*.rs", "Cargo.toml"]
+alwaysApply: true
+---
+
+# sfdoc — Apex Documentation Generator
+
+## What This Project Does
+`sfdoc` is a Rust CLI tool that:
+1. Scans a Salesforce SFDX project directory for `.cls` (Apex) files
+2. Parses each file with a regex-based structural parser (no full AST)
+3. Sends the source + extracted metadata to an AI provider (Gemini, Groq, OpenAI, or Ollama)
+4. Renders wiki-style interlinked Markdown documentation
+
+## Module Map
+| File | Responsibility |
+|------|---------------|
+| `src/main.rs` | Entry point, orchestrates the full pipeline |
+| `src/cli.rs` | `clap` CLI definitions — `generate`, `auth`, `status` subcommands |
+| `src/providers.rs` | `Provider` enum with per-provider metadata (model, URL, key env var) |
+| `src/scanner.rs` | Recursive `.cls` file discovery via `walkdir` |
+| `src/parser.rs` | Regex-based Apex structural parser → `ClassMetadata` |
+| `src/prompt.rs` | Shared `SYSTEM_PROMPT` and `build_prompt()` used by all API clients |
+| `src/gemini.rs` | Async Gemini REST API client with semaphore rate-limiting |
+| `src/openai_compat.rs` | OpenAI-compatible client for Groq, OpenAI, and Ollama |
+| `src/retry.rs` | Shared retry constants, delay parsing, and `sleep_for_retry` helper |
+| `src/config.rs` | OS keychain API key storage/retrieval via `keyring` crate |
+| `src/renderer.rs` | Markdown page generation + cross-linking + `index.md` |
+| `src/types.rs` | Shared data structures (`ApexFile`, `ClassMetadata`, `ClassDocumentation`, etc.) |
+
+## Key Data Flow
+```
+ApexFile (raw source)
+  → parse_apex_class()  → ClassMetadata
+  → DocClient::document_class()  → ClassDocumentation
+  → render_class_page() / render_index()  → .md files
+```
+
+## API Clients
+- **Gemini**: `GeminiClient` — uses `generativelanguage.googleapis.com/v1beta/models`, `generateContent` endpoint, `responseMimeType: application/json`
+- **OpenAI-compat**: `OpenAiCompatClient` — used for Groq, OpenAI, and Ollama; `/v1/chat/completions` with `response_format: { type: "json_object" }`
+- Both clients: 30s connect timeout, 120s overall timeout; up to 4 retries with backoff on 429
+
+## CLI Interface
+```
+sfdoc generate
+  --provider <gemini|groq|openai|ollama>   default: gemini
+  --model <MODEL>                           default: provider's recommended model
+  --source-dir <PATH>                       default: force-app/main/default/classes
+  --output <PATH>                           default: docs/
+  --concurrency <N>                         default: 3
+  --verbose
+
+sfdoc auth --provider <gemini|groq|openai|ollama>
+sfdoc status
+```
+
+## Cross-Linking Strategy
+The renderer's `all_class_names` list (populated from all parsed files) is used to detect
+class references in `ClassDocumentation.relationships` strings and generate relative Markdown
+links like `[AccountService](AccountService.md)`.
+
+## Architectural Decisions
+- **Regex parser, not AST**: Salesforce Apex has no stable open-source Rust parser. The
+  regex-based approach extracts structural metadata (signatures, modifiers) reliably enough
+  to give Gemini good context without building a full parser.
+- **Trait-based scanner** (`FileScanner` trait): designed for future plug-in of Trigger,
+  LWC, Flow, or other metadata scanners.
+- **`anyhow` throughout**: this is a binary crate, so `anyhow` is used everywhere for ergonomic error propagation. No `thiserror` dependency.
+- **Structured JSON response from Gemini**: setting `responseMimeType: application/json`
+  gives deterministic parsing without regex-scraping prose output.

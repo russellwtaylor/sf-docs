@@ -1,7 +1,7 @@
 use sfdoc::{
-    aura_parser, cache, cli, config, custom_metadata_parser, flexipage_parser, flow_parser, gemini,
-    lwc_parser, object_parser, openai_compat, parser, providers, renderer, scanner,
-    validation_rule_parser,
+    aura_parser, cache, cli, config, custom_metadata_parser, doc_client, flexipage_parser,
+    flow_parser, gemini, lwc_parser, object_parser, openai_compat, parser, providers, renderer,
+    scanner, validation_rule_parser,
 };
 use sfdoc::{trigger_parser, types};
 
@@ -14,6 +14,7 @@ use std::sync::Arc;
 use tokio::task::JoinSet;
 
 use cli::{Cli, Commands, OutputFormat};
+use doc_client::DocClient;
 
 use config::{delete_api_key, has_stored_key, resolve_api_key, save_api_key};
 use gemini::GeminiClient;
@@ -25,105 +26,18 @@ use scanner::{
 };
 use types::{
     AllNames, AuraDocumentation, ClassDocumentation, FlexiPageDocumentation, FlowDocumentation,
-    LwcDocumentation, ObjectDocumentation, SourceFile, TriggerDocumentation,
-    ValidationRuleDocumentation,
+    LwcDocumentation, ObjectDocumentation, TriggerDocumentation, ValidationRuleDocumentation,
 };
 
-/// Unified client enum for dispatch without dynamic dispatch overhead.
-enum DocClient {
-    Gemini(Arc<GeminiClient>),
-    OpenAiCompat(Arc<OpenAiCompatClient>),
-}
-
-impl DocClient {
-    async fn document_class(
-        &self,
-        file: &SourceFile,
-        metadata: &types::ClassMetadata,
-    ) -> Result<ClassDocumentation> {
-        match self {
-            DocClient::Gemini(c) => c.document_class(file, metadata).await,
-            DocClient::OpenAiCompat(c) => c.document_class(file, metadata).await,
-        }
-    }
-
-    async fn document_trigger(
-        &self,
-        file: &SourceFile,
-        metadata: &types::TriggerMetadata,
-    ) -> Result<TriggerDocumentation> {
-        match self {
-            DocClient::Gemini(c) => c.document_trigger(file, metadata).await,
-            DocClient::OpenAiCompat(c) => c.document_trigger(file, metadata).await,
-        }
-    }
-
-    async fn document_flow(
-        &self,
-        file: &SourceFile,
-        metadata: &types::FlowMetadata,
-    ) -> Result<FlowDocumentation> {
-        match self {
-            DocClient::Gemini(c) => c.document_flow(file, metadata).await,
-            DocClient::OpenAiCompat(c) => c.document_flow(file, metadata).await,
-        }
-    }
-
-    async fn document_validation_rule(
-        &self,
-        file: &SourceFile,
-        metadata: &types::ValidationRuleMetadata,
-    ) -> Result<ValidationRuleDocumentation> {
-        match self {
-            DocClient::Gemini(c) => c.document_validation_rule(file, metadata).await,
-            DocClient::OpenAiCompat(c) => c.document_validation_rule(file, metadata).await,
-        }
-    }
-
-    async fn document_object(
-        &self,
-        file: &SourceFile,
-        metadata: &types::ObjectMetadata,
-    ) -> Result<ObjectDocumentation> {
-        match self {
-            DocClient::Gemini(c) => c.document_object(file, metadata).await,
-            DocClient::OpenAiCompat(c) => c.document_object(file, metadata).await,
-        }
-    }
-
-    async fn document_lwc(
-        &self,
-        file: &SourceFile,
-        metadata: &types::LwcMetadata,
-    ) -> Result<LwcDocumentation> {
-        match self {
-            DocClient::Gemini(c) => c.document_lwc(file, metadata).await,
-            DocClient::OpenAiCompat(c) => c.document_lwc(file, metadata).await,
-        }
-    }
-
-    async fn document_flexipage(
-        &self,
-        file: &SourceFile,
-        metadata: &types::FlexiPageMetadata,
-    ) -> Result<FlexiPageDocumentation> {
-        match self {
-            DocClient::Gemini(c) => c.document_flexipage(file, metadata).await,
-            DocClient::OpenAiCompat(c) => c.document_flexipage(file, metadata).await,
-        }
-    }
-
-    async fn document_aura(
-        &self,
-        file: &SourceFile,
-        metadata: &types::AuraMetadata,
-    ) -> Result<AuraDocumentation> {
-        match self {
-            DocClient::Gemini(c) => c.document_aura(file, metadata).await,
-            DocClient::OpenAiCompat(c) => c.document_aura(file, metadata).await,
-        }
-    }
-}
+// Prompt modules for building AI prompts per metadata type.
+use sfdoc::aura_prompt::{build_aura_prompt, AURA_SYSTEM_PROMPT};
+use sfdoc::flexipage_prompt::{build_flexipage_prompt, FLEXIPAGE_SYSTEM_PROMPT};
+use sfdoc::flow_prompt::{build_flow_prompt, FLOW_SYSTEM_PROMPT};
+use sfdoc::lwc_prompt::{build_lwc_prompt, LWC_SYSTEM_PROMPT};
+use sfdoc::object_prompt::{build_object_prompt, OBJECT_SYSTEM_PROMPT};
+use sfdoc::prompt::{build_prompt, SYSTEM_PROMPT};
+use sfdoc::trigger_prompt::{build_trigger_prompt, TRIGGER_SYSTEM_PROMPT};
+use sfdoc::validation_rule_prompt::{build_validation_rule_prompt, VALIDATION_RULE_SYSTEM_PROMPT};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -545,23 +459,24 @@ async fn main() -> Result<()> {
                 || !aura_work.is_empty()
             {
                 let api_key = resolve_api_key(provider)?;
-                let client = match provider {
-                    Provider::Gemini => DocClient::Gemini(Arc::new(GeminiClient::new(
+                let client: Arc<dyn DocClient> = match provider {
+                    Provider::Gemini => Arc::new(GeminiClient::new(
                         api_key,
                         &model,
                         args.concurrency,
                         args.rpm,
-                    )?)),
-                    _ => DocClient::OpenAiCompat(Arc::new(OpenAiCompatClient::new(
+                    )?),
+                    _ => Arc::new(OpenAiCompatClient::new(
                         api_key,
                         &model,
-                        provider.base_url(),
+                        provider
+                            .base_url()
+                            .expect("non-Gemini provider must have a base URL"),
                         args.concurrency,
                         provider.display_name(),
                         args.rpm,
-                    )?)),
+                    )?),
                 };
-                let client = Arc::new(client);
 
                 let total_work = (class_work.len()
                     + trigger_work.len()
@@ -600,7 +515,13 @@ async fn main() -> Result<()> {
                     let class_meta = Arc::clone(&class_meta);
                     let pb_task = Arc::clone(&pb);
                     tasks.spawn(async move {
-                        let doc = client.document_class(&files[idx], &class_meta[idx]).await?;
+                        let doc: ClassDocumentation = doc_client::document(
+                            client.as_ref(),
+                            SYSTEM_PROMPT,
+                            &build_prompt(&files[idx], &class_meta[idx]),
+                            &class_meta[idx].class_name,
+                        )
+                        .await?;
                         pb_task.inc(1);
                         Ok(WorkResult::Class(idx, doc))
                     });
@@ -612,9 +533,13 @@ async fn main() -> Result<()> {
                     let trigger_meta = Arc::clone(&trigger_meta);
                     let pb_task = Arc::clone(&pb);
                     tasks.spawn(async move {
-                        let doc = client
-                            .document_trigger(&trigger_files[idx], &trigger_meta[idx])
-                            .await?;
+                        let doc: TriggerDocumentation = doc_client::document(
+                            client.as_ref(),
+                            TRIGGER_SYSTEM_PROMPT,
+                            &build_trigger_prompt(&trigger_files[idx], &trigger_meta[idx]),
+                            &trigger_meta[idx].trigger_name,
+                        )
+                        .await?;
                         pb_task.inc(1);
                         Ok(WorkResult::Trigger(idx, doc))
                     });
@@ -626,9 +551,13 @@ async fn main() -> Result<()> {
                     let flow_meta = Arc::clone(&flow_meta);
                     let pb_task = Arc::clone(&pb);
                     tasks.spawn(async move {
-                        let doc = client
-                            .document_flow(&flow_files[idx], &flow_meta[idx])
-                            .await?;
+                        let doc: FlowDocumentation = doc_client::document(
+                            client.as_ref(),
+                            FLOW_SYSTEM_PROMPT,
+                            &build_flow_prompt(&flow_files[idx], &flow_meta[idx]),
+                            &flow_meta[idx].api_name,
+                        )
+                        .await?;
                         pb_task.inc(1);
                         Ok(WorkResult::Flow(idx, doc))
                     });
@@ -640,9 +569,13 @@ async fn main() -> Result<()> {
                     let vr_meta = Arc::clone(&vr_meta);
                     let pb_task = Arc::clone(&pb);
                     tasks.spawn(async move {
-                        let doc = client
-                            .document_validation_rule(&vr_files[idx], &vr_meta[idx])
-                            .await?;
+                        let doc: ValidationRuleDocumentation = doc_client::document(
+                            client.as_ref(),
+                            VALIDATION_RULE_SYSTEM_PROMPT,
+                            &build_validation_rule_prompt(&vr_files[idx], &vr_meta[idx]),
+                            &vr_meta[idx].rule_name,
+                        )
+                        .await?;
                         pb_task.inc(1);
                         Ok(WorkResult::ValidationRule(idx, doc))
                     });
@@ -654,9 +587,13 @@ async fn main() -> Result<()> {
                     let object_meta = Arc::clone(&object_meta);
                     let pb_task = Arc::clone(&pb);
                     tasks.spawn(async move {
-                        let doc = client
-                            .document_object(&object_files[idx], &object_meta[idx])
-                            .await?;
+                        let doc: ObjectDocumentation = doc_client::document(
+                            client.as_ref(),
+                            OBJECT_SYSTEM_PROMPT,
+                            &build_object_prompt(&object_files[idx], &object_meta[idx]),
+                            &object_meta[idx].object_name,
+                        )
+                        .await?;
                         pb_task.inc(1);
                         Ok(WorkResult::Object(idx, doc))
                     });
@@ -668,7 +605,13 @@ async fn main() -> Result<()> {
                     let lwc_meta = Arc::clone(&lwc_meta);
                     let pb_task = Arc::clone(&pb);
                     tasks.spawn(async move {
-                        let doc = client.document_lwc(&lwc_files[idx], &lwc_meta[idx]).await?;
+                        let doc: LwcDocumentation = doc_client::document(
+                            client.as_ref(),
+                            LWC_SYSTEM_PROMPT,
+                            &build_lwc_prompt(&lwc_files[idx], &lwc_meta[idx]),
+                            &lwc_meta[idx].component_name,
+                        )
+                        .await?;
                         pb_task.inc(1);
                         Ok(WorkResult::Lwc(idx, doc))
                     });
@@ -680,9 +623,13 @@ async fn main() -> Result<()> {
                     let flexipage_meta = Arc::clone(&flexipage_meta);
                     let pb_task = Arc::clone(&pb);
                     tasks.spawn(async move {
-                        let doc = client
-                            .document_flexipage(&flexipage_files[idx], &flexipage_meta[idx])
-                            .await?;
+                        let doc: FlexiPageDocumentation = doc_client::document(
+                            client.as_ref(),
+                            FLEXIPAGE_SYSTEM_PROMPT,
+                            &build_flexipage_prompt(&flexipage_files[idx], &flexipage_meta[idx]),
+                            &flexipage_meta[idx].api_name,
+                        )
+                        .await?;
                         pb_task.inc(1);
                         Ok(WorkResult::FlexiPage(idx, doc))
                     });
@@ -694,9 +641,13 @@ async fn main() -> Result<()> {
                     let aura_meta = Arc::clone(&aura_meta);
                     let pb_task = Arc::clone(&pb);
                     tasks.spawn(async move {
-                        let doc = client
-                            .document_aura(&aura_files[idx], &aura_meta[idx])
-                            .await?;
+                        let doc: AuraDocumentation = doc_client::document(
+                            client.as_ref(),
+                            AURA_SYSTEM_PROMPT,
+                            &build_aura_prompt(&aura_files[idx], &aura_meta[idx]),
+                            &aura_meta[idx].component_name,
+                        )
+                        .await?;
                         pb_task.inc(1);
                         Ok(WorkResult::Aura(idx, doc))
                     });
@@ -954,19 +905,18 @@ async fn main() -> Result<()> {
                 .collect();
 
             // Render and write output
-            renderer::write_output(
-                &output_dir,
-                &args.format,
-                &class_contexts,
-                &trigger_contexts,
-                &flow_contexts,
-                &vr_contexts,
-                &object_contexts,
-                &lwc_contexts,
-                &flexipage_contexts,
-                &custom_metadata_contexts,
-                &aura_contexts,
-            )?;
+            let bundle = renderer::DocumentationBundle {
+                classes: &class_contexts,
+                triggers: &trigger_contexts,
+                flows: &flow_contexts,
+                validation_rules: &vr_contexts,
+                objects: &object_contexts,
+                lwc: &lwc_contexts,
+                flexipages: &flexipage_contexts,
+                custom_metadata: &custom_metadata_contexts,
+                aura: &aura_contexts,
+            };
+            renderer::write_output(&output_dir, &args.format, &bundle)?;
             println!("Documentation written to {}", output_dir.display());
 
             // Persist the updated cache — only reached if all API calls succeeded

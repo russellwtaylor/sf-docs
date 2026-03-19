@@ -72,6 +72,57 @@ todos:
     - id: aura
       content: "Phase 23: Aura components — scanner, parser, docs (optional; only if Aura-heavy codebase)"
       status: done
+    - id: type-filter
+      content: "Phase 24: --type filter flag — generate docs only for selected metadata types (e.g. --type lwc,apex,flows)"
+      status: todo
+    - id: name-filter
+      content: "Phase 25: --name-filter / --glob flag — filter by name pattern (e.g. --name-filter 'Order*')"
+      status: todo
+    - id: html-search
+      content: "Phase 26: Client-side search in HTML site — inline lunr.js or fuse.js for searching by class/method/field name"
+      status: todo
+    - id: tag-filter
+      content: "Phase 27: Tag/label filtering — support @tag annotations in ApexDoc; filter index by tag in HTML site"
+      status: todo
+    - id: single-file-update
+      content: "Phase 28: sfdoc update <file> — re-document a single file without a full rebuild"
+      status: todo
+    - id: diff-aware-docs
+      content: "Phase 29: Diff-aware summaries — include git diff in AI prompt so docs describe what changed"
+      status: todo
+    - id: quality-scores
+      content: "Phase 30: Confidence/quality scores — AI rates doc completeness; flag low-context methods"
+      status: todo
+    - id: dependency-graph
+      content: "Phase 31: Dependency graph — Mermaid/DOT visualization of class-call, flow-object, and LWC-Apex relationships"
+      status: todo
+    - id: impact-analysis
+      content: "Phase 32: sfdoc impact <Name> — CLI command listing all metadata that references a given class/object/flow"
+      status: todo
+    - id: dead-code-hints
+      content: "Phase 33: Dead code hints — flag classes/methods with no incoming cross-references across the documented org"
+      status: todo
+    - id: watch-mode
+      content: "Phase 34: Watch mode — sfdoc watch auto-rebuilds on file save during development"
+      status: todo
+    - id: confluence-deploy
+      content: "Phase 35: Deploy to Confluence/Notion — push generated docs to a team wiki via API"
+      status: todo
+    - id: ci-deploy
+      content: "Phase 36: GitHub Pages / Netlify CI integration — example workflow YAML to publish docs on push to main"
+      status: todo
+    - id: dark-mode
+      content: "Phase 37: Dark mode — CSS dark theme for the HTML output site"
+      status: todo
+    - id: sfdoc-diff
+      content: "Phase 38: sfdoc diff — show which files have changed since last build without regenerating"
+      status: todo
+    - id: sfdoc-validate
+      content: "Phase 39: sfdoc validate — verify all cross-links resolve; catch renamed classes that break doc links (CI-friendly)"
+      status: todo
+    - id: progress-resumption
+      content: "Phase 40: Progress resumption — resume interrupted sfdoc generate runs from the last completed file"
+      status: todo
 isProject: true
 ---
 
@@ -523,6 +574,263 @@ Validation rules are stored per-object under `force-app/main/default/objects/{Ob
 - `AuraScanner` and parser for component markup and docs
 - Same pattern as LWC: one page per component, public API, cross-links
 - Only worth adding if the project has substantial Aura usage
+
+---
+
+### Phase 24: `--type` Filter Flag
+
+**Goal:** Let users generate docs only for the metadata types they care about, reducing build time on large orgs.
+
+**Design:**
+
+- New `--type` CLI argument accepting a comma-separated list: `apex`, `triggers`, `flows`, `validation-rules`, `objects`, `lwc`, `flexipages`, `custom-metadata`, `aura`
+- Default (no flag): all types scanned as today
+- Scanner dispatch in `main.rs` gated on the selected set
+- Error on unrecognised type names with a helpful list of valid values
+
+**Impact:** Faster iteration for teams that only care about a subset of their org's metadata.
+
+---
+
+### Phase 25: `--name-filter` / `--glob` Flag
+
+**Goal:** Narrow docs to files matching a name pattern, useful for documenting a single feature area (e.g. all `Order*` classes).
+
+**Design:**
+
+- `--name-filter <pattern>` accepting shell glob syntax (e.g. `Order*`, `*Service`)
+- Applied after scanning, before parsing/AI — skips non-matching files entirely
+- Works across all metadata types; matches against the logical name (class name, object name, flow label)
+- Can be combined with `--type`
+
+**Impact:** Low implementation cost; dramatically improves UX for partial rebuilds on large orgs.
+
+---
+
+### Phase 26: Client-Side Search in HTML Site
+
+**Goal:** Make the generated HTML site searchable by class, method, field, and flow name without a backend.
+
+**Design:**
+
+- Inline a minified search library (lunr.js or fuse.js) into the HTML output — no external CDN dependency
+- Build a JSON search index at generation time covering: page title, metadata type, short summary, and all method/field/property names
+- Search bar in the sidebar; results appear as a filtered list with links
+- Index JSON can be inlined in a `<script>` tag or written as a companion `search-index.json`
+
+**Impact:** High visibility improvement; makes large doc sites usable without knowing exact names up front.
+
+---
+
+### Phase 27: Tag / Label Filtering
+
+**Goal:** Allow teams to categorise docs with `@tag` annotations and filter the index by tag.
+
+**Design:**
+
+- Recognise `@tag <label>` in ApexDoc block comments during parsing; store as `Vec<String>` on `ClassMetadata`
+- HTML index: tag pills on each entry; clicking a tag filters the sidebar to matching entries (JS, no rebuild needed)
+- `--tag <label>` CLI flag to generate a filtered doc set containing only tagged files
+- Tags propagate to the page header as badges
+
+**Impact:** Enables domain-based organisation (e.g. `@tag billing`, `@tag integration`) on top of the folder structure.
+
+---
+
+### Phase 28: `sfdoc update <file>`
+
+**Goal:** Re-document a single file without scanning and rebuilding the entire project.
+
+**Design:**
+
+- New `sfdoc update <path>` subcommand
+- Reads, parses, and re-sends just the specified file to the AI provider
+- Updates the cache entry and rewrites only that file's output page
+- Re-generates the index to reflect any changed summary
+
+**Impact:** Fast inner loop for developers actively editing Apex; avoids full rebuild just to refresh one class.
+
+---
+
+### Phase 29: Diff-Aware Summaries
+
+**Goal:** When a file has changed since the last build, tell the AI what changed so the docs reflect the delta explicitly.
+
+**Design:**
+
+- Run `git diff HEAD <file>` (or compare against the cached source snapshot) to produce a unified diff
+- Include the diff in the AI prompt alongside the full source: "The following changes were made since the last documentation run: …"
+- AI is asked to note breaking changes, new methods, or removed functionality in the description
+- Falls back to standard prompt if git is unavailable or file is new
+
+**Impact:** Docs stay meaningful through refactors; surfaces breaking API changes automatically.
+
+---
+
+### Phase 30: Confidence / Quality Scores
+
+**Goal:** Surface where generated documentation is likely to be low-quality so teams can prioritise adding ApexDoc comments.
+
+**Design:**
+
+- AI returns an optional `confidence: "high" | "medium" | "low"` field alongside existing doc fields
+- Low confidence triggered by: no existing ApexDoc, very short source, complex generic types with no context
+- HTML output: small badge on each page and index entry; low-confidence entries highlighted in the index
+- Optional `--min-confidence medium` flag to skip low-confidence files and log them as warnings instead
+
+**Impact:** Helps teams know where to invest in adding comments; avoids surfacing misleading AI-generated docs.
+
+---
+
+### Phase 31: Dependency Graph
+
+**Goal:** Visualise how the org's metadata connects — which classes call which, which flows reference which objects.
+
+**Design:**
+
+- Post-render pass over `AllNames` cross-reference data already collected during the build
+- Emit a `dependency-graph.md` with a Mermaid `graph LR` diagram and a `dependency-graph.html` with an interactive D3 or vis.js graph
+- Nodes: classes, triggers, flows, objects, LWC; edges: calls, implements, references, handles
+- `--graph-depth <n>` flag to limit graph to N hops from a given entry point (pairs well with `--name-filter`)
+
+**Impact:** Immediate visual for onboarding and impact analysis; built entirely from data already gathered.
+
+---
+
+### Phase 32: `sfdoc impact <Name>`
+
+**Goal:** Answer "if I change X, what else breaks?" as a CLI command.
+
+**Design:**
+
+- New `sfdoc impact <Name>` subcommand; reads the existing cache/output — no re-scan needed
+- Traverses the cross-reference graph in reverse: finds all pages that link to `<Name>`
+- Prints a grouped list: Apex classes, triggers, flows, validation rules, LWC, FlexiPages that reference the target
+- `--json` flag for CI/scripting use; exit code 1 if any references found (useful as a pre-merge gate)
+
+**Impact:** Instant impact analysis without opening a sandbox; works offline from the cached doc set.
+
+---
+
+### Phase 33: Dead Code Hints
+
+**Goal:** Flag classes, methods, and flows that have no incoming cross-references anywhere in the documented org.
+
+**Design:**
+
+- Post-render pass: for each documented entity, check whether any other page links to it
+- Emit a `dead-code-report.md` / section in the index listing unreferenced entities grouped by type
+- Distinguish "no references in this project" from "referenced externally" (managed packages, unscanned dirs) via a `--exclude-from-dead-code <glob>` flag
+- Integrate with `sfdoc validate` (Phase 39) to surface both link rot and dead code in one pass
+
+**Impact:** Helps identify technical debt and unused automation; especially useful before major refactors.
+
+---
+
+### Phase 34: Watch Mode
+
+**Goal:** Auto-rebuild docs on file save during active development.
+
+**Design:**
+
+- New `sfdoc watch` subcommand using the `notify` crate for cross-platform filesystem events
+- On change: re-runs the pipeline for only the modified file (same logic as Phase 28 `sfdoc update`)
+- Debounce rapid saves (300 ms); print a concise rebuild summary to stdout
+- Ctrl-C to stop; compatible with `--format html` for live-preview workflows
+
+**Impact:** Eliminates the manual rebuild step during development; natural complement to a local HTTP server serving the `site/` directory.
+
+---
+
+### Phase 35: Deploy to Confluence / Notion
+
+**Goal:** Push generated docs to a team wiki so they live alongside existing documentation.
+
+**Design:**
+
+- New `sfdoc deploy --target confluence` / `--target notion` subcommand
+- Confluence: REST API (`/wiki/rest/api/content`) — create or update pages under a configured space key; map sfdoc page hierarchy to Confluence page tree
+- Notion: Notion API — create/update database entries or pages under a configured parent page ID
+- Auth: `sfdoc auth --provider confluence` stores the token/URL in the keychain (same pattern as AI providers)
+- `--dry-run` flag to preview what would be created/updated without writing
+
+**Impact:** Docs reach teams who don't browse static HTML; integrates with existing wiki workflows.
+
+---
+
+### Phase 36: GitHub Pages / Netlify CI Integration
+
+**Goal:** Make it easy to publish docs automatically on every push.
+
+**Design:**
+
+- Ship an example `sfdoc-docs.yml` GitHub Actions workflow that: installs `sfdoc`, runs `sfdoc generate --format html`, and deploys `site/` to GitHub Pages
+- Ship a `netlify.toml` example for Netlify continuous deployment
+- Add a `sfdoc ci` subcommand that exits non-zero if any files changed and were not regenerated (stale docs gate)
+- Document in README with one-click "Deploy to Netlify" badge
+
+**Impact:** Zero-configuration publishing for teams already using GitHub or Netlify; docs stay current automatically.
+
+---
+
+### Phase 37: Dark Mode
+
+**Goal:** Provide a comfortable reading experience in low-light environments.
+
+**Design:**
+
+- CSS `@media (prefers-color-scheme: dark)` block in the inlined stylesheet — no JS required
+- Colour palette: dark background (`#1e1e2e`), muted sidebar, high-contrast headings and code blocks
+- Optional manual toggle button (moon/sun icon) that writes preference to `localStorage`
+- All existing badge colours adjusted for WCAG AA contrast on dark backgrounds
+
+**Impact:** Low implementation effort; significant comfort improvement for engineers who use dark mode system-wide.
+
+---
+
+### Phase 38: `sfdoc diff`
+
+**Goal:** Show which files have changed since the last build without regenerating anything.
+
+**Design:**
+
+- New `sfdoc diff` subcommand; reads `.sfdoc-cache.json` and re-hashes source files in parallel
+- Prints a grouped list of: new files (not in cache), changed files (hash mismatch), and deleted files (in cache but gone)
+- `--json` flag for scripting; `--exit-code` flag to exit 1 if any changes detected (CI gate)
+- Runs in milliseconds since no AI calls are made
+
+**Impact:** Fast "is the doc set stale?" check for CI pipelines; also useful before running a full regeneration to preview scope.
+
+---
+
+### Phase 39: `sfdoc validate`
+
+**Goal:** Verify that all cross-links in the generated output resolve to real pages; catch renamed classes that silently break navigation.
+
+**Design:**
+
+- New `sfdoc validate` subcommand; reads the output directory (Markdown or HTML)
+- Parses all internal links and checks that the target file exists
+- Reports broken links grouped by source page with the specific anchor/path that failed
+- `--strict` flag to exit non-zero on any broken link (suitable as a CI step after `sfdoc generate`)
+- Can also validate that every entry in `AllNames` has a corresponding output page
+
+**Impact:** Prevents silent link rot after refactors; pairs with `sfdoc diff` and `sfdoc generate` for a complete CI documentation pipeline.
+
+---
+
+### Phase 40: Progress Resumption
+
+**Goal:** Allow an interrupted `sfdoc generate` run to resume from where it left off rather than starting over.
+
+**Design:**
+
+- Write a `partial` state to the cache file as each file completes (not just at the end of the run)
+- On next run without `--force`: files already present in the cache with the correct hash are skipped as today; partially-written output files are detected and re-generated
+- Handle SIGINT gracefully: flush cache before exit so completed work is not lost
+- `--resume` flag (explicit) vs. automatic resume based on cache state
+
+**Impact:** Critical for large orgs (hundreds of files) where an interrupted run currently wastes all AI credits spent so far.
 
 ---
 

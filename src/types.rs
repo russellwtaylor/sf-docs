@@ -65,6 +65,23 @@ pub struct AllNames {
     pub interface_implementors: std::collections::HashMap<String, Vec<String>>,
 }
 
+impl AllNames {
+    /// Returns the union of all known entity names across all metadata types.
+    pub fn all_known_names(&self) -> HashSet<&str> {
+        self.class_names
+            .iter()
+            .chain(self.trigger_names.iter())
+            .chain(self.flow_names.iter())
+            .chain(self.validation_rule_names.iter())
+            .chain(self.object_names.iter())
+            .chain(self.lwc_names.iter())
+            .chain(self.flexipage_names.iter())
+            .chain(self.aura_names.iter())
+            .map(|s| s.as_str())
+            .collect()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Trigger types
 // ---------------------------------------------------------------------------

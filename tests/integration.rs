@@ -264,20 +264,18 @@ fn full_pipeline_writes_markdown_output() {
         })
         .collect();
 
-    renderer::write_output(
-        output_dir,
-        &sfdoc::cli::OutputFormat::Markdown,
-        &class_contexts,
-        &trigger_contexts,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    )
-    .unwrap();
+    let bundle = renderer::DocumentationBundle {
+        classes: &class_contexts,
+        triggers: &trigger_contexts,
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
+    renderer::write_output(output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
 
     // Every class and trigger gets its own page
     assert!(
@@ -329,20 +327,18 @@ fn markdown_class_page_contains_expected_sections() {
         })
         .collect();
 
-    renderer::write_output(
-        output_dir,
-        &sfdoc::cli::OutputFormat::Markdown,
-        &class_contexts,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    )
-    .unwrap();
+    let bundle = renderer::DocumentationBundle {
+        classes: &class_contexts,
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
+    renderer::write_output(output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
 
     let content = std::fs::read_to_string(output_dir.join("classes/AccountService.md")).unwrap();
     assert!(content.contains("# AccountService"), "missing title");
@@ -398,7 +394,18 @@ fn markdown_index_groups_by_folder() {
         })
         .collect();
 
-    let index = renderer::render_index(&class_contexts, &[], &[], &[], &[], &[], &[], &[], &[]);
+    let bundle = renderer::DocumentationBundle {
+        classes: &class_contexts,
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        aura: &[],
+        custom_metadata: &[],
+    };
+    let index = renderer::render_index(&bundle);
 
     // Both classes should be linked with type-prefixed paths
     assert!(index.contains("[AccountService](classes/AccountService.md)"));
@@ -453,20 +460,18 @@ fn full_pipeline_writes_html_output() {
         })
         .collect();
 
-    renderer::write_output(
-        output_dir,
-        &sfdoc::cli::OutputFormat::Html,
-        &class_contexts,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    )
-    .unwrap();
+    let bundle = renderer::DocumentationBundle {
+        classes: &class_contexts,
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
+    renderer::write_output(output_dir, &sfdoc::cli::OutputFormat::Html, &bundle).unwrap();
 
     assert!(output_dir.join("index.html").exists(), "index.html missing");
     assert!(
@@ -510,20 +515,18 @@ fn html_page_contains_sidebar_and_content() {
         })
         .collect();
 
-    renderer::write_output(
-        tmp.path(),
-        &sfdoc::cli::OutputFormat::Html,
-        &class_contexts,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    )
-    .unwrap();
+    let bundle = renderer::DocumentationBundle {
+        classes: &class_contexts,
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
+    renderer::write_output(tmp.path(), &sfdoc::cli::OutputFormat::Html, &bundle).unwrap();
 
     let html = std::fs::read_to_string(tmp.path().join("classes/AccountService.html")).unwrap();
     assert!(html.contains("<nav"), "missing nav sidebar");
@@ -710,7 +713,14 @@ async fn openai_compat_client_documents_class() {
             .unwrap(),
     };
     let meta = parser::parse_apex_class(&file.raw_source).unwrap();
-    let doc = client.document_class(&file, &meta).await.unwrap();
+    let doc: sfdoc::types::ClassDocumentation = sfdoc::doc_client::document(
+        &client,
+        sfdoc::prompt::SYSTEM_PROMPT,
+        &sfdoc::prompt::build_prompt(&file, &meta),
+        &meta.class_name,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(doc.class_name, "AccountService");
     assert_eq!(doc.summary, expected_doc.summary);
@@ -749,7 +759,14 @@ async fn openai_compat_client_documents_trigger() {
         raw_source: file.raw_source.clone(),
     };
     let meta = trigger_parser::parse_apex_trigger(&file.raw_source).unwrap();
-    let doc = client.document_trigger(&apex_file, &meta).await.unwrap();
+    let doc: sfdoc::types::TriggerDocumentation = sfdoc::doc_client::document(
+        &client,
+        sfdoc::trigger_prompt::TRIGGER_SYSTEM_PROMPT,
+        &sfdoc::trigger_prompt::build_trigger_prompt(&apex_file, &meta),
+        &meta.trigger_name,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(doc.trigger_name, "AccountTrigger");
     assert_eq!(doc.sobject, "Account");
@@ -782,7 +799,13 @@ async fn openai_compat_client_returns_error_on_non_200() {
         raw_source: "public class AccountService {}".to_string(),
     };
     let meta = parser::parse_apex_class(&file.raw_source).unwrap();
-    let result = client.document_class(&file, &meta).await;
+    let result: Result<sfdoc::types::ClassDocumentation, _> = sfdoc::doc_client::document(
+        &client,
+        sfdoc::prompt::SYSTEM_PROMPT,
+        &sfdoc::prompt::build_prompt(&file, &meta),
+        &meta.class_name,
+    )
+    .await;
     assert!(result.is_err(), "expected error on HTTP 400");
 }
 
@@ -866,12 +889,26 @@ async fn e2e_scan_parse_ai_render_markdown() {
     // Call AI
     let mut class_docs = Vec::new();
     for (file, meta) in class_files.iter().zip(class_meta.iter()) {
-        let doc = client.document_class(file, meta).await.unwrap();
+        let doc: ClassDocumentation = sfdoc::doc_client::document(
+            client.as_ref(),
+            sfdoc::prompt::SYSTEM_PROMPT,
+            &sfdoc::prompt::build_prompt(file, meta),
+            &meta.class_name,
+        )
+        .await
+        .unwrap();
         class_docs.push(doc);
     }
     let mut trigger_docs = Vec::new();
     for (file, meta) in trigger_files.iter().zip(trigger_meta.iter()) {
-        let doc = client.document_trigger(file, meta).await.unwrap();
+        let doc: TriggerDocumentation = sfdoc::doc_client::document(
+            client.as_ref(),
+            sfdoc::trigger_prompt::TRIGGER_SYSTEM_PROMPT,
+            &sfdoc::trigger_prompt::build_trigger_prompt(file, meta),
+            &meta.trigger_name,
+        )
+        .await
+        .unwrap();
         trigger_docs.push(doc);
     }
 
@@ -932,20 +969,18 @@ async fn e2e_scan_parse_ai_render_markdown() {
 
     // Render
     let tmp = tempfile::TempDir::new().unwrap();
-    renderer::write_output(
-        tmp.path(),
-        &sfdoc::cli::OutputFormat::Markdown,
-        &class_contexts,
-        &trigger_contexts,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    )
-    .unwrap();
+    let bundle = renderer::DocumentationBundle {
+        classes: &class_contexts,
+        triggers: &trigger_contexts,
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
+    renderer::write_output(tmp.path(), &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
 
     // Assert
     assert!(tmp.path().join("classes/AccountService.md").exists());
@@ -1026,20 +1061,18 @@ fn flow_pipeline_writes_markdown_output() {
         folder: String::new(),
     };
 
-    renderer::write_output(
-        &output_dir,
-        &sfdoc::cli::OutputFormat::Markdown,
-        &[],
-        &[],
-        &[ctx],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    )
-    .unwrap();
+    let bundle = renderer::DocumentationBundle {
+        classes: &[],
+        triggers: &[],
+        flows: &[ctx],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
+    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
 
     assert!(
         output_dir.join("flows/My_Flow.md").exists(),
@@ -1134,20 +1167,18 @@ fn validation_rule_pipeline_writes_markdown_output() {
         folder: meta.object_name.clone(),
     };
 
-    renderer::write_output(
-        &output_dir,
-        &sfdoc::cli::OutputFormat::Markdown,
-        &[],
-        &[],
-        &[],
-        &[ctx],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-    )
-    .unwrap();
+    let bundle = renderer::DocumentationBundle {
+        classes: &[],
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[ctx],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
+    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
 
     let expected_path = output_dir
         .join("validation-rules")
@@ -1221,20 +1252,18 @@ fn object_pipeline_writes_markdown_output() {
         folder: String::new(),
     };
 
-    renderer::write_output(
-        &output_dir,
-        &sfdoc::cli::OutputFormat::Markdown,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[ctx],
-        &[],
-        &[],
-        &[],
-        &[],
-    )
-    .unwrap();
+    let bundle = renderer::DocumentationBundle {
+        classes: &[],
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[ctx],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
+    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
 
     assert!(
         output_dir
@@ -1326,20 +1355,18 @@ fn lwc_pipeline_writes_markdown_output() {
         folder: String::new(),
     };
 
-    renderer::write_output(
-        &output_dir,
-        &sfdoc::cli::OutputFormat::Markdown,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[ctx],
-        &[],
-        &[],
-        &[],
-    )
-    .unwrap();
+    let bundle = renderer::DocumentationBundle {
+        classes: &[],
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[ctx],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
+    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
 
     assert!(
         output_dir
@@ -1403,20 +1430,18 @@ fn lwc_pipeline_writes_html_output() {
         folder: String::new(),
     };
 
-    renderer::write_output(
-        &output_dir,
-        &sfdoc::cli::OutputFormat::Html,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[ctx],
-        &[],
-        &[],
-        &[],
-    )
-    .unwrap();
+    let bundle = renderer::DocumentationBundle {
+        classes: &[],
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[ctx],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
+    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Html, &bundle).unwrap();
 
     assert!(
         output_dir

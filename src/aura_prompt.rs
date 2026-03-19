@@ -73,8 +73,9 @@ pub fn build_aura_prompt(file: &SourceFile, metadata: &AuraMetadata) -> String {
         prompt.push_str("## Source\n\n");
         prompt.push_str("```javascript\n");
         const MAX_SOURCE_CHARS: usize = 6_000;
-        if file.raw_source.len() > MAX_SOURCE_CHARS {
-            prompt.push_str(&file.raw_source[..MAX_SOURCE_CHARS]);
+        if file.raw_source.chars().count() > MAX_SOURCE_CHARS {
+            let truncated: String = file.raw_source.chars().take(MAX_SOURCE_CHARS).collect();
+            prompt.push_str(&truncated);
             prompt.push_str("\n// ... (truncated)\n");
         } else {
             prompt.push_str(&file.raw_source);
@@ -84,4 +85,29 @@ pub fn build_aura_prompt(file: &SourceFile, metadata: &AuraMetadata) -> String {
 
     prompt.push_str("Generate documentation JSON for this Aura component.");
     prompt
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{AuraMetadata, SourceFile};
+    use std::path::PathBuf;
+
+    #[test]
+    fn build_aura_prompt_does_not_panic_on_multibyte_utf8() {
+        // \u{00e9} is 2 bytes in UTF-8; 5000 ASCII + 2500 multi-byte = 10000 bytes > 6000
+        let source = "a".repeat(5000) + &"\u{00e9}".repeat(2500);
+        let file = SourceFile {
+            path: PathBuf::from("test.cmp"),
+            filename: "test.cmp".to_string(),
+            raw_source: source,
+        };
+        let meta = AuraMetadata {
+            component_name: "test".to_string(),
+            ..Default::default()
+        };
+        // Should not panic
+        let result = build_aura_prompt(&file, &meta);
+        assert!(result.contains("(truncated)"));
+    }
 }

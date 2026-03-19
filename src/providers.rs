@@ -61,13 +61,13 @@ impl Provider {
     }
 
     /// Base URL for the OpenAI-compatible chat completions API.
-    /// Only used for non-Gemini providers.
-    pub fn base_url(&self) -> &'static str {
+    /// Returns `None` for Gemini (which uses its own client).
+    pub fn base_url(&self) -> Option<&'static str> {
         match self {
-            Provider::Gemini => unreachable!("Gemini uses its own client"),
-            Provider::Groq => "https://api.groq.com/openai/v1",
-            Provider::OpenAi => "https://api.openai.com/v1",
-            Provider::Ollama => "http://localhost:11434/v1",
+            Provider::Gemini => None,
+            Provider::Groq => Some("https://api.groq.com/openai/v1"),
+            Provider::OpenAi => Some("https://api.openai.com/v1"),
+            Provider::Ollama => Some("http://localhost:11434/v1"),
         }
     }
 
