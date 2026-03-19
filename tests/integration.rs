@@ -264,18 +264,21 @@ fn full_pipeline_writes_markdown_output() {
         })
         .collect();
 
+    let bundle = renderer::DocumentationBundle {
+        classes: &class_contexts,
+        triggers: &trigger_contexts,
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
     renderer::write_output(
         output_dir,
         &sfdoc::cli::OutputFormat::Markdown,
-        &class_contexts,
-        &trigger_contexts,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
+        &bundle,
     )
     .unwrap();
 
@@ -329,18 +332,21 @@ fn markdown_class_page_contains_expected_sections() {
         })
         .collect();
 
+    let bundle = renderer::DocumentationBundle {
+        classes: &class_contexts,
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
     renderer::write_output(
         output_dir,
         &sfdoc::cli::OutputFormat::Markdown,
-        &class_contexts,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
+        &bundle,
     )
     .unwrap();
 
@@ -398,7 +404,18 @@ fn markdown_index_groups_by_folder() {
         })
         .collect();
 
-    let index = renderer::render_index(&class_contexts, &[], &[], &[], &[], &[], &[], &[], &[]);
+    let bundle = renderer::DocumentationBundle {
+        classes: &class_contexts,
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        aura: &[],
+        custom_metadata: &[],
+    };
+    let index = renderer::render_index(&bundle);
 
     // Both classes should be linked with type-prefixed paths
     assert!(index.contains("[AccountService](classes/AccountService.md)"));
@@ -453,18 +470,21 @@ fn full_pipeline_writes_html_output() {
         })
         .collect();
 
+    let bundle = renderer::DocumentationBundle {
+        classes: &class_contexts,
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
     renderer::write_output(
         output_dir,
         &sfdoc::cli::OutputFormat::Html,
-        &class_contexts,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
+        &bundle,
     )
     .unwrap();
 
@@ -510,18 +530,21 @@ fn html_page_contains_sidebar_and_content() {
         })
         .collect();
 
+    let bundle = renderer::DocumentationBundle {
+        classes: &class_contexts,
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
     renderer::write_output(
         tmp.path(),
         &sfdoc::cli::OutputFormat::Html,
-        &class_contexts,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
+        &bundle,
     )
     .unwrap();
 
@@ -966,18 +989,21 @@ async fn e2e_scan_parse_ai_render_markdown() {
 
     // Render
     let tmp = tempfile::TempDir::new().unwrap();
+    let bundle = renderer::DocumentationBundle {
+        classes: &class_contexts,
+        triggers: &trigger_contexts,
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
     renderer::write_output(
         tmp.path(),
         &sfdoc::cli::OutputFormat::Markdown,
-        &class_contexts,
-        &trigger_contexts,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
+        &bundle,
     )
     .unwrap();
 
@@ -1060,18 +1086,21 @@ fn flow_pipeline_writes_markdown_output() {
         folder: String::new(),
     };
 
+    let bundle = renderer::DocumentationBundle {
+        classes: &[],
+        triggers: &[],
+        flows: &[ctx],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
     renderer::write_output(
         &output_dir,
         &sfdoc::cli::OutputFormat::Markdown,
-        &[],
-        &[],
-        &[ctx],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
+        &bundle,
     )
     .unwrap();
 
@@ -1168,18 +1197,21 @@ fn validation_rule_pipeline_writes_markdown_output() {
         folder: meta.object_name.clone(),
     };
 
+    let bundle = renderer::DocumentationBundle {
+        classes: &[],
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[ctx],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
     renderer::write_output(
         &output_dir,
         &sfdoc::cli::OutputFormat::Markdown,
-        &[],
-        &[],
-        &[],
-        &[ctx],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
+        &bundle,
     )
     .unwrap();
 
@@ -1255,18 +1287,21 @@ fn object_pipeline_writes_markdown_output() {
         folder: String::new(),
     };
 
+    let bundle = renderer::DocumentationBundle {
+        classes: &[],
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[ctx],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
     renderer::write_output(
         &output_dir,
         &sfdoc::cli::OutputFormat::Markdown,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[ctx],
-        &[],
-        &[],
-        &[],
-        &[],
+        &bundle,
     )
     .unwrap();
 
@@ -1360,18 +1395,21 @@ fn lwc_pipeline_writes_markdown_output() {
         folder: String::new(),
     };
 
+    let bundle = renderer::DocumentationBundle {
+        classes: &[],
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[ctx],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
     renderer::write_output(
         &output_dir,
         &sfdoc::cli::OutputFormat::Markdown,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[ctx],
-        &[],
-        &[],
-        &[],
+        &bundle,
     )
     .unwrap();
 
@@ -1437,18 +1475,21 @@ fn lwc_pipeline_writes_html_output() {
         folder: String::new(),
     };
 
+    let bundle = renderer::DocumentationBundle {
+        classes: &[],
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[ctx],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[],
+    };
     renderer::write_output(
         &output_dir,
         &sfdoc::cli::OutputFormat::Html,
-        &[],
-        &[],
-        &[],
-        &[],
-        &[],
-        &[ctx],
-        &[],
-        &[],
-        &[],
+        &bundle,
     )
     .unwrap();
 

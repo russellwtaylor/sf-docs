@@ -903,19 +903,18 @@ async fn main() -> Result<()> {
                 .collect();
 
             // Render and write output
-            renderer::write_output(
-                &output_dir,
-                &args.format,
-                &class_contexts,
-                &trigger_contexts,
-                &flow_contexts,
-                &vr_contexts,
-                &object_contexts,
-                &lwc_contexts,
-                &flexipage_contexts,
-                &custom_metadata_contexts,
-                &aura_contexts,
-            )?;
+            let bundle = renderer::DocumentationBundle {
+                classes: &class_contexts,
+                triggers: &trigger_contexts,
+                flows: &flow_contexts,
+                validation_rules: &vr_contexts,
+                objects: &object_contexts,
+                lwc: &lwc_contexts,
+                flexipages: &flexipage_contexts,
+                custom_metadata: &custom_metadata_contexts,
+                aura: &aura_contexts,
+            };
+            renderer::write_output(&output_dir, &args.format, &bundle)?;
             println!("Documentation written to {}", output_dir.display());
 
             // Persist the updated cache — only reached if all API calls succeeded

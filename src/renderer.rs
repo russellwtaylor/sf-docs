@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -76,6 +76,19 @@ pub struct AuraRenderContext {
     pub folder: String,
 }
 
+/// Groups all documentation contexts for rendering, eliminating long parameter lists.
+pub struct DocumentationBundle<'a> {
+    pub classes: &'a [RenderContext],
+    pub triggers: &'a [TriggerRenderContext],
+    pub flows: &'a [FlowRenderContext],
+    pub validation_rules: &'a [ValidationRuleRenderContext],
+    pub objects: &'a [ObjectRenderContext],
+    pub lwc: &'a [LwcRenderContext],
+    pub flexipages: &'a [FlexiPageRenderContext],
+    pub custom_metadata: &'a [CustomMetadataRenderContext],
+    pub aura: &'a [AuraRenderContext],
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -127,14 +140,7 @@ fn cross_link_md(name: &str, all_names: &AllNames, from_type: &str) -> String {
 pub fn render_class_page(ctx: &RenderContext) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
-    let known: HashSet<&str> = ctx
-        .all_names
-        .class_names
-        .iter()
-        .chain(ctx.all_names.trigger_names.iter())
-        .chain(ctx.all_names.flow_names.iter())
-        .map(|s| s.as_str())
-        .collect();
+    let known = ctx.all_names.all_known_names();
 
     let mut out = String::new();
 
@@ -287,14 +293,7 @@ pub fn render_class_page(ctx: &RenderContext) -> String {
 pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
-    let known: HashSet<&str> = ctx
-        .all_names
-        .class_names
-        .iter()
-        .chain(ctx.all_names.trigger_names.iter())
-        .chain(ctx.all_names.flow_names.iter())
-        .map(|s| s.as_str())
-        .collect();
+    let known = ctx.all_names.all_known_names();
 
     let mut out = String::new();
 
@@ -388,14 +387,7 @@ pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
 pub fn render_flow_page(ctx: &FlowRenderContext) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
-    let known: HashSet<&str> = ctx
-        .all_names
-        .class_names
-        .iter()
-        .chain(ctx.all_names.trigger_names.iter())
-        .chain(ctx.all_names.flow_names.iter())
-        .map(|s| s.as_str())
-        .collect();
+    let known = ctx.all_names.all_known_names();
 
     let mut out = String::new();
 
@@ -547,15 +539,7 @@ pub fn render_flow_page(ctx: &FlowRenderContext) -> String {
 pub fn render_validation_rule_page(ctx: &ValidationRuleRenderContext) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
-    let known: HashSet<&str> = ctx
-        .all_names
-        .class_names
-        .iter()
-        .chain(ctx.all_names.trigger_names.iter())
-        .chain(ctx.all_names.flow_names.iter())
-        .chain(ctx.all_names.validation_rule_names.iter())
-        .map(|s| s.as_str())
-        .collect();
+    let known = ctx.all_names.all_known_names();
 
     let mut out = String::new();
 
@@ -652,16 +636,7 @@ pub fn render_validation_rule_page(ctx: &ValidationRuleRenderContext) -> String 
 pub fn render_object_page(ctx: &ObjectRenderContext) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
-    let known: HashSet<&str> = ctx
-        .all_names
-        .class_names
-        .iter()
-        .chain(ctx.all_names.trigger_names.iter())
-        .chain(ctx.all_names.flow_names.iter())
-        .chain(ctx.all_names.validation_rule_names.iter())
-        .chain(ctx.all_names.object_names.iter())
-        .map(|s| s.as_str())
-        .collect();
+    let known = ctx.all_names.all_known_names();
 
     let mut out = String::new();
 
@@ -761,15 +736,7 @@ pub fn render_object_page(ctx: &ObjectRenderContext) -> String {
 pub fn render_lwc_page(ctx: &LwcRenderContext) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
-    let known: std::collections::HashSet<&str> = ctx
-        .all_names
-        .class_names
-        .iter()
-        .chain(ctx.all_names.trigger_names.iter())
-        .chain(ctx.all_names.flow_names.iter())
-        .chain(ctx.all_names.lwc_names.iter())
-        .map(|s| s.as_str())
-        .collect();
+    let known = ctx.all_names.all_known_names();
 
     let mut out = String::new();
 
@@ -867,18 +834,16 @@ pub fn render_lwc_page(ctx: &LwcRenderContext) -> String {
     out
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn render_index(
-    class_contexts: &[RenderContext],
-    trigger_contexts: &[TriggerRenderContext],
-    flow_contexts: &[FlowRenderContext],
-    validation_rule_contexts: &[ValidationRuleRenderContext],
-    object_contexts: &[ObjectRenderContext],
-    lwc_contexts: &[LwcRenderContext],
-    flexipage_contexts: &[FlexiPageRenderContext],
-    custom_metadata_contexts: &[CustomMetadataRenderContext],
-    aura_contexts: &[AuraRenderContext],
-) -> String {
+pub fn render_index(bundle: &DocumentationBundle) -> String {
+    let class_contexts = bundle.classes;
+    let trigger_contexts = bundle.triggers;
+    let flow_contexts = bundle.flows;
+    let validation_rule_contexts = bundle.validation_rules;
+    let object_contexts = bundle.objects;
+    let lwc_contexts = bundle.lwc;
+    let flexipage_contexts = bundle.flexipages;
+    let custom_metadata_contexts = bundle.custom_metadata;
+    let aura_contexts = bundle.aura;
     let mut out = String::new();
     out.push_str("# Apex Documentation Index\n\n");
     out.push_str(&format!(
@@ -1192,15 +1157,7 @@ pub fn render_index(
 pub fn render_flexipage_page(ctx: &FlexiPageRenderContext) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
-    let known: HashSet<&str> = ctx
-        .all_names
-        .class_names
-        .iter()
-        .chain(ctx.all_names.lwc_names.iter())
-        .chain(ctx.all_names.flow_names.iter())
-        .chain(ctx.all_names.aura_names.iter())
-        .map(|s| s.as_str())
-        .collect();
+    let known = ctx.all_names.all_known_names();
 
     let mut out = String::new();
 
@@ -1347,16 +1304,7 @@ pub fn render_custom_metadata_page(ctx: &CustomMetadataRenderContext) -> String 
 pub fn render_aura_page(ctx: &AuraRenderContext) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
-    let known: HashSet<&str> = ctx
-        .all_names
-        .class_names
-        .iter()
-        .chain(ctx.all_names.trigger_names.iter())
-        .chain(ctx.all_names.flow_names.iter())
-        .chain(ctx.all_names.aura_names.iter())
-        .chain(ctx.all_names.lwc_names.iter())
-        .map(|s| s.as_str())
-        .collect();
+    let known = ctx.all_names.all_known_names();
 
     let mut out = String::new();
 
@@ -1448,34 +1396,35 @@ pub fn render_aura_page(ctx: &AuraRenderContext) -> String {
     out
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn write_output(
     output_dir: &Path,
     format: &OutputFormat,
-    class_contexts: &[RenderContext],
-    trigger_contexts: &[TriggerRenderContext],
-    flow_contexts: &[FlowRenderContext],
-    validation_rule_contexts: &[ValidationRuleRenderContext],
-    object_contexts: &[ObjectRenderContext],
-    lwc_contexts: &[LwcRenderContext],
-    flexipage_contexts: &[FlexiPageRenderContext],
-    custom_metadata_contexts: &[CustomMetadataRenderContext],
-    aura_contexts: &[AuraRenderContext],
+    bundle: &DocumentationBundle,
 ) -> Result<()> {
     if *format == OutputFormat::Html {
         return crate::html_renderer::write_html_output(
             output_dir,
-            class_contexts,
-            trigger_contexts,
-            flow_contexts,
-            validation_rule_contexts,
-            object_contexts,
-            lwc_contexts,
-            flexipage_contexts,
-            custom_metadata_contexts,
-            aura_contexts,
+            bundle.classes,
+            bundle.triggers,
+            bundle.flows,
+            bundle.validation_rules,
+            bundle.objects,
+            bundle.lwc,
+            bundle.flexipages,
+            bundle.custom_metadata,
+            bundle.aura,
         );
     }
+
+    let class_contexts = bundle.classes;
+    let trigger_contexts = bundle.triggers;
+    let flow_contexts = bundle.flows;
+    let validation_rule_contexts = bundle.validation_rules;
+    let object_contexts = bundle.objects;
+    let lwc_contexts = bundle.lwc;
+    let flexipage_contexts = bundle.flexipages;
+    let custom_metadata_contexts = bundle.custom_metadata;
+    let aura_contexts = bundle.aura;
 
     let classes_dir = output_dir.join("classes");
     let triggers_dir = output_dir.join("triggers");
@@ -1603,17 +1552,7 @@ pub fn write_output(
         )?;
     }
 
-    let index = render_index(
-        class_contexts,
-        trigger_contexts,
-        flow_contexts,
-        validation_rule_contexts,
-        object_contexts,
-        lwc_contexts,
-        flexipage_contexts,
-        custom_metadata_contexts,
-        aura_contexts,
-    );
+    let index = render_index(bundle);
     std::fs::write(output_dir.join("index.md"), index)?;
 
     Ok(())
@@ -1681,6 +1620,7 @@ mod tests {
         AllNames, ClassDocumentation, ClassMetadata, MethodDocumentation, ParamDocumentation,
         PropertyDocumentation,
     };
+    use std::collections::HashSet;
     use std::sync::Arc;
 
     fn sample_context() -> RenderContext {
@@ -1794,7 +1734,18 @@ mod tests {
     #[test]
     fn index_contains_all_classes() {
         let ctx = sample_context();
-        let index = render_index(&[ctx], &[], &[], &[], &[], &[], &[], &[], &[]);
+        let bundle = DocumentationBundle {
+            classes: &[ctx],
+            triggers: &[],
+            flows: &[],
+            validation_rules: &[],
+            objects: &[],
+            lwc: &[],
+            flexipages: &[],
+            custom_metadata: &[],
+            aura: &[],
+        };
+        let index = render_index(&bundle);
         assert!(index.contains("# Apex Documentation Index"));
         assert!(index.contains("[AccountService](classes/AccountService.md)"));
         assert!(index.contains("Handles account processing operations."));
@@ -1820,18 +1771,21 @@ mod tests {
     fn write_output_creates_files() {
         let tmp = tempfile::TempDir::new().unwrap();
         let ctx = sample_context();
+        let bundle = DocumentationBundle {
+            classes: &[ctx],
+            triggers: &[],
+            flows: &[],
+            validation_rules: &[],
+            objects: &[],
+            lwc: &[],
+            flexipages: &[],
+            custom_metadata: &[],
+            aura: &[],
+        };
         write_output(
             tmp.path(),
             &crate::cli::OutputFormat::Markdown,
-            &[ctx],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
+            &bundle,
         )
         .unwrap();
         assert!(tmp.path().join("classes/AccountService.md").exists());
