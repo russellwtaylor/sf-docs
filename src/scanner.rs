@@ -45,6 +45,10 @@ fn should_visit(entry: &walkdir::DirEntry) -> bool {
     }
 }
 
+/// Maximum file size in bytes (10 MB). Files larger than this are skipped
+/// to avoid excessive memory use and AI token limits.
+const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
+
 /// Shared walker for simple extension-based scanners.
 ///
 /// - `suffix`: file name must end with this (e.g. `".cls"`).
@@ -85,6 +89,18 @@ fn scan_by_extension(
                 .ancestors()
                 .any(|a| a.file_name().and_then(|n| n.to_str()) == Some(ancestor));
             if !in_dir {
+                continue;
+            }
+        }
+
+        if let Ok(meta) = std::fs::metadata(path) {
+            if meta.len() > MAX_FILE_SIZE {
+                eprintln!(
+                    "Warning: skipping {} ({:.1} MB exceeds {} MB limit)",
+                    path.display(),
+                    meta.len() as f64 / (1024.0 * 1024.0),
+                    MAX_FILE_SIZE / (1024 * 1024)
+                );
                 continue;
             }
         }
@@ -159,89 +175,74 @@ impl FileScanner for CustomMetadataScanner {
     }
 }
 
+/// Shared walker for component scanners (LWC, Aura) that need JS-fallback source reading.
+///
+/// - `suffix`: file name must end with this (e.g. `".js-meta.xml"`, `".cmp"`).
+/// - `ancestor`: required ancestor directory name (e.g. `"lwc"`, `"aura"`).
+fn scan_component(
+    source_dir: &Path,
+    suffix: &str,
+    ancestor: &str,
+) -> Result<Vec<SourceFile>> {
+    let mut files = Vec::new();
+    for entry in WalkDir::new(source_dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry(should_visit)
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let file_name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
+        if !file_name.ends_with(suffix) {
+            continue;
+        }
+        let in_dir = path
+            .ancestors()
+            .any(|a| a.file_name().and_then(|n| n.to_str()) == Some(ancestor));
+        if !in_dir {
+            continue;
+        }
+
+        if let Ok(meta) = std::fs::metadata(path) {
+            if meta.len() > MAX_FILE_SIZE {
+                eprintln!(
+                    "Warning: skipping {} ({:.1} MB exceeds {} MB limit)",
+                    path.display(),
+                    meta.len() as f64 / (1024.0 * 1024.0),
+                    MAX_FILE_SIZE / (1024 * 1024)
+                );
+                continue;
+            }
+        }
+
+        let component_name = file_name.trim_end_matches(suffix);
+        let raw_source = read_with_js_fallback(path, component_name, &file_name)?;
+
+        files.push(SourceFile {
+            path: path.to_path_buf(),
+            filename: file_name,
+            raw_source,
+        });
+    }
+    files.sort_by(|a, b| a.filename.cmp(&b.filename));
+    Ok(files)
+}
+
 impl FileScanner for LwcScanner {
     fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
-        let mut files = Vec::new();
-        for entry in WalkDir::new(source_dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_entry(should_visit)
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let file_name = match path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n.to_string(),
-                None => continue,
-            };
-            if !file_name.ends_with(".js-meta.xml") {
-                continue;
-            }
-            let in_lwc_dir = path
-                .ancestors()
-                .any(|a| a.file_name().and_then(|n| n.to_str()) == Some("lwc"));
-            if !in_lwc_dir {
-                continue;
-            }
-
-            // Use the sibling .js file as raw_source if it exists (for cache hashing and AI prompt).
-            // Fall back to the meta.xml content when there is no JS file.
-            let component_name = file_name.trim_end_matches(".js-meta.xml");
-            let raw_source = read_with_js_fallback(path, component_name, &file_name)?;
-
-            files.push(SourceFile {
-                path: path.to_path_buf(),
-                filename: file_name,
-                raw_source,
-            });
-        }
-        files.sort_by(|a, b| a.filename.cmp(&b.filename));
-        Ok(files)
+        scan_component(source_dir, ".js-meta.xml", "lwc")
     }
 }
 
 impl FileScanner for AuraScanner {
     fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
-        let mut files = Vec::new();
-        for entry in WalkDir::new(source_dir)
-            .follow_links(true)
-            .into_iter()
-            .filter_entry(should_visit)
-            .filter_map(|e| e.ok())
-        {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            let file_name = match path.file_name().and_then(|n| n.to_str()) {
-                Some(n) => n.to_string(),
-                None => continue,
-            };
-            if !file_name.ends_with(".cmp") {
-                continue;
-            }
-            let in_aura_dir = path
-                .ancestors()
-                .any(|a| a.file_name().and_then(|n| n.to_str()) == Some("aura"));
-            if !in_aura_dir {
-                continue;
-            }
-
-            // Use the sibling .js file as raw_source if it exists.
-            // Fall back to the .cmp content when there is no JS file.
-            let component_name = file_name.trim_end_matches(".cmp");
-            let raw_source = read_with_js_fallback(path, component_name, &file_name)?;
-
-            files.push(SourceFile {
-                path: path.to_path_buf(),
-                filename: file_name,
-                raw_source,
-            });
-        }
-        files.sort_by(|a, b| a.filename.cmp(&b.filename));
-        Ok(files)
+        scan_component(source_dir, ".cmp", "aura")
     }
 }
 
@@ -556,5 +557,19 @@ mod tests {
 
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].filename, "Real.cls");
+    }
+
+    #[test]
+    fn scanner_skips_files_over_size_limit() {
+        let tmp = TempDir::new().unwrap();
+        // Create a file just over 10 MB
+        let big = "x".repeat(10 * 1024 * 1024 + 1);
+        write_file(tmp.path(), "Huge.cls", &big);
+        write_file(tmp.path(), "Small.cls", "public class Small {}");
+
+        let files = ApexScanner.scan(tmp.path()).unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].filename, "Small.cls");
     }
 }
