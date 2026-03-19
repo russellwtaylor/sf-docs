@@ -1,0 +1,8 @@
+<template>
+    <button onclick={handleClick} disabled={disabled}>
+        <slot name="icon"></slot>
+        {label}
+        <slot></slot>
+    </button>
+    <c-tooltip text="Help text"></c-tooltip>
+</template>

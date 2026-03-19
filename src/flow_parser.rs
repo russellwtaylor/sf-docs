@@ -306,4 +306,127 @@ mod tests {
         let meta = parse_flow("My_Test_Flow", src).unwrap();
         assert_eq!(meta.label, "My Test Flow");
     }
+
+    // -----------------------------------------------------------------------
+    // Edge cases & negative tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn empty_xml_returns_defaults() {
+        let src = r#"<?xml version="1.0"?><Flow></Flow>"#;
+        let meta = parse_flow("Empty_Flow", src).unwrap();
+        assert_eq!(meta.api_name, "Empty_Flow");
+        assert_eq!(meta.label, "Empty Flow");
+        assert!(meta.process_type.is_empty());
+        assert!(meta.variables.is_empty());
+        assert_eq!(meta.decisions, 0);
+        assert_eq!(meta.loops, 0);
+        assert_eq!(meta.screens, 0);
+    }
+
+    #[test]
+    fn counts_loops_and_screens() {
+        let src = r#"<?xml version="1.0"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Loop Flow</label>
+    <processType>Flow</processType>
+    <loops><name>Loop1</name></loops>
+    <loops><name>Loop2</name></loops>
+    <screens><name>Screen1</name></screens>
+    <screens><name>Screen2</name></screens>
+    <screens><name>Screen3</name></screens>
+</Flow>"#;
+        let meta = parse_flow("Loop_Flow", src).unwrap();
+        assert_eq!(meta.loops, 2);
+        assert_eq!(meta.screens, 3);
+    }
+
+    #[test]
+    fn record_delete_operation_parsed() {
+        let src = r#"<?xml version="1.0"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Delete Flow</label>
+    <recordDeletes>
+        <name>Delete_Old</name>
+        <object>Task</object>
+    </recordDeletes>
+</Flow>"#;
+        let meta = parse_flow("Delete_Flow", src).unwrap();
+        assert_eq!(meta.record_operations.len(), 1);
+        assert_eq!(meta.record_operations[0].operation, "delete");
+        assert_eq!(meta.record_operations[0].object, "Task");
+    }
+
+    #[test]
+    fn record_create_operation_parsed() {
+        let src = r#"<?xml version="1.0"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Create Flow</label>
+    <recordCreates>
+        <name>Create_Task</name>
+        <object>Task</object>
+    </recordCreates>
+</Flow>"#;
+        let meta = parse_flow("Create_Flow", src).unwrap();
+        assert_eq!(meta.record_operations.len(), 1);
+        assert_eq!(meta.record_operations[0].operation, "create");
+    }
+
+    #[test]
+    fn variable_with_no_input_output_flags_defaults_to_false() {
+        let src = r#"<?xml version="1.0"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Var Flow</label>
+    <variables>
+        <name>localVar</name>
+        <dataType>String</dataType>
+    </variables>
+</Flow>"#;
+        let meta = parse_flow("Var_Flow", src).unwrap();
+        assert_eq!(meta.variables.len(), 1);
+        assert!(!meta.variables[0].is_input);
+        assert!(!meta.variables[0].is_output);
+    }
+
+    #[test]
+    fn variable_with_empty_name_is_skipped() {
+        let src = r#"<?xml version="1.0"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Skip Flow</label>
+    <variables>
+        <name></name>
+        <dataType>String</dataType>
+    </variables>
+</Flow>"#;
+        let meta = parse_flow("Skip_Flow", src).unwrap();
+        assert!(meta.variables.is_empty());
+    }
+
+    #[test]
+    fn action_call_with_empty_action_name_is_skipped() {
+        let src = r#"<?xml version="1.0"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Skip Action</label>
+    <actionCalls>
+        <name>Valid_Action</name>
+        <actionName></actionName>
+        <actionType>apex</actionType>
+    </actionCalls>
+</Flow>"#;
+        let meta = parse_flow("Skip_Action", src).unwrap();
+        assert!(meta.action_calls.is_empty());
+    }
+
+    #[test]
+    fn multiple_decisions_counted() {
+        let src = r#"<?xml version="1.0"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Multi Decision</label>
+    <decisions><name>D1</name></decisions>
+    <decisions><name>D2</name></decisions>
+    <decisions><name>D3</name></decisions>
+</Flow>"#;
+        let meta = parse_flow("Multi_Decision", src).unwrap();
+        assert_eq!(meta.decisions, 3);
+    }
 }

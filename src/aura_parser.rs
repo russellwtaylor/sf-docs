@@ -233,4 +233,92 @@ mod tests {
         let result = parse_aura(&path, cmp).unwrap();
         assert!(result.extends.is_none());
     }
+
+    // -----------------------------------------------------------------------
+    // Edge cases & negative tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn empty_component_tag_returns_defaults() {
+        let tmp = TempDir::new().unwrap();
+        let cmp = "<aura:component></aura:component>";
+        let path = setup_component(&tmp, "emptyComp", cmp);
+        let result = parse_aura(&path, cmp).unwrap();
+        assert_eq!(result.component_name, "emptyComp");
+        assert!(result.attributes.is_empty());
+        assert!(result.events_handled.is_empty());
+        assert!(result.extends.is_none());
+    }
+
+    #[test]
+    fn attribute_with_all_fields() {
+        let tmp = TempDir::new().unwrap();
+        let cmp = r#"<aura:component>
+    <aura:attribute name="mode" type="String" default="view" description="Display mode: view or edit"/>
+</aura:component>"#;
+        let path = setup_component(&tmp, "myComp", cmp);
+        let result = parse_aura(&path, cmp).unwrap();
+        assert_eq!(result.attributes[0].name, "mode");
+        assert_eq!(result.attributes[0].attr_type, "String");
+        assert_eq!(result.attributes[0].default, "view");
+        assert_eq!(
+            result.attributes[0].description,
+            "Display mode: view or edit"
+        );
+    }
+
+    #[test]
+    fn attribute_without_optional_fields() {
+        let tmp = TempDir::new().unwrap();
+        let cmp = r#"<aura:component>
+    <aura:attribute name="items" type="List"/>
+</aura:component>"#;
+        let path = setup_component(&tmp, "myComp", cmp);
+        let result = parse_aura(&path, cmp).unwrap();
+        assert_eq!(result.attributes[0].name, "items");
+        assert_eq!(result.attributes[0].attr_type, "List");
+        assert!(result.attributes[0].default.is_empty());
+        assert!(result.attributes[0].description.is_empty());
+    }
+
+    #[test]
+    fn attribute_with_empty_name_skipped() {
+        let tmp = TempDir::new().unwrap();
+        let cmp = r#"<aura:component>
+    <aura:attribute name="" type="String"/>
+    <aura:attribute name="valid" type="String"/>
+</aura:component>"#;
+        let path = setup_component(&tmp, "myComp", cmp);
+        let result = parse_aura(&path, cmp).unwrap();
+        assert_eq!(result.attributes.len(), 1);
+        assert_eq!(result.attributes[0].name, "valid");
+    }
+
+    #[test]
+    fn duplicate_events_deduplicated() {
+        let tmp = TempDir::new().unwrap();
+        let cmp = r#"<aura:component>
+    <aura:handler event="c:myEvent" action="{!c.handle1}"/>
+    <aura:handler event="c:myEvent" action="{!c.handle2}"/>
+</aura:component>"#;
+        let path = setup_component(&tmp, "myComp", cmp);
+        let result = parse_aura(&path, cmp).unwrap();
+        assert_eq!(
+            result
+                .events_handled
+                .iter()
+                .filter(|e| e.as_str() == "c:myEvent")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn extends_with_namespace() {
+        let tmp = TempDir::new().unwrap();
+        let cmp = r#"<aura:component extends="lightning:baseComponent"></aura:component>"#;
+        let path = setup_component(&tmp, "myComp", cmp);
+        let result = parse_aura(&path, cmp).unwrap();
+        assert_eq!(result.extends.as_deref(), Some("lightning:baseComponent"));
+    }
 }

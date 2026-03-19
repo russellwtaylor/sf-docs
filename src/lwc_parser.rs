@@ -355,4 +355,100 @@ mod tests {
         let names: Vec<&str> = result.api_props.iter().map(|p| p.name.as_str()).collect();
         assert_eq!(names, vec!["alpha", "mango", "zebra"]);
     }
+
+    // -----------------------------------------------------------------------
+    // Edge cases & negative tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn empty_js_source_gives_no_api_props() {
+        let tmp = TempDir::new().unwrap();
+        let meta = setup_component(&tmp, "emptyComp", "", "");
+        let result = parse_lwc(&meta, "").unwrap();
+        assert!(result.api_props.is_empty());
+        assert!(result.slots.is_empty());
+        assert!(result.referenced_components.is_empty());
+    }
+
+    #[test]
+    fn api_prop_with_equals_initializer() {
+        let tmp = TempDir::new().unwrap();
+        let js = "@api recordId = '001xxx';";
+        let meta = setup_component(&tmp, "myComp", js, "");
+        let result = parse_lwc(&meta, js).unwrap();
+        assert!(result
+            .api_props
+            .iter()
+            .any(|p| p.name == "recordId" && !p.is_method));
+    }
+
+    #[test]
+    fn mixed_api_props_and_methods() {
+        let tmp = TempDir::new().unwrap();
+        let js = r#"
+            @api label;
+            @api variant = 'brand';
+            @api focus() { }
+            @api reset() { }
+        "#;
+        let meta = setup_component(&tmp, "myComp", js, "");
+        let result = parse_lwc(&meta, js).unwrap();
+        let props: Vec<&str> = result
+            .api_props
+            .iter()
+            .filter(|p| !p.is_method)
+            .map(|p| p.name.as_str())
+            .collect();
+        let methods: Vec<&str> = result
+            .api_props
+            .iter()
+            .filter(|p| p.is_method)
+            .map(|p| p.name.as_str())
+            .collect();
+        assert!(props.contains(&"label"));
+        assert!(props.contains(&"variant"));
+        assert!(methods.contains(&"focus"));
+        assert!(methods.contains(&"reset"));
+    }
+
+    #[test]
+    fn self_closing_slot_tag() {
+        let tmp = TempDir::new().unwrap();
+        let html = "<template><slot/></template>";
+        let meta = setup_component(&tmp, "myComp", "", html);
+        let result = parse_lwc(&meta, "").unwrap();
+        assert!(result.slots.contains(&"default".to_string()));
+    }
+
+    #[test]
+    fn multiple_different_c_component_refs() {
+        let tmp = TempDir::new().unwrap();
+        let html = r#"<template>
+            <c-my-button></c-my-button>
+            <c-my-input></c-my-input>
+            <c-data-table></c-data-table>
+        </template>"#;
+        let meta = setup_component(&tmp, "myComp", "", html);
+        let result = parse_lwc(&meta, "").unwrap();
+        assert_eq!(result.referenced_components.len(), 3);
+        assert!(result
+            .referenced_components
+            .contains(&"myButton".to_string()));
+        assert!(result
+            .referenced_components
+            .contains(&"myInput".to_string()));
+        assert!(result
+            .referenced_components
+            .contains(&"dataTable".to_string()));
+    }
+
+    #[test]
+    fn kebab_to_camel_single_word() {
+        assert_eq!(kebab_to_camel("button"), "button");
+    }
+
+    #[test]
+    fn kebab_to_camel_multiple_hyphens() {
+        assert_eq!(kebab_to_camel("my-very-long-name"), "myVeryLongName");
+    }
 }

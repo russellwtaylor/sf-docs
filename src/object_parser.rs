@@ -73,7 +73,18 @@ pub fn parse_object(path: &Path, source: &str) -> Result<ObjectMetadata> {
                 })
                 .collect();
             field_paths.sort();
+            const MAX_FIELD_FILE_SIZE: u64 = 10 * 1024 * 1024;
             for field_path in field_paths {
+                if let Ok(meta) = std::fs::metadata(&field_path) {
+                    if meta.len() > MAX_FIELD_FILE_SIZE {
+                        eprintln!(
+                            "Warning: skipping oversized field file {} ({:.1} MB)",
+                            field_path.display(),
+                            meta.len() as f64 / (1024.0 * 1024.0)
+                        );
+                        continue;
+                    }
+                }
                 let field_source = match std::fs::read_to_string(&field_path) {
                     Ok(s) => s,
                     Err(e) => {
@@ -304,5 +315,134 @@ mod tests {
 
         let meta = parse_object(&path, xml).unwrap();
         assert!(meta.description.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // Edge cases & negative tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn empty_xml_returns_defaults() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("Empty__c.object-meta.xml");
+        let xml = r#"<?xml version="1.0"?><CustomObject></CustomObject>"#;
+        fs::write(&path, xml).unwrap();
+
+        let meta = parse_object(&path, xml).unwrap();
+        assert_eq!(meta.object_name, "Empty__c");
+        assert!(meta.label.is_empty());
+        assert!(meta.description.is_empty());
+        assert!(meta.fields.is_empty());
+    }
+
+    #[test]
+    fn multiple_fields_sorted_by_filename() {
+        let tmp = TempDir::new().unwrap();
+        let obj_dir = setup_object_dir(&tmp, "Multi__c");
+        let xml = make_object_xml("Multi", "Multiple fields");
+        let obj_path = obj_dir.join("Multi__c.object-meta.xml");
+        fs::write(&obj_path, &xml).unwrap();
+
+        fs::write(
+            obj_dir.join("fields").join("Zebra__c.field-meta.xml"),
+            make_field_xml("Zebra", "Text"),
+        )
+        .unwrap();
+        fs::write(
+            obj_dir.join("fields").join("Alpha__c.field-meta.xml"),
+            make_field_xml("Alpha", "Number"),
+        )
+        .unwrap();
+
+        let meta = parse_object(&obj_path, &xml).unwrap();
+        assert_eq!(meta.fields.len(), 2);
+        assert_eq!(meta.fields[0].api_name, "Alpha__c");
+        assert_eq!(meta.fields[1].api_name, "Zebra__c");
+    }
+
+    #[test]
+    fn field_with_help_text() {
+        let tmp = TempDir::new().unwrap();
+        let obj_dir = setup_object_dir(&tmp, "Help__c");
+        let xml = make_object_xml("Help", "");
+        let obj_path = obj_dir.join("Help__c.object-meta.xml");
+        fs::write(&obj_path, &xml).unwrap();
+
+        let field_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Tip__c</fullName>
+    <label>Tip</label>
+    <type>Text</type>
+    <inlineHelpText>Enter a helpful tip here.</inlineHelpText>
+    <required>false</required>
+</CustomField>"#;
+        fs::write(
+            obj_dir.join("fields").join("Tip__c.field-meta.xml"),
+            field_xml,
+        )
+        .unwrap();
+
+        let meta = parse_object(&obj_path, &xml).unwrap();
+        assert_eq!(meta.fields[0].help_text, "Enter a helpful tip here.");
+    }
+
+    #[test]
+    fn field_required_defaults_to_false() {
+        let tmp = TempDir::new().unwrap();
+        let obj_dir = setup_object_dir(&tmp, "Defaults__c");
+        let xml = make_object_xml("Defaults", "");
+        let obj_path = obj_dir.join("Defaults__c.object-meta.xml");
+        fs::write(&obj_path, &xml).unwrap();
+
+        let field_xml = r#"<?xml version="1.0"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>NoReq</label>
+    <type>Text</type>
+</CustomField>"#;
+        fs::write(
+            obj_dir.join("fields").join("NoReq__c.field-meta.xml"),
+            field_xml,
+        )
+        .unwrap();
+
+        let meta = parse_object(&obj_path, &xml).unwrap();
+        assert!(!meta.fields[0].required);
+    }
+
+    #[test]
+    fn nested_label_in_name_field_not_used_as_object_label() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("Nested__c.object-meta.xml");
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Proper Label</label>
+    <nameField>
+        <label>Name</label>
+        <type>Text</type>
+    </nameField>
+</CustomObject>"#;
+        fs::write(&path, xml).unwrap();
+        let meta = parse_object(&path, xml).unwrap();
+        assert_eq!(meta.label, "Proper Label");
+    }
+
+    #[test]
+    fn non_field_files_in_fields_dir_ignored() {
+        let tmp = TempDir::new().unwrap();
+        let obj_dir = setup_object_dir(&tmp, "Mixed__c");
+        let xml = make_object_xml("Mixed", "");
+        let obj_path = obj_dir.join("Mixed__c.object-meta.xml");
+        fs::write(&obj_path, &xml).unwrap();
+
+        fs::write(obj_dir.join("fields").join("README.md"), "docs").unwrap();
+        fs::write(
+            obj_dir.join("fields").join("Real__c.field-meta.xml"),
+            make_field_xml("Real", "Text"),
+        )
+        .unwrap();
+
+        let meta = parse_object(&obj_path, &xml).unwrap();
+        assert_eq!(meta.fields.len(), 1);
+        assert_eq!(meta.fields[0].api_name, "Real__c");
     }
 }

@@ -204,4 +204,38 @@ mod tests {
             }
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Additional edge cases
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn should_retry_covers_expected_codes() {
+        assert!(should_retry(429));
+        assert!(should_retry(500));
+        assert!(should_retry(502));
+        assert!(should_retry(503));
+        assert!(should_retry(504));
+    }
+
+    #[test]
+    fn should_retry_rejects_success_and_client_errors() {
+        assert!(!should_retry(200));
+        assert!(!should_retry(201));
+        assert!(!should_retry(400));
+        assert!(!should_retry(401));
+        assert!(!should_retry(403));
+        assert!(!should_retry(404));
+    }
+
+    #[test]
+    fn retry_delay_empty_body_uses_backoff() {
+        let d = retry_delay_secs(None, "", 0);
+        assert!((2..=5).contains(&d), "empty body delay {d} out of range");
+    }
+
+    #[test]
+    fn retry_delay_header_value_of_one() {
+        assert_eq!(retry_delay_secs(Some(1), "", 0), 1);
+    }
 }
