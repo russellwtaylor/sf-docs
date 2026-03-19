@@ -105,7 +105,10 @@ mod tests {
         // attempt 2: cap=20, half=10, range [10, 20]
         for _ in 0..20 {
             let d = retry_delay_secs(None, "no hint here", 2);
-            assert!((10..=20).contains(&d), "attempt 2 delay {d} out of [10, 20]");
+            assert!(
+                (10..=20).contains(&d),
+                "attempt 2 delay {d} out of [10, 20]"
+            );
         }
     }
 
@@ -174,12 +177,18 @@ mod tests {
         // attempt 3: cap=40, half=20, range [20, 40]
         for _ in 0..20 {
             let d = retry_delay_secs(None, "no hint", 3);
-            assert!((20..=40).contains(&d), "attempt 3 delay {d} out of [20, 40]");
+            assert!(
+                (20..=40).contains(&d),
+                "attempt 3 delay {d} out of [20, 40]"
+            );
         }
         // attempt 4: cap=80, half=40, range [40, 80]
         for _ in 0..20 {
             let d = retry_delay_secs(None, "no hint", 4);
-            assert!((40..=80).contains(&d), "attempt 4 delay {d} out of [40, 80]");
+            assert!(
+                (40..=80).contains(&d),
+                "attempt 4 delay {d} out of [40, 80]"
+            );
         }
     }
 
