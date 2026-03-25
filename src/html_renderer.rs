@@ -42,6 +42,8 @@ pre code{background:none;padding:0;color:inherit;font-size:inherit}
 .badges{margin-bottom:16px;line-height:2}
 .badge{display:inline-block;background:#f1f8ff;border:1px solid #c8e1ff;color:#0366d6;border-radius:12px;padding:2px 10px;font-size:12px;margin-right:4px;font-family:'SFMono-Regular',Consolas,monospace}
 .badge-trigger{background:#fff8f0;border-color:#ffd3a3;color:#b07d00}
+.badge-tag{background:#f0fff4;border-color:#a3d9a5;color:#22863a;cursor:pointer}
+.badge-tag:hover{background:#dcffe4}
 .summary{font-size:16px;color:#586069;margin-bottom:20px;line-height:1.5}
 ul{padding-left:20px;margin-bottom:12px}
 li{margin-bottom:4px;line-height:1.5}
@@ -430,6 +432,12 @@ fn render_class_page(
             escape(iface)
         ));
     }
+    for tag in &ctx.metadata.tags {
+        body.push_str(&format!(
+            "<span class=\"badge badge-tag\">{}</span>",
+            escape(tag)
+        ));
+    }
     body.push_str("</div>\n");
 
     body.push_str(&format!(
@@ -697,6 +705,12 @@ fn render_trigger_page(
         body.push_str(&format!(
             "<span class=\"badge\">{}</span>\n",
             event.as_str()
+        ));
+    }
+    for tag in &ctx.metadata.tags {
+        body.push_str(&format!(
+            "<span class=\"badge badge-tag\">{}</span>",
+            escape(tag)
         ));
     }
     body.push_str("</div>\n");
@@ -2070,11 +2084,15 @@ fn render_index(
             }
             body.push_str("<table><thead><tr><th>Class</th><th>Summary</th></tr></thead><tbody>\n");
             for ctx in classes {
+                let tag_html: String = ctx.metadata.tags.iter()
+                    .map(|t| format!(" <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>", escape(t)))
+                    .collect();
                 body.push_str(&format!(
-                    "<tr><td><a href=\"classes/{}.html\">{}</a></td><td>{}</td></tr>\n",
+                    "<tr><td><a href=\"classes/{}.html\">{}</a></td><td>{}{}</td></tr>\n",
                     escape(&ctx.metadata.class_name),
                     escape(&ctx.documentation.class_name),
                     escape(&ctx.documentation.summary),
+                    tag_html,
                 ));
             }
             body.push_str("</tbody></table>\n");
@@ -2104,11 +2122,15 @@ fn render_index(
                 "<table><thead><tr><th>Interface</th><th>Summary</th></tr></thead><tbody>\n",
             );
             for ctx in ifaces {
+                let tag_html: String = ctx.metadata.tags.iter()
+                    .map(|t| format!(" <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>", escape(t)))
+                    .collect();
                 body.push_str(&format!(
-                    "<tr><td><a href=\"classes/{}.html\">{}</a></td><td>{}</td></tr>\n",
+                    "<tr><td><a href=\"classes/{}.html\">{}</a></td><td>{}{}</td></tr>\n",
                     escape(&ctx.metadata.class_name),
                     escape(&ctx.documentation.class_name),
                     escape(&ctx.documentation.summary),
+                    tag_html,
                 ));
             }
             body.push_str("</tbody></table>\n");
@@ -2141,12 +2163,16 @@ fn render_index(
             }
             body.push_str("<table><thead><tr><th>Trigger</th><th>SObject</th><th>Summary</th></tr></thead><tbody>\n");
             for ctx in triggers {
+                let tag_html: String = ctx.metadata.tags.iter()
+                    .map(|t| format!(" <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>", escape(t)))
+                    .collect();
                 body.push_str(&format!(
-                    "<tr><td><a href=\"triggers/{}.html\">{}</a></td><td><code>{}</code></td><td>{}</td></tr>\n",
+                    "<tr><td><a href=\"triggers/{}.html\">{}</a></td><td><code>{}</code></td><td>{}{}</td></tr>\n",
                     escape(&ctx.metadata.trigger_name),
                     escape(&ctx.documentation.trigger_name),
                     escape(&ctx.documentation.sobject),
                     escape(&ctx.documentation.summary),
+                    tag_html,
                 ));
             }
             body.push_str("</tbody></table>\n");

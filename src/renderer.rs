@@ -149,6 +149,11 @@ pub fn render_class_page(ctx: &RenderContext) -> String {
     out.push_str(&render_badges(meta));
     out.push('\n');
 
+    if !ctx.metadata.tags.is_empty() {
+        let tag_str: Vec<String> = ctx.metadata.tags.iter().map(|t| format!("`{t}`")).collect();
+        out.push_str(&format!("**Tags:** {}\n\n", tag_str.join(", ")));
+    }
+
     // Summary
     out.push_str(&format!("{}\n\n", doc.summary));
 
@@ -310,6 +315,11 @@ pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
         "`trigger` · `on {}` · {}\n\n",
         doc.sobject, events_str
     ));
+
+    if !ctx.metadata.tags.is_empty() {
+        let tag_str: Vec<String> = ctx.metadata.tags.iter().map(|t| format!("`{t}`")).collect();
+        out.push_str(&format!("**Tags:** {}\n\n", tag_str.join(", ")));
+    }
 
     out.push_str(&format!("{}\n\n", doc.summary));
 
