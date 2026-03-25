@@ -163,6 +163,23 @@ sfdoc generate --force
 sfdoc generate --concurrency 10
 ```
 
+### Filter by metadata type
+
+Generate docs for only specific metadata types:
+
+```bash
+# Only Apex classes and triggers
+sfdoc generate --type apex,triggers
+
+# Only LWC components
+sfdoc generate --type lwc
+
+# Combine with other flags
+sfdoc generate --type flows,validation-rules --format html
+```
+
+Valid types: `apex`, `triggers`, `flows`, `validation-rules`, `objects`, `lwc`, `flexipages`, `custom-metadata`, `aura`. When omitted, all types are included.
+
 ### Verbose output
 
 ```bash
@@ -194,6 +211,9 @@ Options:
   --format <FORMAT>      Output format [default: markdown]
                          [possible values: markdown, html]
   --force                Ignore the incremental build cache; regenerate all docs
+  --type <TYPES>         Only document these metadata types (comma-separated)
+                         [possible values: apex, triggers, flows, validation-rules,
+                          objects, lwc, flexipages, custom-metadata, aura]
   --verbose              Enable verbose logging
   -h, --help             Print help
   -V, --version          Print version

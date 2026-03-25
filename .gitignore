@@ -18,7 +18,9 @@ target
 
 # Cursor
 .cursor/
-docs/superpowers/*
 
 # Claude
 .claude/
+
+# Superpowers
+.superpowers/

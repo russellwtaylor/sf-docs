@@ -50,6 +50,7 @@ sfdoc generate
   --source-dir <PATH>                       default: force-app/main/default/classes
   --output <PATH>                           default: docs/
   --concurrency <N>                         default: 3
+  --type <TYPES>                            comma-separated: apex,triggers,flows,validation-rules,objects,lwc,flexipages,custom-metadata,aura
   --verbose
 
 sfdoc auth --provider <gemini|groq|openai|ollama>
