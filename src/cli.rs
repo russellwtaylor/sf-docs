@@ -113,6 +113,12 @@ pub struct GenerateArgs {
     #[arg(long)]
     pub name_filter: Option<String>,
 
+    /// Only document items tagged with at least one of these labels (comma-separated).
+    /// Tags are extracted from @tag annotations in ApexDoc comments.
+    /// When --tag is specified, non-taggable metadata types (flows, objects, etc.) are excluded.
+    #[arg(long = "tag", value_delimiter = ',')]
+    pub tags: Vec<String>,
+
     /// Enable verbose logging
     #[arg(long, short)]
     pub verbose: bool,
@@ -136,6 +142,20 @@ impl GenerateArgs {
                 glob.compile_matcher().is_match(filename_stem)
             }
         }
+    }
+
+    /// Returns `true` if the item's tags overlap with the `--tag` filter (OR logic, case-insensitive).
+    /// Returns `true` when `--tag` is not specified.
+    /// Returns `false` when `--tag` is specified but the item has no tags.
+    pub fn tag_matches(&self, item_tags: &[String]) -> bool {
+        if self.tags.is_empty() {
+            return true;
+        }
+        item_tags.iter().any(|t| {
+            self.tags
+                .iter()
+                .any(|f| f.eq_ignore_ascii_case(t))
+        })
     }
 }
 
@@ -250,5 +270,29 @@ mod tests {
         assert!(args.name_matches("OrderService"));
         assert!(args.name_matches("MyOrderHelper"));
         assert!(!args.name_matches("AccountService"));
+    }
+
+    #[test]
+    fn no_tag_flag_matches_all() {
+        let args = parse_generate(&[]);
+        assert!(args.tag_matches(&["billing".to_string()]));
+        assert!(args.tag_matches(&[]));
+    }
+
+    #[test]
+    fn tag_flag_matches_or_logic() {
+        let args = parse_generate(&["--tag", "billing,integration"]);
+        assert!(args.tag_matches(&["billing".to_string()]));
+        assert!(args.tag_matches(&["integration".to_string()]));
+        assert!(args.tag_matches(&["billing".to_string(), "other".to_string()]));
+        assert!(!args.tag_matches(&["unrelated".to_string()]));
+        assert!(!args.tag_matches(&[]));
+    }
+
+    #[test]
+    fn tag_flag_case_insensitive() {
+        let args = parse_generate(&["--tag", "Billing"]);
+        assert!(args.tag_matches(&["billing".to_string()]));
+        assert!(args.tag_matches(&["BILLING".to_string()]));
     }
 }
