@@ -299,6 +299,8 @@ docs/
 ```
 site/
   index.html                                    # Home page with sidebar navigation
+  search.js                                     # Fuzzy search powered by fuse.js
+  search-index.json                             # Pre-built search index
   classes/
     AccountService.html
   triggers/
@@ -522,6 +524,7 @@ src/
   config.rs                     API key storage and resolution
   providers.rs                  Provider enum and per-provider defaults
   scanner.rs                    FileScanner trait and all scanner implementations
+  apex_common.rs                Shared Apex helpers (type refs, builtins, @tag extraction)
   parser.rs                     Regex-based Apex class structural parser
   trigger_parser.rs             Apex trigger structural parser
   flow_parser.rs                Salesforce Flow XML structural parser
