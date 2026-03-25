@@ -7,6 +7,22 @@ pub fn re_type_ref() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\b([A-Z][a-zA-Z0-9_]+)\b").unwrap())
 }
 
+fn re_tag() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"@tag\s+(\w[\w-]*)").unwrap())
+}
+
+/// Extracts `@tag <label>` annotations from ApexDoc comment strings.
+pub fn extract_tags(comments: &[String]) -> Vec<String> {
+    let mut tags = Vec::new();
+    for comment in comments {
+        for caps in re_tag().captures_iter(comment) {
+            tags.push(caps[1].to_string());
+        }
+    }
+    tags
+}
+
 /// Apex primitive / built-in types to exclude from cross-reference lists.
 pub const APEX_BUILTINS: &[&str] = &[
     "String",

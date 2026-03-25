@@ -1651,6 +1651,7 @@ mod tests {
                 }],
                 existing_comments: vec![],
                 references: vec!["AccountRepository".to_string()],
+                tags: vec![],
             },
             documentation: ClassDocumentation {
                 class_name: "AccountService".to_string(),

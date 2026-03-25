@@ -2,7 +2,7 @@ use anyhow::Result;
 use regex::Regex;
 use std::sync::OnceLock;
 
-use crate::apex_common::{re_type_ref, APEX_BUILTINS};
+use crate::apex_common::{extract_tags, re_type_ref, APEX_BUILTINS};
 use crate::types::{TriggerEvent, TriggerMetadata};
 
 // ---------------------------------------------------------------------------
@@ -34,6 +34,8 @@ pub fn parse_apex_trigger(source: &str) -> Result<TriggerMetadata> {
             .collect(),
         ..Default::default()
     };
+
+    meta.tags = extract_tags(&meta.existing_comments);
 
     if let Some(caps) = re_trigger().captures(source) {
         meta.trigger_name = caps.name("name").map_or("", |m| m.as_str()).to_string();
@@ -192,6 +194,34 @@ trigger AccountTrigger on Account (before insert, before update, after insert, a
         assert_eq!(TriggerEvent::AfterUpdate.as_str(), "after update");
         assert_eq!(TriggerEvent::AfterDelete.as_str(), "after delete");
         assert_eq!(TriggerEvent::AfterUndelete.as_str(), "after undelete");
+    }
+
+    // -----------------------------------------------------------------------
+    // @tag annotation tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn parses_trigger_tags() {
+        let source = r#"
+    /**
+     * @tag billing
+     * @tag automation
+     */
+    trigger OrderTrigger on Order__c (before insert, after update) {
+    }
+    "#;
+        let meta = parse_apex_trigger(source).unwrap();
+        assert_eq!(meta.tags, vec!["billing", "automation"]);
+    }
+
+    #[test]
+    fn trigger_no_tags_returns_empty() {
+        let source = r#"
+    trigger OrderTrigger on Order__c (before insert) {
+    }
+    "#;
+        let meta = parse_apex_trigger(source).unwrap();
+        assert!(meta.tags.is_empty());
     }
 
     #[test]
