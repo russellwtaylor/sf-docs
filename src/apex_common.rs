@@ -69,7 +69,10 @@ mod tests {
             .map(|c| c[1].to_string())
             .collect();
         // Only PascalCase (starting uppercase) should match
-        assert!(!matches.iter().any(|m| m == "string"), "lowercase 'string' should not match");
+        assert!(
+            !matches.iter().any(|m| m == "string"),
+            "lowercase 'string' should not match"
+        );
     }
 
     #[test]

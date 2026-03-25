@@ -1958,7 +1958,9 @@ fn flexipage_pipeline_writes_markdown_output() {
     renderer::write_output(&output_dir, &OutputFormat::Markdown, &bundle).unwrap();
 
     assert!(
-        output_dir.join("flexipages/Account_Record_Page.md").exists(),
+        output_dir
+            .join("flexipages/Account_Record_Page.md")
+            .exists(),
         "flexipage page not created"
     );
     let index = std::fs::read_to_string(output_dir.join("index.md")).unwrap();
@@ -2023,5 +2025,8 @@ fn aura_pipeline_writes_markdown_output() {
         "aura page not created"
     );
     let index = std::fs::read_to_string(output_dir.join("index.md")).unwrap();
-    assert!(index.contains("myAuraComp"), "aura component missing from index");
+    assert!(
+        index.contains("myAuraComp"),
+        "aura component missing from index"
+    );
 }
