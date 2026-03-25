@@ -108,6 +108,11 @@ pub struct GenerateArgs {
     #[arg(long = "type", value_delimiter = ',')]
     pub types: Vec<MetadataType>,
 
+    /// Only document files whose name matches this glob pattern (e.g. 'Order*', '*Service').
+    /// Applied across all metadata types against the logical filename.
+    #[arg(long)]
+    pub name_filter: Option<String>,
+
     /// Enable verbose logging
     #[arg(long, short)]
     pub verbose: bool,
@@ -118,6 +123,19 @@ impl GenerateArgs {
     /// When `--type` is omitted (empty vec), all types are selected.
     pub fn type_enabled(&self, t: MetadataType) -> bool {
         self.types.is_empty() || self.types.contains(&t)
+    }
+
+    /// Returns `true` if the given filename stem matches the `--name-filter` glob,
+    /// or if no filter was specified.
+    pub fn name_matches(&self, filename_stem: &str) -> bool {
+        match &self.name_filter {
+            None => true,
+            Some(pattern) => {
+                let glob = globset::Glob::new(pattern)
+                    .unwrap_or_else(|_| globset::Glob::new("*").unwrap());
+                glob.compile_matcher().is_match(filename_stem)
+            }
+        }
     }
 }
 
@@ -202,5 +220,35 @@ mod tests {
         assert!(args.type_enabled(MetadataType::Apex));
         assert!(args.type_enabled(MetadataType::Triggers));
         assert!(!args.type_enabled(MetadataType::Flows));
+    }
+
+    #[test]
+    fn name_filter_not_set_matches_all() {
+        let args = parse_generate(&[]);
+        assert!(args.name_matches("OrderService"));
+        assert!(args.name_matches("anything"));
+    }
+
+    #[test]
+    fn name_filter_matches_glob() {
+        let args = parse_generate(&["--name-filter", "Order*"]);
+        assert!(args.name_matches("OrderService"));
+        assert!(args.name_matches("OrderHelper"));
+        assert!(!args.name_matches("AccountService"));
+    }
+
+    #[test]
+    fn name_filter_suffix_glob() {
+        let args = parse_generate(&["--name-filter", "*Service"]);
+        assert!(args.name_matches("OrderService"));
+        assert!(!args.name_matches("OrderHelper"));
+    }
+
+    #[test]
+    fn name_filter_contains_glob() {
+        let args = parse_generate(&["--name-filter", "*Order*"]);
+        assert!(args.name_matches("OrderService"));
+        assert!(args.name_matches("MyOrderHelper"));
+        assert!(!args.name_matches("AccountService"));
     }
 }
