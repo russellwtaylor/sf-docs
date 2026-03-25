@@ -75,6 +75,9 @@ async fn main() -> Result<()> {
                     let names: Vec<&str> = args.types.iter().map(|t| t.cli_name()).collect();
                     eprintln!("Types:       {}", names.join(", "));
                 }
+                if let Some(ref pattern) = args.name_filter {
+                    eprintln!("Name filter: {}", pattern);
+                }
             }
 
             // Scan for supported source types, skipping those excluded by --type.
@@ -129,6 +132,26 @@ async fn main() -> Result<()> {
                 &AuraScanner,
                 "Aura components",
             )?;
+
+            // Apply --name-filter: drop files whose logical name doesn't match the glob.
+            let name_filter = |files: Vec<types::SourceFile>| -> Vec<types::SourceFile> {
+                if args.name_filter.is_none() {
+                    return files;
+                }
+                files
+                    .into_iter()
+                    .filter(|f| args.name_matches(&f.filename))
+                    .collect()
+            };
+            let files = name_filter(files);
+            let trigger_files = name_filter(trigger_files);
+            let flow_files = name_filter(flow_files);
+            let vr_files = name_filter(vr_files);
+            let object_files = name_filter(object_files);
+            let lwc_files = name_filter(lwc_files);
+            let flexipage_files = name_filter(flexipage_files);
+            let custom_metadata_files = name_filter(custom_metadata_files);
+            let aura_files = name_filter(aura_files);
 
             // Require at least one file of any enabled type.
             if files.is_empty()
