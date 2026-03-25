@@ -74,7 +74,7 @@ todos:
       status: done
     - id: type-filter
       content: "Phase 24: --type filter flag — generate docs only for selected metadata types (e.g. --type lwc,apex,flows)"
-      status: todo
+      status: done
     - id: name-filter
       content: "Phase 25: --name-filter / --glob flag — filter by name pattern (e.g. --name-filter 'Order*')"
       status: todo
@@ -577,18 +577,16 @@ Validation rules are stored per-object under `force-app/main/default/objects/{Ob
 
 ---
 
-### Phase 24: `--type` Filter Flag
+### Phase 24: `--type` Filter Flag ✅
 
-**Goal:** Let users generate docs only for the metadata types they care about, reducing build time on large orgs.
-
-**Design:**
-
-- New `--type` CLI argument accepting a comma-separated list: `apex`, `triggers`, `flows`, `validation-rules`, `objects`, `lwc`, `flexipages`, `custom-metadata`, `aura`
-- Default (no flag): all types scanned as today
-- Scanner dispatch in `main.rs` gated on the selected set
-- Error on unrecognised type names with a helpful list of valid values
-
-**Impact:** Faster iteration for teams that only care about a subset of their org's metadata.
+- `MetadataType` enum with `clap::ValueEnum` — nine variants: `apex`, `triggers`, `flows`, `validation-rules`, `objects`, `lwc`, `flexipages`, `custom-metadata`, `aura`
+- `--type` CLI argument on `GenerateArgs` with `value_delimiter = ','` — accepts comma-separated values or repeated flags (`--type apex --type lwc`)
+- `GenerateArgs::type_enabled()` helper: returns `true` when no types are specified (all enabled) or the type is in the selected set
+- Scanner dispatch in `main.rs` gated via a `scan()` closure that returns `Vec::new()` for excluded types
+- Error message distinguishes "no files found at all" from "no files for the selected types"
+- Verbose mode prints the selected type list
+- Invalid type names rejected by clap with the full list of valid values
+- 6 unit tests covering: no flag (all enabled), single type, comma-separated, hyphenated names, invalid type rejection, repeated flag
 
 ---
 

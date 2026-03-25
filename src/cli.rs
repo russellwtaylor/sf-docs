@@ -12,6 +12,38 @@ pub enum OutputFormat {
     Html,
 }
 
+/// Metadata types that sfdoc can document.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum MetadataType {
+    Apex,
+    Triggers,
+    Flows,
+    #[value(name = "validation-rules")]
+    ValidationRules,
+    Objects,
+    Lwc,
+    Flexipages,
+    #[value(name = "custom-metadata")]
+    CustomMetadata,
+    Aura,
+}
+
+impl MetadataType {
+    pub fn cli_name(self) -> &'static str {
+        match self {
+            Self::Apex => "apex",
+            Self::Triggers => "triggers",
+            Self::Flows => "flows",
+            Self::ValidationRules => "validation-rules",
+            Self::Objects => "objects",
+            Self::Lwc => "lwc",
+            Self::Flexipages => "flexipages",
+            Self::CustomMetadata => "custom-metadata",
+            Self::Aura => "aura",
+        }
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "sfdoc",
@@ -69,9 +101,24 @@ pub struct GenerateArgs {
     #[arg(long)]
     pub force: bool,
 
+    /// Only generate docs for these metadata types (comma-separated).
+    /// Valid types: apex, triggers, flows, validation-rules, objects, lwc,
+    /// flexipages, custom-metadata, aura.
+    /// Default: all types.
+    #[arg(long = "type", value_delimiter = ',')]
+    pub types: Vec<MetadataType>,
+
     /// Enable verbose logging
     #[arg(long, short)]
     pub verbose: bool,
+}
+
+impl GenerateArgs {
+    /// Returns `true` if the given metadata type should be processed.
+    /// When `--type` is omitted (empty vec), all types are selected.
+    pub fn type_enabled(&self, t: MetadataType) -> bool {
+        self.types.is_empty() || self.types.contains(&t)
+    }
 }
 
 fn parse_concurrency(s: &str) -> Result<usize, String> {
@@ -90,4 +137,70 @@ pub struct AuthArgs {
     /// Provider to authenticate
     #[arg(long, default_value = "gemini")]
     pub provider: Provider,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    fn parse_generate(args: &[&str]) -> GenerateArgs {
+        let mut full = vec!["sfdoc", "generate"];
+        full.extend(args);
+        let cli = Cli::try_parse_from(full).expect("CLI should parse");
+        match cli.command {
+            Commands::Generate(g) => g,
+            _ => panic!("expected Generate command"),
+        }
+    }
+
+    #[test]
+    fn no_type_flag_enables_all() {
+        let args = parse_generate(&[]);
+        assert!(args.types.is_empty());
+        assert!(args.type_enabled(MetadataType::Apex));
+        assert!(args.type_enabled(MetadataType::Lwc));
+        assert!(args.type_enabled(MetadataType::Aura));
+    }
+
+    #[test]
+    fn single_type() {
+        let args = parse_generate(&["--type", "apex"]);
+        assert_eq!(args.types, vec![MetadataType::Apex]);
+        assert!(args.type_enabled(MetadataType::Apex));
+        assert!(!args.type_enabled(MetadataType::Flows));
+    }
+
+    #[test]
+    fn comma_separated_types() {
+        let args = parse_generate(&["--type", "apex,lwc,flows"]);
+        assert_eq!(args.types.len(), 3);
+        assert!(args.type_enabled(MetadataType::Apex));
+        assert!(args.type_enabled(MetadataType::Lwc));
+        assert!(args.type_enabled(MetadataType::Flows));
+        assert!(!args.type_enabled(MetadataType::Triggers));
+    }
+
+    #[test]
+    fn hyphenated_type_names() {
+        let args = parse_generate(&["--type", "validation-rules,custom-metadata"]);
+        assert!(args.type_enabled(MetadataType::ValidationRules));
+        assert!(args.type_enabled(MetadataType::CustomMetadata));
+        assert!(!args.type_enabled(MetadataType::Apex));
+    }
+
+    #[test]
+    fn invalid_type_is_rejected() {
+        let full = vec!["sfdoc", "generate", "--type", "invalid"];
+        let result = Cli::try_parse_from(full);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn repeated_type_flag() {
+        let args = parse_generate(&["--type", "apex", "--type", "triggers"]);
+        assert!(args.type_enabled(MetadataType::Apex));
+        assert!(args.type_enabled(MetadataType::Triggers));
+        assert!(!args.type_enabled(MetadataType::Flows));
+    }
 }

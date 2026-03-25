@@ -13,7 +13,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
-use cli::{Cli, Commands, OutputFormat};
+use cli::{Cli, Commands, MetadataType, OutputFormat};
 use doc_client::DocClient;
 
 use config::{delete_api_key, has_stored_key, resolve_api_key, save_api_key};
@@ -71,53 +71,66 @@ async fn main() -> Result<()> {
                 eprintln!("Source dir:  {}", args.source_dir.display());
                 eprintln!("Output dir:  {}", output_dir.display());
                 eprintln!("Concurrency: {}", args.concurrency);
+                if !args.types.is_empty() {
+                    let names: Vec<&str> = args.types.iter().map(|t| t.cli_name()).collect();
+                    eprintln!("Types:       {}", names.join(", "));
+                }
             }
 
-            // Scan for all supported source types.
-            let scanner = ApexScanner;
-            let files = scanner
-                .scan(&args.source_dir)
-                .with_context(|| format!("Failed to scan {}", args.source_dir.display()))?;
-            let trigger_files = TriggerScanner.scan(&args.source_dir).with_context(|| {
-                format!("Failed to scan triggers in {}", args.source_dir.display())
-            })?;
-            let flow_files = FlowScanner.scan(&args.source_dir).with_context(|| {
-                format!("Failed to scan flows in {}", args.source_dir.display())
-            })?;
-            let vr_files = ValidationRuleScanner
-                .scan(&args.source_dir)
-                .with_context(|| {
-                    format!(
-                        "Failed to scan validation rules in {}",
-                        args.source_dir.display()
-                    )
-                })?;
-            let object_files = ObjectScanner.scan(&args.source_dir).with_context(|| {
-                format!("Failed to scan objects in {}", args.source_dir.display())
-            })?;
-            let lwc_files = LwcScanner
-                .scan(&args.source_dir)
-                .with_context(|| format!("Failed to scan LWC in {}", args.source_dir.display()))?;
-            let flexipage_files = FlexiPageScanner.scan(&args.source_dir).with_context(|| {
-                format!("Failed to scan FlexiPages in {}", args.source_dir.display())
-            })?;
-            let custom_metadata_files =
-                CustomMetadataScanner
-                    .scan(&args.source_dir)
-                    .with_context(|| {
-                        format!(
-                            "Failed to scan Custom Metadata in {}",
-                            args.source_dir.display()
-                        )
-                    })?;
-            let aura_files = AuraScanner.scan(&args.source_dir).with_context(|| {
-                format!(
-                    "Failed to scan Aura components in {}",
-                    args.source_dir.display()
-                )
-            })?;
+            // Scan for supported source types, skipping those excluded by --type.
+            let scan = |enabled, scanner: &dyn FileScanner, label: &str| -> Result<Vec<_>> {
+                if enabled {
+                    scanner.scan(&args.source_dir).with_context(|| {
+                        format!("Failed to scan {label} in {}", args.source_dir.display())
+                    })
+                } else {
+                    Ok(Vec::new())
+                }
+            };
 
-            // Require at least one file of any supported type.
+            let files = scan(
+                args.type_enabled(MetadataType::Apex),
+                &ApexScanner,
+                "Apex classes",
+            )?;
+            let trigger_files = scan(
+                args.type_enabled(MetadataType::Triggers),
+                &TriggerScanner,
+                "triggers",
+            )?;
+            let flow_files = scan(
+                args.type_enabled(MetadataType::Flows),
+                &FlowScanner,
+                "flows",
+            )?;
+            let vr_files = scan(
+                args.type_enabled(MetadataType::ValidationRules),
+                &ValidationRuleScanner,
+                "validation rules",
+            )?;
+            let object_files = scan(
+                args.type_enabled(MetadataType::Objects),
+                &ObjectScanner,
+                "objects",
+            )?;
+            let lwc_files = scan(args.type_enabled(MetadataType::Lwc), &LwcScanner, "LWC")?;
+            let flexipage_files = scan(
+                args.type_enabled(MetadataType::Flexipages),
+                &FlexiPageScanner,
+                "FlexiPages",
+            )?;
+            let custom_metadata_files = scan(
+                args.type_enabled(MetadataType::CustomMetadata),
+                &CustomMetadataScanner,
+                "Custom Metadata",
+            )?;
+            let aura_files = scan(
+                args.type_enabled(MetadataType::Aura),
+                &AuraScanner,
+                "Aura components",
+            )?;
+
+            // Require at least one file of any enabled type.
             if files.is_empty()
                 && trigger_files.is_empty()
                 && flow_files.is_empty()
@@ -128,10 +141,19 @@ async fn main() -> Result<()> {
                 && custom_metadata_files.is_empty()
                 && aura_files.is_empty()
             {
-                anyhow::bail!(
-                    "No supported source files found in {} (expected .cls, .trigger, .flow-meta.xml, .validationRule-meta.xml, .object-meta.xml, .js-meta.xml, .flexipage-meta.xml, .md-meta.xml, or .cmp)",
-                    args.source_dir.display()
-                );
+                if args.types.is_empty() {
+                    anyhow::bail!(
+                        "No supported source files found in {} (expected .cls, .trigger, .flow-meta.xml, .validationRule-meta.xml, .object-meta.xml, .js-meta.xml, .flexipage-meta.xml, .md-meta.xml, or .cmp)",
+                        args.source_dir.display()
+                    );
+                } else {
+                    let names: Vec<&str> = args.types.iter().map(|t| t.cli_name()).collect();
+                    anyhow::bail!(
+                        "No source files found in {} for the selected types: {}",
+                        args.source_dir.display(),
+                        names.join(", ")
+                    );
+                }
             }
 
             if !files.is_empty() {

@@ -15,7 +15,8 @@ use sfdoc::lwc_parser;
 use sfdoc::parser;
 use sfdoc::renderer::{self, RenderContext, TriggerRenderContext};
 use sfdoc::renderer::{
-    FlowRenderContext, LwcRenderContext, ObjectRenderContext, ValidationRuleRenderContext,
+    AuraRenderContext, FlexiPageRenderContext, FlowRenderContext, LwcRenderContext,
+    ObjectRenderContext, ValidationRuleRenderContext,
 };
 use sfdoc::scanner::{ApexScanner, FileScanner, FlowScanner, LwcScanner, TriggerScanner};
 use sfdoc::trigger_parser;
@@ -131,7 +132,6 @@ fn custom_metadata_fixtures_dir() -> &'static Path {
     DIR.get_or_init(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/customMetadata"))
 }
 
-#[allow(dead_code)]
 fn stub_flexipage_doc(api_name: &str) -> FlexiPageDocumentation {
     FlexiPageDocumentation {
         api_name: api_name.to_string(),
@@ -144,7 +144,6 @@ fn stub_flexipage_doc(api_name: &str) -> FlexiPageDocumentation {
     }
 }
 
-#[allow(dead_code)]
 fn stub_aura_doc(component_name: &str) -> AuraDocumentation {
     AuraDocumentation {
         component_name: component_name.to_string(),
@@ -1903,4 +1902,126 @@ fn mixed_bundle_writes_all_output_dirs() {
     renderer::write_output(tmp.path(), &OutputFormat::Markdown, &bundle).unwrap();
     assert!(tmp.path().join("classes/Svc.md").exists());
     assert!(tmp.path().join("index.md").exists());
+}
+
+// ---------------------------------------------------------------------------
+// FlexiPage pipeline rendering
+// ---------------------------------------------------------------------------
+
+#[test]
+fn flexipage_pipeline_writes_markdown_output() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output_dir = tmp.path().join("out");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    let meta = sfdoc::types::FlexiPageMetadata {
+        api_name: "Account_Record_Page".to_string(),
+        label: "Account Record Page".to_string(),
+        page_type: "RecordPage".to_string(),
+        sobject: "Account".to_string(),
+        description: String::new(),
+        component_names: vec!["accountDetails".to_string()],
+        flow_names: vec![],
+    };
+
+    let all_names = Arc::new(AllNames {
+        class_names: HashSet::new(),
+        trigger_names: HashSet::new(),
+        flow_names: HashSet::new(),
+        validation_rule_names: HashSet::new(),
+        object_names: HashSet::new(),
+        lwc_names: HashSet::new(),
+        flexipage_names: ["Account_Record_Page".to_string()].into_iter().collect(),
+        aura_names: HashSet::new(),
+        custom_metadata_type_names: HashSet::new(),
+        interface_implementors: std::collections::HashMap::new(),
+    });
+
+    let ctx = FlexiPageRenderContext {
+        metadata: meta,
+        documentation: stub_flexipage_doc("Account_Record_Page"),
+        all_names,
+        folder: String::new(),
+    };
+
+    let bundle = renderer::DocumentationBundle {
+        classes: &[],
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[ctx],
+        custom_metadata: &[],
+        aura: &[],
+    };
+    renderer::write_output(&output_dir, &OutputFormat::Markdown, &bundle).unwrap();
+
+    assert!(
+        output_dir.join("flexipages/Account_Record_Page.md").exists(),
+        "flexipage page not created"
+    );
+    let index = std::fs::read_to_string(output_dir.join("index.md")).unwrap();
+    assert!(
+        index.contains("Account_Record_Page") || index.contains("Account Record Page"),
+        "flexipage missing from index"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Aura pipeline rendering
+// ---------------------------------------------------------------------------
+
+#[test]
+fn aura_pipeline_writes_markdown_output() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output_dir = tmp.path().join("out");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    let meta = sfdoc::types::AuraMetadata {
+        component_name: "myAuraComp".to_string(),
+        attributes: vec![],
+        events_handled: vec!["onSave".to_string()],
+        extends: Some("c:baseComponent".to_string()),
+    };
+
+    let all_names = Arc::new(AllNames {
+        class_names: HashSet::new(),
+        trigger_names: HashSet::new(),
+        flow_names: HashSet::new(),
+        validation_rule_names: HashSet::new(),
+        object_names: HashSet::new(),
+        lwc_names: HashSet::new(),
+        flexipage_names: HashSet::new(),
+        aura_names: ["myAuraComp".to_string()].into_iter().collect(),
+        custom_metadata_type_names: HashSet::new(),
+        interface_implementors: std::collections::HashMap::new(),
+    });
+
+    let ctx = AuraRenderContext {
+        metadata: meta,
+        documentation: stub_aura_doc("myAuraComp"),
+        all_names,
+        folder: String::new(),
+    };
+
+    let bundle = renderer::DocumentationBundle {
+        classes: &[],
+        triggers: &[],
+        flows: &[],
+        validation_rules: &[],
+        objects: &[],
+        lwc: &[],
+        flexipages: &[],
+        custom_metadata: &[],
+        aura: &[ctx],
+    };
+    renderer::write_output(&output_dir, &OutputFormat::Markdown, &bundle).unwrap();
+
+    assert!(
+        output_dir.join("aura/myAuraComp.md").exists(),
+        "aura page not created"
+    );
+    let index = std::fs::read_to_string(output_dir.join("index.md")).unwrap();
+    assert!(index.contains("myAuraComp"), "aura component missing from index");
 }
