@@ -151,11 +151,9 @@ impl GenerateArgs {
         if self.tags.is_empty() {
             return true;
         }
-        item_tags.iter().any(|t| {
-            self.tags
-                .iter()
-                .any(|f| f.eq_ignore_ascii_case(t))
-        })
+        item_tags
+            .iter()
+            .any(|t| self.tags.iter().any(|f| f.eq_ignore_ascii_case(t)))
     }
 }
 

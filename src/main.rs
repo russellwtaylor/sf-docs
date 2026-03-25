@@ -296,8 +296,7 @@ async fn main() -> Result<()> {
                 .collect::<Result<_>>()?;
 
             // Apply --tag filter post-parse, pre-AI.
-            let (files, class_meta) =
-                filter_by_tags(files, class_meta, |m| &m.tags, &args);
+            let (files, class_meta) = filter_by_tags(files, class_meta, |m| &m.tags, &args);
             let (trigger_files, trigger_meta) =
                 filter_by_tags(trigger_files, trigger_meta, |m| &m.tags, &args);
 
@@ -327,7 +326,8 @@ async fn main() -> Result<()> {
             } else {
                 (Vec::new(), Vec::new())
             };
-            let custom_metadata_records: Vec<types::CustomMetadataRecord> = if args.tags.is_empty() {
+            let custom_metadata_records: Vec<types::CustomMetadataRecord> = if args.tags.is_empty()
+            {
                 custom_metadata_records
             } else {
                 Vec::new()

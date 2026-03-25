@@ -218,12 +218,24 @@ pub fn write_html_output(
     let class_items: Vec<(&str, &str, &str)> = class_contexts
         .iter()
         .enumerate()
-        .map(|(i, c)| (c.metadata.class_name.as_str(), c.folder.as_str(), class_tag_strings[i].as_str()))
+        .map(|(i, c)| {
+            (
+                c.metadata.class_name.as_str(),
+                c.folder.as_str(),
+                class_tag_strings[i].as_str(),
+            )
+        })
         .collect();
     let trigger_items: Vec<(&str, &str, &str)> = trigger_contexts
         .iter()
         .enumerate()
-        .map(|(i, c)| (c.metadata.trigger_name.as_str(), c.folder.as_str(), trigger_tag_strings[i].as_str()))
+        .map(|(i, c)| {
+            (
+                c.metadata.trigger_name.as_str(),
+                c.folder.as_str(),
+                trigger_tag_strings[i].as_str(),
+            )
+        })
         .collect();
     let flow_items: Vec<(&str, &str, &str)> = flow_contexts
         .iter()
@@ -1697,7 +1709,8 @@ fn render_lwc_page(
                         .iter()
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
-                            let (_, folder, _) = flow_items.iter().find(|&&(n, _, _)| n == name).unwrap();
+                            let (_, folder, _) =
+                                flow_items.iter().find(|&&(n, _, _)| n == name).unwrap();
                             format!(
                                 "<a href=\"../flows/{}/{}.html\">{}</a>",
                                 escape(folder),
@@ -1711,7 +1724,8 @@ fn render_lwc_page(
                         .iter()
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
-                            let (_, folder, _) = vr_items.iter().find(|&&(n, _, _)| n == name).unwrap();
+                            let (_, folder, _) =
+                                vr_items.iter().find(|&&(n, _, _)| n == name).unwrap();
                             format!(
                                 "<a href=\"../validation-rules/{}/{}.html\">{}</a>",
                                 escape(folder),
@@ -1725,7 +1739,8 @@ fn render_lwc_page(
                         .iter()
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
-                            let (_, folder, _) = obj_items.iter().find(|&&(n, _, _)| n == name).unwrap();
+                            let (_, folder, _) =
+                                obj_items.iter().find(|&&(n, _, _)| n == name).unwrap();
                             format!(
                                 "<a href=\"../objects/{}/{}.html\">{}</a>",
                                 escape(folder),
@@ -1739,7 +1754,8 @@ fn render_lwc_page(
                         .iter()
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
-                            let (_, folder, _) = lwc_items.iter().find(|&&(n, _, _)| n == name).unwrap();
+                            let (_, folder, _) =
+                                lwc_items.iter().find(|&&(n, _, _)| n == name).unwrap();
                             format!(
                                 "<a href=\"../lwc/{}/{}.html\">{}</a>",
                                 escape(folder),
@@ -2103,12 +2119,24 @@ fn render_index(
     let class_items: Vec<(&str, &str, &str)> = class_contexts
         .iter()
         .enumerate()
-        .map(|(i, c)| (c.metadata.class_name.as_str(), c.folder.as_str(), class_tag_strings[i].as_str()))
+        .map(|(i, c)| {
+            (
+                c.metadata.class_name.as_str(),
+                c.folder.as_str(),
+                class_tag_strings[i].as_str(),
+            )
+        })
         .collect();
     let trigger_items: Vec<(&str, &str, &str)> = trigger_contexts
         .iter()
         .enumerate()
-        .map(|(i, c)| (c.metadata.trigger_name.as_str(), c.folder.as_str(), trigger_tag_strings[i].as_str()))
+        .map(|(i, c)| {
+            (
+                c.metadata.trigger_name.as_str(),
+                c.folder.as_str(),
+                trigger_tag_strings[i].as_str(),
+            )
+        })
         .collect();
     let flow_items: Vec<(&str, &str, &str)> = flow_contexts
         .iter()
@@ -2187,8 +2215,16 @@ fn render_index(
             }
             body.push_str("<table><thead><tr><th>Class</th><th>Summary</th></tr></thead><tbody>\n");
             for ctx in classes {
-                let tag_html: String = ctx.metadata.tags.iter()
-                    .map(|t| format!(" <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>", escape(t)))
+                let tag_html: String = ctx
+                    .metadata
+                    .tags
+                    .iter()
+                    .map(|t| {
+                        format!(
+                            " <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>",
+                            escape(t)
+                        )
+                    })
                     .collect();
                 body.push_str(&format!(
                     "<tr><td><a href=\"classes/{}.html\">{}</a></td><td>{}{}</td></tr>\n",
@@ -2225,8 +2261,16 @@ fn render_index(
                 "<table><thead><tr><th>Interface</th><th>Summary</th></tr></thead><tbody>\n",
             );
             for ctx in ifaces {
-                let tag_html: String = ctx.metadata.tags.iter()
-                    .map(|t| format!(" <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>", escape(t)))
+                let tag_html: String = ctx
+                    .metadata
+                    .tags
+                    .iter()
+                    .map(|t| {
+                        format!(
+                            " <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>",
+                            escape(t)
+                        )
+                    })
                     .collect();
                 body.push_str(&format!(
                     "<tr><td><a href=\"classes/{}.html\">{}</a></td><td>{}{}</td></tr>\n",
@@ -2266,8 +2310,16 @@ fn render_index(
             }
             body.push_str("<table><thead><tr><th>Trigger</th><th>SObject</th><th>Summary</th></tr></thead><tbody>\n");
             for ctx in triggers {
-                let tag_html: String = ctx.metadata.tags.iter()
-                    .map(|t| format!(" <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>", escape(t)))
+                let tag_html: String = ctx
+                    .metadata
+                    .tags
+                    .iter()
+                    .map(|t| {
+                        format!(
+                            " <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>",
+                            escape(t)
+                        )
+                    })
                     .collect();
                 body.push_str(&format!(
                     "<tr><td><a href=\"triggers/{}.html\">{}</a></td><td><code>{}</code></td><td>{}{}</td></tr>\n",
@@ -2837,7 +2889,8 @@ fn render_sidebar(
     }
 
     if !obj_items.is_empty() {
-        let mut entries: Vec<(&str, &str)> = obj_items.iter().map(|&(n, _, tags)| (n, tags)).collect();
+        let mut entries: Vec<(&str, &str)> =
+            obj_items.iter().map(|&(n, _, tags)| (n, tags)).collect();
         entries.sort_unstable_by_key(|&(name, _)| name);
 
         s.push_str("<div class=\"sidebar-section\">\n");
@@ -2908,7 +2961,10 @@ fn render_sidebar(
     }
 
     if !flexipage_items.is_empty() {
-        let mut entries: Vec<(&str, &str)> = flexipage_items.iter().map(|&(n, _, tags)| (n, tags)).collect();
+        let mut entries: Vec<(&str, &str)> = flexipage_items
+            .iter()
+            .map(|&(n, _, tags)| (n, tags))
+            .collect();
         entries.sort_unstable_by_key(|&(name, _)| name);
 
         s.push_str("<div class=\"sidebar-section\">\n");
@@ -2936,7 +2992,8 @@ fn render_sidebar(
     }
 
     if !aura_items.is_empty() {
-        let mut entries: Vec<(&str, &str)> = aura_items.iter().map(|&(n, _, tags)| (n, tags)).collect();
+        let mut entries: Vec<(&str, &str)> =
+            aura_items.iter().map(|&(n, _, tags)| (n, tags)).collect();
         entries.sort_unstable_by_key(|&(name, _)| name);
 
         s.push_str("<div class=\"sidebar-section\">\n");
