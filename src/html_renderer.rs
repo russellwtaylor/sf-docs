@@ -47,6 +47,71 @@ pre code{background:none;padding:0;color:inherit;font-size:inherit}
 .summary{font-size:16px;color:#586069;margin-bottom:20px;line-height:1.5}
 ul{padding-left:20px;margin-bottom:12px}
 li{margin-bottom:4px;line-height:1.5}
+.sidebar-search{padding:8px 12px}
+.sidebar-search input{width:100%;padding:5px 8px;font-size:13px;border:1px solid #e1e4e8;border-radius:4px;outline:none}
+.sidebar-search input:focus{border-color:#0366d6;box-shadow:0 0 0 2px rgba(3,102,214,.15)}
+#sfdoc-search-results{display:none}
+#sfdoc-search-results ul{list-style:none;padding:0}
+#sfdoc-search-results li a{display:block;padding:3px 16px;font-size:13px;color:#24292e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#sfdoc-search-results li a:hover{background:#e1e4e8;text-decoration:none}
+"#;
+
+const FUSE_JS: &str = include_str!("fuse.min.js");
+
+const SEARCH_JS: &str = r#"
+(function() {
+  var scriptEl = document.currentScript;
+  var base = scriptEl.src.replace(/search\.js$/, '');
+
+  var sidebar = document.querySelector('.sidebar');
+  var navSections = sidebar.querySelectorAll('.sidebar-section');
+  var searchInput = document.getElementById('sfdoc-search');
+  var resultsContainer = document.getElementById('sfdoc-search-results');
+  var debounceTimer;
+
+  fetch(base + 'search-index.json')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var fuse = new Fuse(data, {
+        keys: ['title', 'summary', 'tags'],
+        threshold: 0.3,
+        includeScore: true
+      });
+
+      searchInput.addEventListener('input', function() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function() {
+          var query = searchInput.value.trim();
+          if (!query) {
+            resultsContainer.style.display = 'none';
+            navSections.forEach(function(s) { s.style.display = ''; });
+            return;
+          }
+          var results = fuse.search(query).slice(0, 20);
+          navSections.forEach(function(s) { s.style.display = 'none'; });
+          resultsContainer.style.display = '';
+          resultsContainer.innerHTML = '<ul>' + results.map(function(r) {
+            var item = r.item;
+            var tagHtml = (item.tags || []).map(function(t) {
+              return '<span class="badge badge-tag" style="font-size:10px;padding:1px 5px">' + t + '</span>';
+            }).join(' ');
+            return '<li><a href="' + base + item.url + '">' + item.title +
+              ' <span style="color:#6a737d;font-size:11px">' + item.type + '</span>' +
+              (tagHtml ? ' ' + tagHtml : '') + '</a></li>';
+          }).join('') + '</ul>';
+        }, 200);
+      });
+    });
+
+  // Tag pill click handler: filter sidebar by tag
+  document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('badge-tag')) {
+      var tag = e.target.textContent.trim();
+      searchInput.value = tag;
+      searchInput.dispatchEvent(new Event('input'));
+    }
+  });
+})();
 "#;
 
 const APEX_KEYWORDS: &[&str] = &[
@@ -373,6 +438,24 @@ pub fn write_html_output(
         aura_contexts,
     );
     std::fs::write(output_dir.join("index.html"), index)?;
+
+    // Write search assets
+    let search_index = generate_search_index(
+        class_contexts,
+        trigger_contexts,
+        flow_contexts,
+        validation_rule_contexts,
+        object_contexts,
+        lwc_contexts,
+        flexipage_contexts,
+        custom_metadata_contexts,
+        aura_contexts,
+    );
+    std::fs::write(output_dir.join("search-index.json"), search_index)?;
+    std::fs::write(
+        output_dir.join("search.js"),
+        format!("{}\n{}", FUSE_JS, SEARCH_JS),
+    )?;
 
     Ok(())
 }
@@ -2373,6 +2456,118 @@ fn render_index(
 }
 
 // ---------------------------------------------------------------------------
+// Search index
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::too_many_arguments)]
+fn generate_search_index(
+    class_contexts: &[RenderContext],
+    trigger_contexts: &[TriggerRenderContext],
+    flow_contexts: &[FlowRenderContext],
+    validation_rule_contexts: &[ValidationRuleRenderContext],
+    object_contexts: &[ObjectRenderContext],
+    lwc_contexts: &[LwcRenderContext],
+    flexipage_contexts: &[FlexiPageRenderContext],
+    custom_metadata_contexts: &[CustomMetadataRenderContext],
+    aura_contexts: &[AuraRenderContext],
+) -> String {
+    let mut entries = Vec::new();
+
+    for ctx in class_contexts {
+        entries.push(serde_json::json!({
+            "title": ctx.documentation.class_name,
+            "type": if ctx.metadata.is_interface { "interface" } else { "class" },
+            "folder": ctx.folder,
+            "summary": ctx.documentation.summary,
+            "url": format!("classes/{}.html", sanitize_filename(&ctx.metadata.class_name)),
+            "tags": ctx.metadata.tags,
+        }));
+    }
+    for ctx in trigger_contexts {
+        entries.push(serde_json::json!({
+            "title": ctx.documentation.trigger_name,
+            "type": "trigger",
+            "folder": ctx.folder,
+            "summary": ctx.documentation.summary,
+            "url": format!("triggers/{}.html", sanitize_filename(&ctx.metadata.trigger_name)),
+            "tags": ctx.metadata.tags,
+        }));
+    }
+    for ctx in flow_contexts {
+        entries.push(serde_json::json!({
+            "title": ctx.documentation.label,
+            "type": "flow",
+            "folder": ctx.folder,
+            "summary": ctx.documentation.summary,
+            "url": format!("flows/{}.html", sanitize_filename(&ctx.metadata.api_name)),
+            "tags": [],
+        }));
+    }
+    for ctx in validation_rule_contexts {
+        entries.push(serde_json::json!({
+            "title": ctx.documentation.rule_name,
+            "type": "validation-rule",
+            "folder": ctx.folder,
+            "summary": ctx.documentation.summary,
+            "url": format!("validation-rules/{}.html", sanitize_filename(&ctx.metadata.rule_name)),
+            "tags": [],
+        }));
+    }
+    for ctx in object_contexts {
+        entries.push(serde_json::json!({
+            "title": ctx.documentation.object_name,
+            "type": "object",
+            "folder": ctx.folder,
+            "summary": ctx.documentation.summary,
+            "url": format!("objects/{}.html", sanitize_filename(&ctx.metadata.object_name)),
+            "tags": [],
+        }));
+    }
+    for ctx in lwc_contexts {
+        entries.push(serde_json::json!({
+            "title": ctx.documentation.component_name,
+            "type": "lwc",
+            "folder": ctx.folder,
+            "summary": ctx.documentation.summary,
+            "url": format!("lwc/{}.html", sanitize_filename(&ctx.metadata.component_name)),
+            "tags": [],
+        }));
+    }
+    for ctx in flexipage_contexts {
+        entries.push(serde_json::json!({
+            "title": ctx.documentation.label,
+            "type": "flexipage",
+            "folder": ctx.folder,
+            "summary": ctx.documentation.summary,
+            "url": format!("flexipages/{}.html", sanitize_filename(&ctx.metadata.api_name)),
+            "tags": [],
+        }));
+    }
+    for ctx in custom_metadata_contexts {
+        entries.push(serde_json::json!({
+            "title": ctx.type_name,
+            "type": "custom-metadata",
+            "folder": "",
+            "summary": format!("{} records", ctx.records.len()),
+            "url": format!("custom-metadata/{}.html", sanitize_filename(&ctx.type_name)),
+            "tags": [],
+        }));
+    }
+    for ctx in aura_contexts {
+        entries.push(serde_json::json!({
+            "title": ctx.documentation.component_name,
+            "type": "aura",
+            "folder": ctx.folder,
+            "summary": ctx.documentation.summary,
+            "url": format!("aura/{}.html", sanitize_filename(&ctx.metadata.component_name)),
+            "tags": [],
+        }));
+    }
+
+    serde_json::to_string(&entries).unwrap_or_else(|_| "[]".to_string())
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -2418,6 +2613,7 @@ fn wrap_page(
 <main class="content">
 {body}
 </main>
+<script src="{up_prefix}search.js"></script>
 </body>
 </html>
 "#,
@@ -2444,6 +2640,8 @@ fn render_sidebar(
     s.push_str(&format!(
         "<a class=\"sidebar-brand\" href=\"{up_prefix}index.html\">sfdoc</a>\n"
     ));
+    s.push_str("<div class=\"sidebar-search\"><input type=\"text\" id=\"sfdoc-search\" placeholder=\"Search...\" autocomplete=\"off\"></div>\n");
+    s.push_str("<div id=\"sfdoc-search-results\"></div>\n");
 
     if !class_items.is_empty() {
         // Group by folder (BTreeMap gives alphabetical folder order).
