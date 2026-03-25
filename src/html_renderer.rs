@@ -206,38 +206,48 @@ pub fn write_html_output(
         std::fs::create_dir_all(&aura_dir)?;
     }
 
-    // (name, folder) pairs — used for sidebar grouping and cross-link generation.
-    let class_items: Vec<(&str, &str)> = class_contexts
+    // (name, folder, tags) triples — used for sidebar grouping, cross-link generation, and tag filtering.
+    let class_tag_strings: Vec<String> = class_contexts
         .iter()
-        .map(|c| (c.metadata.class_name.as_str(), c.folder.as_str()))
+        .map(|c| c.metadata.tags.join(","))
         .collect();
-    let trigger_items: Vec<(&str, &str)> = trigger_contexts
+    let trigger_tag_strings: Vec<String> = trigger_contexts
         .iter()
-        .map(|c| (c.metadata.trigger_name.as_str(), c.folder.as_str()))
+        .map(|c| c.metadata.tags.join(","))
         .collect();
-    let flow_items: Vec<(&str, &str)> = flow_contexts
+    let class_items: Vec<(&str, &str, &str)> = class_contexts
         .iter()
-        .map(|c| (c.metadata.api_name.as_str(), c.folder.as_str()))
+        .enumerate()
+        .map(|(i, c)| (c.metadata.class_name.as_str(), c.folder.as_str(), class_tag_strings[i].as_str()))
         .collect();
-    let vr_items: Vec<(&str, &str)> = validation_rule_contexts
+    let trigger_items: Vec<(&str, &str, &str)> = trigger_contexts
         .iter()
-        .map(|c| (c.metadata.rule_name.as_str(), c.folder.as_str()))
+        .enumerate()
+        .map(|(i, c)| (c.metadata.trigger_name.as_str(), c.folder.as_str(), trigger_tag_strings[i].as_str()))
         .collect();
-    let obj_items: Vec<(&str, &str)> = object_contexts
+    let flow_items: Vec<(&str, &str, &str)> = flow_contexts
         .iter()
-        .map(|c| (c.metadata.object_name.as_str(), c.folder.as_str()))
+        .map(|c| (c.metadata.api_name.as_str(), c.folder.as_str(), ""))
         .collect();
-    let lwc_items: Vec<(&str, &str)> = lwc_contexts
+    let vr_items: Vec<(&str, &str, &str)> = validation_rule_contexts
         .iter()
-        .map(|c| (c.metadata.component_name.as_str(), c.folder.as_str()))
+        .map(|c| (c.metadata.rule_name.as_str(), c.folder.as_str(), ""))
         .collect();
-    let flexipage_items: Vec<(&str, &str)> = flexipage_contexts
+    let obj_items: Vec<(&str, &str, &str)> = object_contexts
         .iter()
-        .map(|c| (c.metadata.api_name.as_str(), c.folder.as_str()))
+        .map(|c| (c.metadata.object_name.as_str(), c.folder.as_str(), ""))
         .collect();
-    let aura_items: Vec<(&str, &str)> = aura_contexts
+    let lwc_items: Vec<(&str, &str, &str)> = lwc_contexts
         .iter()
-        .map(|c| (c.metadata.component_name.as_str(), c.folder.as_str()))
+        .map(|c| (c.metadata.component_name.as_str(), c.folder.as_str(), ""))
+        .collect();
+    let flexipage_items: Vec<(&str, &str, &str)> = flexipage_contexts
+        .iter()
+        .map(|c| (c.metadata.api_name.as_str(), c.folder.as_str(), ""))
+        .collect();
+    let aura_items: Vec<(&str, &str, &str)> = aura_contexts
+        .iter()
+        .map(|c| (c.metadata.component_name.as_str(), c.folder.as_str(), ""))
         .collect();
 
     for ctx in class_contexts {
@@ -467,21 +477,21 @@ pub fn write_html_output(
 #[allow(clippy::too_many_arguments)]
 fn render_class_page(
     ctx: &RenderContext,
-    class_items: &[(&str, &str)],
-    trigger_items: &[(&str, &str)],
-    flow_items: &[(&str, &str)],
-    vr_items: &[(&str, &str)],
-    obj_items: &[(&str, &str)],
-    lwc_items: &[(&str, &str)],
-    flexipage_items: &[(&str, &str)],
-    aura_items: &[(&str, &str)],
+    class_items: &[(&str, &str, &str)],
+    trigger_items: &[(&str, &str, &str)],
+    flow_items: &[(&str, &str, &str)],
+    vr_items: &[(&str, &str, &str)],
+    obj_items: &[(&str, &str, &str)],
+    lwc_items: &[(&str, &str, &str)],
+    flexipage_items: &[(&str, &str, &str)],
+    aura_items: &[(&str, &str, &str)],
 ) -> String {
-    let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
-    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
-    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
-    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
-    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
-    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
+    let class_names: Vec<&str> = class_items.iter().map(|&(n, _, _)| n).collect();
+    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _, _)| n).collect();
+    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _, _)| n).collect();
+    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _, _)| n).collect();
+    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _, _)| n).collect();
+    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.class_name;
@@ -757,21 +767,21 @@ fn render_class_page(
 #[allow(clippy::too_many_arguments)]
 fn render_trigger_page(
     ctx: &TriggerRenderContext,
-    class_items: &[(&str, &str)],
-    trigger_items: &[(&str, &str)],
-    flow_items: &[(&str, &str)],
-    vr_items: &[(&str, &str)],
-    obj_items: &[(&str, &str)],
-    lwc_items: &[(&str, &str)],
-    flexipage_items: &[(&str, &str)],
-    aura_items: &[(&str, &str)],
+    class_items: &[(&str, &str, &str)],
+    trigger_items: &[(&str, &str, &str)],
+    flow_items: &[(&str, &str, &str)],
+    vr_items: &[(&str, &str, &str)],
+    obj_items: &[(&str, &str, &str)],
+    lwc_items: &[(&str, &str, &str)],
+    flexipage_items: &[(&str, &str, &str)],
+    aura_items: &[(&str, &str, &str)],
 ) -> String {
-    let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
-    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
-    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
-    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
-    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
-    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
+    let class_names: Vec<&str> = class_items.iter().map(|&(n, _, _)| n).collect();
+    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _, _)| n).collect();
+    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _, _)| n).collect();
+    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _, _)| n).collect();
+    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _, _)| n).collect();
+    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.trigger_name;
@@ -953,21 +963,21 @@ fn render_trigger_page(
 #[allow(clippy::too_many_arguments)]
 fn render_flow_page(
     ctx: &FlowRenderContext,
-    class_items: &[(&str, &str)],
-    trigger_items: &[(&str, &str)],
-    flow_items: &[(&str, &str)],
-    vr_items: &[(&str, &str)],
-    obj_items: &[(&str, &str)],
-    lwc_items: &[(&str, &str)],
-    flexipage_items: &[(&str, &str)],
-    aura_items: &[(&str, &str)],
+    class_items: &[(&str, &str, &str)],
+    trigger_items: &[(&str, &str, &str)],
+    flow_items: &[(&str, &str, &str)],
+    vr_items: &[(&str, &str, &str)],
+    obj_items: &[(&str, &str, &str)],
+    lwc_items: &[(&str, &str, &str)],
+    flexipage_items: &[(&str, &str, &str)],
+    aura_items: &[(&str, &str, &str)],
 ) -> String {
-    let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
-    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
-    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
-    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
-    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
-    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
+    let class_names: Vec<&str> = class_items.iter().map(|&(n, _, _)| n).collect();
+    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _, _)| n).collect();
+    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _, _)| n).collect();
+    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _, _)| n).collect();
+    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _, _)| n).collect();
+    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.api_name;
@@ -1185,21 +1195,21 @@ fn render_flow_page(
 #[allow(clippy::too_many_arguments)]
 fn render_validation_rule_page(
     ctx: &ValidationRuleRenderContext,
-    class_items: &[(&str, &str)],
-    trigger_items: &[(&str, &str)],
-    flow_items: &[(&str, &str)],
-    vr_items: &[(&str, &str)],
-    obj_items: &[(&str, &str)],
-    lwc_items: &[(&str, &str)],
-    flexipage_items: &[(&str, &str)],
-    aura_items: &[(&str, &str)],
+    class_items: &[(&str, &str, &str)],
+    trigger_items: &[(&str, &str, &str)],
+    flow_items: &[(&str, &str, &str)],
+    vr_items: &[(&str, &str, &str)],
+    obj_items: &[(&str, &str, &str)],
+    lwc_items: &[(&str, &str, &str)],
+    flexipage_items: &[(&str, &str, &str)],
+    aura_items: &[(&str, &str, &str)],
 ) -> String {
-    let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
-    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
-    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
-    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
-    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
-    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
+    let class_names: Vec<&str> = class_items.iter().map(|&(n, _, _)| n).collect();
+    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _, _)| n).collect();
+    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _, _)| n).collect();
+    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _, _)| n).collect();
+    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _, _)| n).collect();
+    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.rule_name;
@@ -1370,21 +1380,21 @@ fn render_validation_rule_page(
 #[allow(clippy::too_many_arguments)]
 fn render_object_page(
     ctx: &ObjectRenderContext,
-    class_items: &[(&str, &str)],
-    trigger_items: &[(&str, &str)],
-    flow_items: &[(&str, &str)],
-    vr_items: &[(&str, &str)],
-    obj_items: &[(&str, &str)],
-    lwc_items: &[(&str, &str)],
-    flexipage_items: &[(&str, &str)],
-    aura_items: &[(&str, &str)],
+    class_items: &[(&str, &str, &str)],
+    trigger_items: &[(&str, &str, &str)],
+    flow_items: &[(&str, &str, &str)],
+    vr_items: &[(&str, &str, &str)],
+    obj_items: &[(&str, &str, &str)],
+    lwc_items: &[(&str, &str, &str)],
+    flexipage_items: &[(&str, &str, &str)],
+    aura_items: &[(&str, &str, &str)],
 ) -> String {
-    let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
-    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
-    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
-    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
-    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
-    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
+    let class_names: Vec<&str> = class_items.iter().map(|&(n, _, _)| n).collect();
+    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _, _)| n).collect();
+    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _, _)| n).collect();
+    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _, _)| n).collect();
+    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _, _)| n).collect();
+    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _, _)| n).collect();
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let active = &meta.object_name;
@@ -1573,21 +1583,21 @@ fn render_object_page(
 #[allow(clippy::too_many_arguments)]
 fn render_lwc_page(
     ctx: &LwcRenderContext,
-    class_items: &[(&str, &str)],
-    trigger_items: &[(&str, &str)],
-    flow_items: &[(&str, &str)],
-    vr_items: &[(&str, &str)],
-    obj_items: &[(&str, &str)],
-    lwc_items: &[(&str, &str)],
-    flexipage_items: &[(&str, &str)],
-    aura_items: &[(&str, &str)],
+    class_items: &[(&str, &str, &str)],
+    trigger_items: &[(&str, &str, &str)],
+    flow_items: &[(&str, &str, &str)],
+    vr_items: &[(&str, &str, &str)],
+    obj_items: &[(&str, &str, &str)],
+    lwc_items: &[(&str, &str, &str)],
+    flexipage_items: &[(&str, &str, &str)],
+    aura_items: &[(&str, &str, &str)],
 ) -> String {
-    let class_names: Vec<&str> = class_items.iter().map(|&(n, _)| n).collect();
-    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _)| n).collect();
-    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _)| n).collect();
-    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _)| n).collect();
-    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
-    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _)| n).collect();
+    let class_names: Vec<&str> = class_items.iter().map(|&(n, _, _)| n).collect();
+    let trigger_names: Vec<&str> = trigger_items.iter().map(|&(n, _, _)| n).collect();
+    let flow_names: Vec<&str> = flow_items.iter().map(|&(n, _, _)| n).collect();
+    let vr_names: Vec<&str> = vr_items.iter().map(|&(n, _, _)| n).collect();
+    let obj_names: Vec<&str> = obj_items.iter().map(|&(n, _, _)| n).collect();
+    let lwc_names: Vec<&str> = lwc_items.iter().map(|&(n, _, _)| n).collect();
 
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
@@ -1659,7 +1669,7 @@ fn render_lwc_page(
                 .iter()
                 .find(|&&name| rel.contains(name))
                 .map(|&name| {
-                    let (_, folder) = class_items.iter().find(|&&(n, _)| n == name).unwrap();
+                    let (_, folder, _) = class_items.iter().find(|&&(n, _, _)| n == name).unwrap();
                     format!(
                         "<a href=\"../classes/{}/{}.html\">{}</a>",
                         escape(folder),
@@ -1672,8 +1682,8 @@ fn render_lwc_page(
                         .iter()
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
-                            let (_, folder) =
-                                trigger_items.iter().find(|&&(n, _)| n == name).unwrap();
+                            let (_, folder, _) =
+                                trigger_items.iter().find(|&&(n, _, _)| n == name).unwrap();
                             format!(
                                 "<a href=\"../triggers/{}/{}.html\">{}</a>",
                                 escape(folder),
@@ -1687,7 +1697,7 @@ fn render_lwc_page(
                         .iter()
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
-                            let (_, folder) = flow_items.iter().find(|&&(n, _)| n == name).unwrap();
+                            let (_, folder, _) = flow_items.iter().find(|&&(n, _, _)| n == name).unwrap();
                             format!(
                                 "<a href=\"../flows/{}/{}.html\">{}</a>",
                                 escape(folder),
@@ -1701,7 +1711,7 @@ fn render_lwc_page(
                         .iter()
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
-                            let (_, folder) = vr_items.iter().find(|&&(n, _)| n == name).unwrap();
+                            let (_, folder, _) = vr_items.iter().find(|&&(n, _, _)| n == name).unwrap();
                             format!(
                                 "<a href=\"../validation-rules/{}/{}.html\">{}</a>",
                                 escape(folder),
@@ -1715,7 +1725,7 @@ fn render_lwc_page(
                         .iter()
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
-                            let (_, folder) = obj_items.iter().find(|&&(n, _)| n == name).unwrap();
+                            let (_, folder, _) = obj_items.iter().find(|&&(n, _, _)| n == name).unwrap();
                             format!(
                                 "<a href=\"../objects/{}/{}.html\">{}</a>",
                                 escape(folder),
@@ -1729,7 +1739,7 @@ fn render_lwc_page(
                         .iter()
                         .find(|&&name| rel.contains(name))
                         .map(|&name| {
-                            let (_, folder) = lwc_items.iter().find(|&&(n, _)| n == name).unwrap();
+                            let (_, folder, _) = lwc_items.iter().find(|&&(n, _, _)| n == name).unwrap();
                             format!(
                                 "<a href=\"../lwc/{}/{}.html\">{}</a>",
                                 escape(folder),
@@ -1764,14 +1774,14 @@ fn render_lwc_page(
 #[allow(clippy::too_many_arguments)]
 fn render_flexipage_page(
     ctx: &FlexiPageRenderContext,
-    class_items: &[(&str, &str)],
-    trigger_items: &[(&str, &str)],
-    flow_items: &[(&str, &str)],
-    vr_items: &[(&str, &str)],
-    obj_items: &[(&str, &str)],
-    lwc_items: &[(&str, &str)],
-    flexipage_items: &[(&str, &str)],
-    aura_items: &[(&str, &str)],
+    class_items: &[(&str, &str, &str)],
+    trigger_items: &[(&str, &str, &str)],
+    flow_items: &[(&str, &str, &str)],
+    vr_items: &[(&str, &str, &str)],
+    obj_items: &[(&str, &str, &str)],
+    lwc_items: &[(&str, &str, &str)],
+    flexipage_items: &[(&str, &str, &str)],
+    aura_items: &[(&str, &str, &str)],
 ) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
@@ -1818,13 +1828,13 @@ fn render_flexipage_page(
     if !meta.component_names.is_empty() {
         body.push_str("<h2>Components</h2>\n<ul>\n");
         for comp in &meta.component_names {
-            let name_cell = if lwc_items.iter().any(|&(n, _)| n == comp.as_str()) {
+            let name_cell = if lwc_items.iter().any(|&(n, _, _)| n == comp.as_str()) {
                 format!(
                     "<a href=\"../lwc/{}.html\"><code>{}</code></a>",
                     escape(comp),
                     escape(comp)
                 )
-            } else if aura_items.iter().any(|&(n, _)| n == comp.as_str()) {
+            } else if aura_items.iter().any(|&(n, _, _)| n == comp.as_str()) {
                 format!(
                     "<a href=\"../aura/{}.html\"><code>{}</code></a>",
                     escape(comp),
@@ -1841,7 +1851,7 @@ fn render_flexipage_page(
     if !meta.flow_names.is_empty() {
         body.push_str("<h2>Flows</h2>\n<ul>\n");
         for flow in &meta.flow_names {
-            let name_cell = if flow_items.iter().any(|&(n, _)| n == flow.as_str()) {
+            let name_cell = if flow_items.iter().any(|&(n, _, _)| n == flow.as_str()) {
                 format!(
                     "<a href=\"../flows/{}.html\"><code>{}</code></a>",
                     escape(flow),
@@ -1891,14 +1901,14 @@ fn render_flexipage_page(
 #[allow(clippy::too_many_arguments)]
 fn render_custom_metadata_page(
     ctx: &CustomMetadataRenderContext,
-    class_items: &[(&str, &str)],
-    trigger_items: &[(&str, &str)],
-    flow_items: &[(&str, &str)],
-    vr_items: &[(&str, &str)],
-    obj_items: &[(&str, &str)],
-    lwc_items: &[(&str, &str)],
-    flexipage_items: &[(&str, &str)],
-    aura_items: &[(&str, &str)],
+    class_items: &[(&str, &str, &str)],
+    trigger_items: &[(&str, &str, &str)],
+    flow_items: &[(&str, &str, &str)],
+    vr_items: &[(&str, &str, &str)],
+    obj_items: &[(&str, &str, &str)],
+    lwc_items: &[(&str, &str, &str)],
+    flexipage_items: &[(&str, &str, &str)],
+    aura_items: &[(&str, &str, &str)],
 ) -> String {
     let mut body = String::new();
 
@@ -1974,14 +1984,14 @@ fn render_custom_metadata_page(
 #[allow(clippy::too_many_arguments)]
 fn render_aura_page(
     ctx: &AuraRenderContext,
-    class_items: &[(&str, &str)],
-    trigger_items: &[(&str, &str)],
-    flow_items: &[(&str, &str)],
-    vr_items: &[(&str, &str)],
-    obj_items: &[(&str, &str)],
-    lwc_items: &[(&str, &str)],
-    flexipage_items: &[(&str, &str)],
-    aura_items: &[(&str, &str)],
+    class_items: &[(&str, &str, &str)],
+    trigger_items: &[(&str, &str, &str)],
+    flow_items: &[(&str, &str, &str)],
+    vr_items: &[(&str, &str, &str)],
+    obj_items: &[(&str, &str, &str)],
+    lwc_items: &[(&str, &str, &str)],
+    flexipage_items: &[(&str, &str, &str)],
+    aura_items: &[(&str, &str, &str)],
 ) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
@@ -2082,37 +2092,47 @@ fn render_index(
     custom_metadata_contexts: &[CustomMetadataRenderContext],
     aura_contexts: &[AuraRenderContext],
 ) -> String {
-    let class_items: Vec<(&str, &str)> = class_contexts
+    let class_tag_strings: Vec<String> = class_contexts
         .iter()
-        .map(|c| (c.metadata.class_name.as_str(), c.folder.as_str()))
+        .map(|c| c.metadata.tags.join(","))
         .collect();
-    let trigger_items: Vec<(&str, &str)> = trigger_contexts
+    let trigger_tag_strings: Vec<String> = trigger_contexts
         .iter()
-        .map(|c| (c.metadata.trigger_name.as_str(), c.folder.as_str()))
+        .map(|c| c.metadata.tags.join(","))
         .collect();
-    let flow_items: Vec<(&str, &str)> = flow_contexts
+    let class_items: Vec<(&str, &str, &str)> = class_contexts
         .iter()
-        .map(|c| (c.metadata.api_name.as_str(), c.folder.as_str()))
+        .enumerate()
+        .map(|(i, c)| (c.metadata.class_name.as_str(), c.folder.as_str(), class_tag_strings[i].as_str()))
         .collect();
-    let vr_items: Vec<(&str, &str)> = validation_rule_contexts
+    let trigger_items: Vec<(&str, &str, &str)> = trigger_contexts
         .iter()
-        .map(|c| (c.metadata.rule_name.as_str(), c.folder.as_str()))
+        .enumerate()
+        .map(|(i, c)| (c.metadata.trigger_name.as_str(), c.folder.as_str(), trigger_tag_strings[i].as_str()))
         .collect();
-    let obj_items: Vec<(&str, &str)> = object_contexts
+    let flow_items: Vec<(&str, &str, &str)> = flow_contexts
         .iter()
-        .map(|c| (c.metadata.object_name.as_str(), c.folder.as_str()))
+        .map(|c| (c.metadata.api_name.as_str(), c.folder.as_str(), ""))
         .collect();
-    let lwc_items: Vec<(&str, &str)> = lwc_contexts
+    let vr_items: Vec<(&str, &str, &str)> = validation_rule_contexts
         .iter()
-        .map(|c| (c.metadata.component_name.as_str(), c.folder.as_str()))
+        .map(|c| (c.metadata.rule_name.as_str(), c.folder.as_str(), ""))
         .collect();
-    let flexipage_items: Vec<(&str, &str)> = flexipage_contexts
+    let obj_items: Vec<(&str, &str, &str)> = object_contexts
         .iter()
-        .map(|c| (c.metadata.api_name.as_str(), c.folder.as_str()))
+        .map(|c| (c.metadata.object_name.as_str(), c.folder.as_str(), ""))
         .collect();
-    let aura_items: Vec<(&str, &str)> = aura_contexts
+    let lwc_items: Vec<(&str, &str, &str)> = lwc_contexts
         .iter()
-        .map(|c| (c.metadata.component_name.as_str(), c.folder.as_str()))
+        .map(|c| (c.metadata.component_name.as_str(), c.folder.as_str(), ""))
+        .collect();
+    let flexipage_items: Vec<(&str, &str, &str)> = flexipage_contexts
+        .iter()
+        .map(|c| (c.metadata.api_name.as_str(), c.folder.as_str(), ""))
+        .collect();
+    let aura_items: Vec<(&str, &str, &str)> = aura_contexts
+        .iter()
+        .map(|c| (c.metadata.component_name.as_str(), c.folder.as_str(), ""))
         .collect();
     let mut body = String::new();
     body.push_str("<h1>Salesforce Documentation</h1>\n");
@@ -2578,14 +2598,14 @@ fn wrap_page(
     body: &str,
     active: &str,
     up_prefix: &str,
-    class_items: &[(&str, &str)],
-    trigger_items: &[(&str, &str)],
-    flow_items: &[(&str, &str)],
-    vr_items: &[(&str, &str)],
-    obj_items: &[(&str, &str)],
-    lwc_items: &[(&str, &str)],
-    flexipage_items: &[(&str, &str)],
-    aura_items: &[(&str, &str)],
+    class_items: &[(&str, &str, &str)],
+    trigger_items: &[(&str, &str, &str)],
+    flow_items: &[(&str, &str, &str)],
+    vr_items: &[(&str, &str, &str)],
+    obj_items: &[(&str, &str, &str)],
+    lwc_items: &[(&str, &str, &str)],
+    flexipage_items: &[(&str, &str, &str)],
+    aura_items: &[(&str, &str, &str)],
 ) -> String {
     let sidebar = render_sidebar(
         class_items,
@@ -2624,14 +2644,14 @@ fn wrap_page(
 
 #[allow(clippy::too_many_arguments)]
 fn render_sidebar(
-    class_items: &[(&str, &str)],
-    trigger_items: &[(&str, &str)],
-    flow_items: &[(&str, &str)],
-    vr_items: &[(&str, &str)],
-    obj_items: &[(&str, &str)],
-    lwc_items: &[(&str, &str)],
-    flexipage_items: &[(&str, &str)],
-    aura_items: &[(&str, &str)],
+    class_items: &[(&str, &str, &str)],
+    trigger_items: &[(&str, &str, &str)],
+    flow_items: &[(&str, &str, &str)],
+    vr_items: &[(&str, &str, &str)],
+    obj_items: &[(&str, &str, &str)],
+    lwc_items: &[(&str, &str, &str)],
+    flexipage_items: &[(&str, &str, &str)],
+    aura_items: &[(&str, &str, &str)],
     active: &str,
     up_prefix: &str,
 ) -> String {
@@ -2645,18 +2665,18 @@ fn render_sidebar(
 
     if !class_items.is_empty() {
         // Group by folder (BTreeMap gives alphabetical folder order).
-        let mut by_folder: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-        for &(name, folder) in class_items {
-            by_folder.entry(folder).or_default().push(name);
+        let mut by_folder: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
+        for &(name, folder, tags) in class_items {
+            by_folder.entry(folder).or_default().push((name, tags));
         }
-        for names in by_folder.values_mut() {
-            names.sort_unstable();
+        for entries in by_folder.values_mut() {
+            entries.sort_unstable_by_key(|&(name, _)| name);
         }
 
         s.push_str("<div class=\"sidebar-section\">\n");
         s.push_str("<div class=\"sidebar-heading\">Classes</div>\n");
         let multi_folder = by_folder.len() > 1;
-        for (folder, names) in &by_folder {
+        for (folder, entries) in &by_folder {
             if multi_folder {
                 let label = if folder.is_empty() { "(root)" } else { folder };
                 s.push_str(&format!(
@@ -2665,14 +2685,19 @@ fn render_sidebar(
                 ));
             }
             s.push_str("<ul>\n");
-            for name in names {
-                let cls = if *name == active {
+            for &(name, tags) in entries {
+                let cls = if name == active {
                     " class=\"active\""
                 } else {
                     ""
                 };
+                let tag_attr = if tags.is_empty() {
+                    String::new()
+                } else {
+                    format!(" data-tags=\"{}\"", escape(tags))
+                };
                 s.push_str(&format!(
-                    "<li><a href=\"{up_prefix}classes/{}.html\"{cls}>{}</a></li>\n",
+                    "<li{tag_attr}><a href=\"{up_prefix}classes/{}.html\"{cls}>{}</a></li>\n",
                     escape(name),
                     escape(name)
                 ));
@@ -2683,18 +2708,18 @@ fn render_sidebar(
     }
 
     if !trigger_items.is_empty() {
-        let mut by_folder: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-        for &(name, folder) in trigger_items {
-            by_folder.entry(folder).or_default().push(name);
+        let mut by_folder: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
+        for &(name, folder, tags) in trigger_items {
+            by_folder.entry(folder).or_default().push((name, tags));
         }
-        for names in by_folder.values_mut() {
-            names.sort_unstable();
+        for entries in by_folder.values_mut() {
+            entries.sort_unstable_by_key(|&(name, _)| name);
         }
 
         s.push_str("<div class=\"sidebar-section\">\n");
         s.push_str("<div class=\"sidebar-heading\">Triggers</div>\n");
         let multi_folder = by_folder.len() > 1;
-        for (folder, names) in &by_folder {
+        for (folder, entries) in &by_folder {
             if multi_folder {
                 let label = if folder.is_empty() { "(root)" } else { folder };
                 s.push_str(&format!(
@@ -2703,14 +2728,19 @@ fn render_sidebar(
                 ));
             }
             s.push_str("<ul>\n");
-            for name in names {
-                let cls = if *name == active {
+            for &(name, tags) in entries {
+                let cls = if name == active {
                     " class=\"active\""
                 } else {
                     ""
                 };
+                let tag_attr = if tags.is_empty() {
+                    String::new()
+                } else {
+                    format!(" data-tags=\"{}\"", escape(tags))
+                };
                 s.push_str(&format!(
-                    "<li><a href=\"{up_prefix}triggers/{}.html\"{cls}>{}</a></li>\n",
+                    "<li{tag_attr}><a href=\"{up_prefix}triggers/{}.html\"{cls}>{}</a></li>\n",
                     escape(name),
                     escape(name)
                 ));
@@ -2721,18 +2751,18 @@ fn render_sidebar(
     }
 
     if !flow_items.is_empty() {
-        let mut by_folder: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-        for &(name, folder) in flow_items {
-            by_folder.entry(folder).or_default().push(name);
+        let mut by_folder: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
+        for &(name, folder, tags) in flow_items {
+            by_folder.entry(folder).or_default().push((name, tags));
         }
-        for names in by_folder.values_mut() {
-            names.sort_unstable();
+        for entries in by_folder.values_mut() {
+            entries.sort_unstable_by_key(|&(name, _)| name);
         }
 
         s.push_str("<div class=\"sidebar-section\">\n");
         s.push_str("<div class=\"sidebar-heading\">Flows</div>\n");
         let multi_folder = by_folder.len() > 1;
-        for (folder, names) in &by_folder {
+        for (folder, entries) in &by_folder {
             if multi_folder {
                 let label = if folder.is_empty() { "(root)" } else { folder };
                 s.push_str(&format!(
@@ -2741,14 +2771,19 @@ fn render_sidebar(
                 ));
             }
             s.push_str("<ul>\n");
-            for name in names {
-                let cls = if *name == active {
+            for &(name, tags) in entries {
+                let cls = if name == active {
                     " class=\"active\""
                 } else {
                     ""
                 };
+                let tag_attr = if tags.is_empty() {
+                    String::new()
+                } else {
+                    format!(" data-tags=\"{}\"", escape(tags))
+                };
                 s.push_str(&format!(
-                    "<li><a href=\"{up_prefix}flows/{}.html\"{cls}>{}</a></li>\n",
+                    "<li{tag_attr}><a href=\"{up_prefix}flows/{}.html\"{cls}>{}</a></li>\n",
                     escape(name),
                     escape(name)
                 ));
@@ -2759,18 +2794,18 @@ fn render_sidebar(
     }
 
     if !vr_items.is_empty() {
-        let mut by_folder: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-        for &(name, folder) in vr_items {
-            by_folder.entry(folder).or_default().push(name);
+        let mut by_folder: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
+        for &(name, folder, tags) in vr_items {
+            by_folder.entry(folder).or_default().push((name, tags));
         }
-        for names in by_folder.values_mut() {
-            names.sort_unstable();
+        for entries in by_folder.values_mut() {
+            entries.sort_unstable_by_key(|&(name, _)| name);
         }
 
         s.push_str("<div class=\"sidebar-section\">\n");
         s.push_str("<div class=\"sidebar-heading\">Validation Rules</div>\n");
         let multi_folder = by_folder.len() > 1;
-        for (folder, names) in &by_folder {
+        for (folder, entries) in &by_folder {
             if multi_folder {
                 let label = if folder.is_empty() { "(root)" } else { folder };
                 s.push_str(&format!(
@@ -2779,14 +2814,19 @@ fn render_sidebar(
                 ));
             }
             s.push_str("<ul>\n");
-            for name in names {
-                let cls = if *name == active {
+            for &(name, tags) in entries {
+                let cls = if name == active {
                     " class=\"active\""
                 } else {
                     ""
                 };
+                let tag_attr = if tags.is_empty() {
+                    String::new()
+                } else {
+                    format!(" data-tags=\"{}\"", escape(tags))
+                };
                 s.push_str(&format!(
-                    "<li><a href=\"{up_prefix}validation-rules/{}.html\"{cls}>{}</a></li>\n",
+                    "<li{tag_attr}><a href=\"{up_prefix}validation-rules/{}.html\"{cls}>{}</a></li>\n",
                     escape(name),
                     escape(name)
                 ));
@@ -2797,20 +2837,25 @@ fn render_sidebar(
     }
 
     if !obj_items.is_empty() {
-        let mut names: Vec<&str> = obj_items.iter().map(|&(n, _)| n).collect();
-        names.sort_unstable();
+        let mut entries: Vec<(&str, &str)> = obj_items.iter().map(|&(n, _, tags)| (n, tags)).collect();
+        entries.sort_unstable_by_key(|&(name, _)| name);
 
         s.push_str("<div class=\"sidebar-section\">\n");
         s.push_str("<div class=\"sidebar-heading\">Objects</div>\n");
         s.push_str("<ul>\n");
-        for name in names {
-            let cls = if name == active {
+        for (name, tags) in &entries {
+            let cls = if *name == active {
                 " class=\"active\""
             } else {
                 ""
             };
+            let tag_attr = if tags.is_empty() {
+                String::new()
+            } else {
+                format!(" data-tags=\"{}\"", escape(tags))
+            };
             s.push_str(&format!(
-                "<li><a href=\"{up_prefix}objects/{}.html\"{cls}>{}</a></li>\n",
+                "<li{tag_attr}><a href=\"{up_prefix}objects/{}.html\"{cls}>{}</a></li>\n",
                 escape(name),
                 escape(name)
             ));
@@ -2820,18 +2865,18 @@ fn render_sidebar(
     }
 
     if !lwc_items.is_empty() {
-        let mut by_folder: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-        for &(name, folder) in lwc_items {
-            by_folder.entry(folder).or_default().push(name);
+        let mut by_folder: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
+        for &(name, folder, tags) in lwc_items {
+            by_folder.entry(folder).or_default().push((name, tags));
         }
-        for names in by_folder.values_mut() {
-            names.sort_unstable();
+        for entries in by_folder.values_mut() {
+            entries.sort_unstable_by_key(|&(name, _)| name);
         }
 
         s.push_str("<div class=\"sidebar-section\">\n");
         s.push_str("<div class=\"sidebar-heading\">LWC</div>\n");
         let multi_folder = by_folder.len() > 1;
-        for (folder, names) in &by_folder {
+        for (folder, entries) in &by_folder {
             if multi_folder {
                 let label = if folder.is_empty() { "(root)" } else { folder };
                 s.push_str(&format!(
@@ -2840,14 +2885,19 @@ fn render_sidebar(
                 ));
             }
             s.push_str("<ul>\n");
-            for name in names {
-                let cls = if *name == active {
+            for &(name, tags) in entries {
+                let cls = if name == active {
                     " class=\"active\""
                 } else {
                     ""
                 };
+                let tag_attr = if tags.is_empty() {
+                    String::new()
+                } else {
+                    format!(" data-tags=\"{}\"", escape(tags))
+                };
                 s.push_str(&format!(
-                    "<li><a href=\"{up_prefix}lwc/{}.html\"{cls}>{}</a></li>\n",
+                    "<li{tag_attr}><a href=\"{up_prefix}lwc/{}.html\"{cls}>{}</a></li>\n",
                     escape(name),
                     escape(name)
                 ));
@@ -2858,20 +2908,25 @@ fn render_sidebar(
     }
 
     if !flexipage_items.is_empty() {
-        let mut names: Vec<&str> = flexipage_items.iter().map(|&(n, _)| n).collect();
-        names.sort_unstable();
+        let mut entries: Vec<(&str, &str)> = flexipage_items.iter().map(|&(n, _, tags)| (n, tags)).collect();
+        entries.sort_unstable_by_key(|&(name, _)| name);
 
         s.push_str("<div class=\"sidebar-section\">\n");
         s.push_str("<div class=\"sidebar-heading\">Lightning Pages</div>\n");
         s.push_str("<ul>\n");
-        for name in names {
-            let cls = if name == active {
+        for (name, tags) in &entries {
+            let cls = if *name == active {
                 " class=\"active\""
             } else {
                 ""
             };
+            let tag_attr = if tags.is_empty() {
+                String::new()
+            } else {
+                format!(" data-tags=\"{}\"", escape(tags))
+            };
             s.push_str(&format!(
-                "<li><a href=\"{up_prefix}flexipages/{}.html\"{cls}>{}</a></li>\n",
+                "<li{tag_attr}><a href=\"{up_prefix}flexipages/{}.html\"{cls}>{}</a></li>\n",
                 escape(name),
                 escape(name)
             ));
@@ -2881,20 +2936,25 @@ fn render_sidebar(
     }
 
     if !aura_items.is_empty() {
-        let mut names: Vec<&str> = aura_items.iter().map(|&(n, _)| n).collect();
-        names.sort_unstable();
+        let mut entries: Vec<(&str, &str)> = aura_items.iter().map(|&(n, _, tags)| (n, tags)).collect();
+        entries.sort_unstable_by_key(|&(name, _)| name);
 
         s.push_str("<div class=\"sidebar-section\">\n");
         s.push_str("<div class=\"sidebar-heading\">Aura</div>\n");
         s.push_str("<ul>\n");
-        for name in names {
-            let cls = if name == active {
+        for (name, tags) in &entries {
+            let cls = if *name == active {
                 " class=\"active\""
             } else {
                 ""
             };
+            let tag_attr = if tags.is_empty() {
+                String::new()
+            } else {
+                format!(" data-tags=\"{}\"", escape(tags))
+            };
             s.push_str(&format!(
-                "<li><a href=\"{up_prefix}aura/{}.html\"{cls}>{}</a></li>\n",
+                "<li{tag_attr}><a href=\"{up_prefix}aura/{}.html\"{cls}>{}</a></li>\n",
                 escape(name),
                 escape(name)
             ));
