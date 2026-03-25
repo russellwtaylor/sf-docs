@@ -180,6 +180,44 @@ sfdoc generate --type flows,validation-rules --format html
 
 Valid types: `apex`, `triggers`, `flows`, `validation-rules`, `objects`, `lwc`, `flexipages`, `custom-metadata`, `aura`. When omitted, all types are included.
 
+### Filter by name
+
+Generate docs only for files matching a glob pattern:
+
+```bash
+sfdoc generate --name-filter 'Order*'
+sfdoc generate --name-filter '*Service'
+sfdoc generate --type apex --name-filter 'Order*'
+```
+
+### Filter by tag
+
+Add `@tag` annotations to your ApexDoc comments:
+
+```apex
+/**
+ * @tag billing
+ * @tag integration
+ */
+public class OrderService {
+    // ...
+}
+```
+
+Then filter by tag:
+
+```bash
+sfdoc generate --tag billing
+sfdoc generate --tag billing,integration
+sfdoc generate --type apex --name-filter 'Order*' --tag billing
+```
+
+When `--tag` is specified, only Apex classes and triggers with matching tags are included.
+
+### Search
+
+HTML output includes a built-in search bar powered by fuse.js. Search by class name, method name, or summary text. No server required — search runs entirely in the browser.
+
 ### Verbose output
 
 ```bash
@@ -214,6 +252,10 @@ Options:
   --type <TYPES>         Only document these metadata types (comma-separated)
                          [possible values: apex, triggers, flows, validation-rules,
                           objects, lwc, flexipages, custom-metadata, aura]
+  --name-filter <PATTERN> Only document files whose name matches this glob pattern
+                         (e.g. 'Order*', '*Service')
+  --tag <LABELS>         Only document items tagged with at least one of these labels
+                         (comma-separated; matches @tag annotations in ApexDoc)
   --verbose              Enable verbose logging
   -h, --help             Print help
   -V, --version          Print version
