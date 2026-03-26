@@ -2230,17 +2230,15 @@ fn render_index(
             }
             body.push_str("<table><thead><tr><th>Class</th><th>Summary</th></tr></thead><tbody>\n");
             for ctx in classes {
-                let tag_html: String = ctx
-                    .metadata
-                    .tags
-                    .iter()
-                    .map(|t| {
-                        format!(
-                            " <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>",
-                            escape(t)
-                        )
-                    })
-                    .collect();
+                let tag_html = ctx.metadata.tags.iter().fold(String::new(), |mut acc, t| {
+                    use std::fmt::Write;
+                    let _ = write!(
+                        acc,
+                        " <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>",
+                        escape(t)
+                    );
+                    acc
+                });
                 body.push_str(&format!(
                     "<tr><td><a href=\"classes/{}.html\">{}</a></td><td>{}{}</td></tr>\n",
                     escape(&ctx.metadata.class_name),
@@ -2276,17 +2274,15 @@ fn render_index(
                 "<table><thead><tr><th>Interface</th><th>Summary</th></tr></thead><tbody>\n",
             );
             for ctx in ifaces {
-                let tag_html: String = ctx
-                    .metadata
-                    .tags
-                    .iter()
-                    .map(|t| {
-                        format!(
-                            " <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>",
-                            escape(t)
-                        )
-                    })
-                    .collect();
+                let tag_html = ctx.metadata.tags.iter().fold(String::new(), |mut acc, t| {
+                    use std::fmt::Write;
+                    let _ = write!(
+                        acc,
+                        " <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>",
+                        escape(t)
+                    );
+                    acc
+                });
                 body.push_str(&format!(
                     "<tr><td><a href=\"classes/{}.html\">{}</a></td><td>{}{}</td></tr>\n",
                     escape(&ctx.metadata.class_name),
@@ -2325,17 +2321,15 @@ fn render_index(
             }
             body.push_str("<table><thead><tr><th>Trigger</th><th>SObject</th><th>Summary</th></tr></thead><tbody>\n");
             for ctx in triggers {
-                let tag_html: String = ctx
-                    .metadata
-                    .tags
-                    .iter()
-                    .map(|t| {
-                        format!(
-                            " <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>",
-                            escape(t)
-                        )
-                    })
-                    .collect();
+                let tag_html = ctx.metadata.tags.iter().fold(String::new(), |mut acc, t| {
+                    use std::fmt::Write;
+                    let _ = write!(
+                        acc,
+                        " <span class=\"badge badge-tag\" style=\"font-size:10px\">{}</span>",
+                        escape(t)
+                    );
+                    acc
+                });
                 body.push_str(&format!(
                     "<tr><td><a href=\"triggers/{}.html\">{}</a></td><td><code>{}</code></td><td>{}{}</td></tr>\n",
                     escape(&ctx.metadata.trigger_name),
