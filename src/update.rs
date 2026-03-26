@@ -33,8 +33,7 @@ use crate::prompts::{
     build_aura_prompt, build_class_prompt, build_flexipage_prompt, build_flow_prompt,
     build_lwc_prompt, build_object_prompt, build_trigger_prompt, build_validation_rule_prompt,
     AURA_SYSTEM_PROMPT, CLASS_SYSTEM_PROMPT, FLEXIPAGE_SYSTEM_PROMPT, FLOW_SYSTEM_PROMPT,
-    LWC_SYSTEM_PROMPT, OBJECT_SYSTEM_PROMPT, TRIGGER_SYSTEM_PROMPT,
-    VALIDATION_RULE_SYSTEM_PROMPT,
+    LWC_SYSTEM_PROMPT, OBJECT_SYSTEM_PROMPT, TRIGGER_SYSTEM_PROMPT, VALIDATION_RULE_SYSTEM_PROMPT,
 };
 
 /// Known file extensions and their metadata types.

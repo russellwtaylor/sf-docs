@@ -199,8 +199,7 @@ pub fn build_flow_prompt(file: &SourceFile, metadata: &FlowMetadata) -> String {
     prompt.push('\n');
 
     // Variables
-    let input_vars: Vec<&FlowVariable> =
-        metadata.variables.iter().filter(|v| v.is_input).collect();
+    let input_vars: Vec<&FlowVariable> = metadata.variables.iter().filter(|v| v.is_input).collect();
     let output_vars: Vec<&FlowVariable> =
         metadata.variables.iter().filter(|v| v.is_output).collect();
 
