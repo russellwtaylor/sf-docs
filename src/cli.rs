@@ -59,6 +59,8 @@ pub struct Cli {
 pub enum Commands {
     /// Generate documentation from Salesforce source files
     Generate(GenerateArgs),
+    /// Re-document a single file without a full rebuild
+    Update(UpdateArgs),
     /// Save an AI provider API key to the OS keychain
     Auth(AuthArgs),
     /// Show installation status and configuration
@@ -173,6 +175,36 @@ fn parse_concurrency(s: &str) -> Result<usize, String> {
     } else {
         Ok(n)
     }
+}
+
+#[derive(clap::Args, Debug)]
+pub struct UpdateArgs {
+    /// File path or name to re-document (e.g. 'OrderService' or 'force-app/.../OrderService.cls')
+    pub target: String,
+
+    /// Path to Apex source directory
+    #[arg(long, default_value = "force-app/main/default")]
+    pub source_dir: PathBuf,
+
+    /// Output directory for generated files
+    #[arg(long, short)]
+    pub output: Option<PathBuf>,
+
+    /// AI provider to use for documentation generation
+    #[arg(long, default_value = "gemini")]
+    pub provider: Provider,
+
+    /// Model to use (defaults to the provider's recommended model if not set)
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Output format (auto-detected from existing output if not specified)
+    #[arg(long)]
+    pub format: Option<OutputFormat>,
+
+    /// Enable verbose logging
+    #[arg(long, short)]
+    pub verbose: bool,
 }
 
 #[derive(clap::Args, Debug)]
@@ -299,5 +331,64 @@ mod tests {
         let args = parse_generate(&["--tag", "Billing"]);
         assert!(args.tag_matches(&["billing".to_string()]));
         assert!(args.tag_matches(&["BILLING".to_string()]));
+    }
+
+    fn parse_update(args: &[&str]) -> UpdateArgs {
+        let mut full = vec!["sfdoc", "update"];
+        full.extend(args);
+        let cli = Cli::try_parse_from(full).expect("CLI should parse");
+        match cli.command {
+            Commands::Update(u) => u,
+            _ => panic!("expected Update command"),
+        }
+    }
+
+    #[test]
+    fn update_requires_target() {
+        let result = Cli::try_parse_from(["sfdoc", "update"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn update_parses_target_positional() {
+        let args = parse_update(&["OrderService"]);
+        assert_eq!(args.target, "OrderService");
+    }
+
+    #[test]
+    fn update_default_flags() {
+        let args = parse_update(&["Foo"]);
+        assert_eq!(
+            args.source_dir,
+            std::path::PathBuf::from("force-app/main/default")
+        );
+        assert!(args.output.is_none());
+        assert_eq!(args.provider, crate::providers::Provider::Gemini);
+        assert!(args.model.is_none());
+        assert!(args.format.is_none());
+        assert!(!args.verbose);
+    }
+
+    #[test]
+    fn update_accepts_all_flags() {
+        let args = parse_update(&[
+            "MyClass",
+            "--source-dir",
+            "src",
+            "--output",
+            "out",
+            "--provider",
+            "openai",
+            "--model",
+            "gpt-4o",
+            "--format",
+            "html",
+            "--verbose",
+        ]);
+        assert_eq!(args.target, "MyClass");
+        assert_eq!(args.source_dir, std::path::PathBuf::from("src"));
+        assert_eq!(args.output, Some(std::path::PathBuf::from("out")));
+        assert_eq!(args.format, Some(OutputFormat::Html));
+        assert!(args.verbose);
     }
 }

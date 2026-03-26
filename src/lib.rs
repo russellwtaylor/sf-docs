@@ -27,5 +27,6 @@ pub mod scanner;
 pub mod trigger_parser;
 pub mod trigger_prompt;
 pub mod types;
+pub mod update;
 pub mod validation_rule_parser;
 pub mod validation_rule_prompt;

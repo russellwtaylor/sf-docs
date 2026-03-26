@@ -212,6 +212,41 @@ impl Cache {
         get_aura_if_fresh,
         update_aura
     );
+
+    /// Iterators over all cached entries, for rebuilding AllNames and the index.
+    pub fn class_entries(&self) -> impl Iterator<Item = (&String, &CacheEntry)> {
+        self.entries.iter()
+    }
+
+    pub fn trigger_entries(&self) -> impl Iterator<Item = (&String, &TriggerCacheEntry)> {
+        self.trigger_entries.iter()
+    }
+
+    pub fn flow_entries(&self) -> impl Iterator<Item = (&String, &FlowCacheEntry)> {
+        self.flow_entries.iter()
+    }
+
+    pub fn validation_rule_entries(
+        &self,
+    ) -> impl Iterator<Item = (&String, &ValidationRuleCacheEntry)> {
+        self.validation_rule_entries.iter()
+    }
+
+    pub fn object_entries(&self) -> impl Iterator<Item = (&String, &ObjectCacheEntry)> {
+        self.object_entries.iter()
+    }
+
+    pub fn lwc_entries(&self) -> impl Iterator<Item = (&String, &LwcCacheEntry)> {
+        self.lwc_entries.iter()
+    }
+
+    pub fn flexipage_entries(&self) -> impl Iterator<Item = (&String, &FlexiPageCacheEntry)> {
+        self.flexipage_entries.iter()
+    }
+
+    pub fn aura_entries(&self) -> impl Iterator<Item = (&String, &AuraCacheEntry)> {
+        self.aura_entries.iter()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -481,6 +516,43 @@ mod tests {
         let h = hash_source("public class Über {}");
         assert_eq!(h.len(), 64);
         assert_ne!(h, hash_source("public class Uber {}"));
+    }
+
+    #[test]
+    fn class_entries_returns_all_class_docs() {
+        let mut cache = Cache::default();
+        let doc = ClassDocumentation {
+            class_name: "Foo".to_string(),
+            summary: "A foo.".to_string(),
+            description: "".to_string(),
+            methods: vec![],
+            properties: vec![],
+            usage_examples: vec![],
+            relationships: vec![],
+        };
+        cache.update("Foo.cls".to_string(), "h1".to_string(), "m1", doc);
+        let entries: Vec<_> = cache.class_entries().collect();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].1.documentation.class_name, "Foo");
+    }
+
+    #[test]
+    fn trigger_entries_returns_all_trigger_docs() {
+        let mut cache = Cache::default();
+        let doc = TriggerDocumentation {
+            trigger_name: "AccTrig".to_string(),
+            sobject: "Account".to_string(),
+            summary: "".to_string(),
+            description: "".to_string(),
+            events: vec![],
+            handler_classes: vec![],
+            usage_notes: vec![],
+            relationships: vec![],
+        };
+        cache.update_trigger("AccTrig.trigger".to_string(), "h1".to_string(), "m1", doc);
+        let entries: Vec<_> = cache.trigger_entries().collect();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].1.documentation.trigger_name, "AccTrig");
     }
 
     #[test]
