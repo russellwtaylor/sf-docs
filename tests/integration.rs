@@ -28,7 +28,6 @@ use sfdoc::types::{
 };
 
 use sfdoc::aura_parser;
-use sfdoc::cli::OutputFormat;
 use sfdoc::custom_metadata_parser;
 use sfdoc::flexipage_parser;
 use sfdoc::object_parser;
@@ -347,7 +346,7 @@ fn full_pipeline_writes_markdown_output() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
+    renderer::write_output(output_dir, &bundle).unwrap();
 
     // Every class and trigger gets its own page
     assert!(
@@ -410,7 +409,7 @@ fn markdown_class_page_contains_expected_sections() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
+    renderer::write_output(output_dir, &bundle).unwrap();
 
     let content = std::fs::read_to_string(output_dir.join("classes/AccountService.md")).unwrap();
     assert!(content.contains("# AccountService"), "missing title");
@@ -492,123 +491,6 @@ fn markdown_index_groups_by_folder() {
     assert!(
         index.contains("### (root)"),
         "expected a '### (root)' heading in index:\n{index}"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// Render pipeline — HTML output
-// ---------------------------------------------------------------------------
-
-#[test]
-fn full_pipeline_writes_html_output() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let output_dir = tmp.path();
-
-    let class_files = ApexScanner.scan(class_fixtures_dir()).unwrap();
-    let class_meta: Vec<_> = class_files
-        .iter()
-        .map(|f| parser::parse_apex_class(&f.raw_source).unwrap())
-        .collect();
-    let all_names = Arc::new(AllNames {
-        class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
-        trigger_names: HashSet::new(),
-        flow_names: HashSet::new(),
-        validation_rule_names: HashSet::new(),
-        object_names: HashSet::new(),
-        lwc_names: HashSet::new(),
-        flexipage_names: HashSet::new(),
-        aura_names: HashSet::new(),
-        custom_metadata_type_names: HashSet::new(),
-        interface_implementors: std::collections::HashMap::new(),
-    });
-    let class_contexts: Vec<RenderContext> = class_files
-        .iter()
-        .zip(class_meta.iter())
-        .map(|(_, meta)| RenderContext {
-            folder: String::new(),
-            metadata: meta.clone(),
-            documentation: stub_class_doc(&meta.class_name),
-            all_names: Arc::clone(&all_names),
-        })
-        .collect();
-
-    let bundle = renderer::DocumentationBundle {
-        classes: &class_contexts,
-        triggers: &[],
-        flows: &[],
-        validation_rules: &[],
-        objects: &[],
-        lwc: &[],
-        flexipages: &[],
-        custom_metadata: &[],
-        aura: &[],
-    };
-    renderer::write_output(output_dir, &sfdoc::cli::OutputFormat::Html, &bundle).unwrap();
-
-    assert!(output_dir.join("index.html").exists(), "index.html missing");
-    assert!(
-        output_dir.join("classes/AccountService.html").exists(),
-        "classes/AccountService.html missing"
-    );
-    assert!(
-        output_dir.join("classes/OrderService.html").exists(),
-        "classes/OrderService.html missing"
-    );
-}
-
-#[test]
-fn html_page_contains_sidebar_and_content() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let class_files = ApexScanner.scan(class_fixtures_dir()).unwrap();
-    let class_meta: Vec<_> = class_files
-        .iter()
-        .map(|f| parser::parse_apex_class(&f.raw_source).unwrap())
-        .collect();
-    let all_names = Arc::new(AllNames {
-        class_names: class_meta.iter().map(|m| m.class_name.clone()).collect(),
-        trigger_names: HashSet::new(),
-        flow_names: HashSet::new(),
-        validation_rule_names: HashSet::new(),
-        object_names: HashSet::new(),
-        lwc_names: HashSet::new(),
-        flexipage_names: HashSet::new(),
-        aura_names: HashSet::new(),
-        custom_metadata_type_names: HashSet::new(),
-        interface_implementors: std::collections::HashMap::new(),
-    });
-    let class_contexts: Vec<RenderContext> = class_files
-        .iter()
-        .zip(class_meta.iter())
-        .map(|(_, meta)| RenderContext {
-            folder: String::new(),
-            metadata: meta.clone(),
-            documentation: stub_class_doc(&meta.class_name),
-            all_names: Arc::clone(&all_names),
-        })
-        .collect();
-
-    let bundle = renderer::DocumentationBundle {
-        classes: &class_contexts,
-        triggers: &[],
-        flows: &[],
-        validation_rules: &[],
-        objects: &[],
-        lwc: &[],
-        flexipages: &[],
-        custom_metadata: &[],
-        aura: &[],
-    };
-    renderer::write_output(tmp.path(), &sfdoc::cli::OutputFormat::Html, &bundle).unwrap();
-
-    let html = std::fs::read_to_string(tmp.path().join("classes/AccountService.html")).unwrap();
-    assert!(html.contains("<nav"), "missing nav sidebar");
-    assert!(
-        html.contains("AccountService"),
-        "missing class name in HTML"
-    );
-    assert!(
-        html.contains("Description for AccountService"),
-        "missing description in HTML"
     );
 }
 
@@ -1052,7 +934,7 @@ async fn e2e_scan_parse_ai_render_markdown() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(tmp.path(), &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
+    renderer::write_output(tmp.path(), &bundle).unwrap();
 
     // Assert
     assert!(tmp.path().join("classes/AccountService.md").exists());
@@ -1144,7 +1026,7 @@ fn flow_pipeline_writes_markdown_output() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
+    renderer::write_output(&output_dir, &bundle).unwrap();
 
     assert!(
         output_dir.join("flows/My_Flow.md").exists(),
@@ -1250,7 +1132,7 @@ fn validation_rule_pipeline_writes_markdown_output() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
+    renderer::write_output(&output_dir, &bundle).unwrap();
 
     let expected_path = output_dir
         .join("validation-rules")
@@ -1335,7 +1217,7 @@ fn object_pipeline_writes_markdown_output() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
+    renderer::write_output(&output_dir, &bundle).unwrap();
 
     assert!(
         output_dir
@@ -1438,7 +1320,7 @@ fn lwc_pipeline_writes_markdown_output() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Markdown, &bundle).unwrap();
+    renderer::write_output(&output_dir, &bundle).unwrap();
 
     assert!(
         output_dir
@@ -1465,72 +1347,6 @@ fn lwc_pipeline_writes_markdown_output() {
     );
 }
 
-#[test]
-fn lwc_pipeline_writes_html_output() {
-    let tmp = tempfile::TempDir::new().unwrap();
-    let output_dir = tmp.path().join("out");
-    std::fs::create_dir_all(&output_dir).unwrap();
-
-    let comp_tmp = tempfile::TempDir::new().unwrap();
-    let comp_dir = comp_tmp.path().join("lwc").join("myCard");
-    std::fs::create_dir_all(&comp_dir).unwrap();
-    let js = "import { LightningElement, api } from 'lwc';\nexport default class MyCard extends LightningElement {\n    @api title;\n}";
-    let meta_path = comp_dir.join("myCard.js-meta.xml");
-    std::fs::write(&meta_path, "<LightningComponentBundle/>").unwrap();
-    std::fs::write(comp_dir.join("myCard.js"), js).unwrap();
-
-    let meta = lwc_parser::parse_lwc(&meta_path, js).unwrap();
-    let doc = stub_lwc_doc(&meta.component_name);
-
-    let all_names = Arc::new(AllNames {
-        class_names: HashSet::new(),
-        trigger_names: HashSet::new(),
-        flow_names: HashSet::new(),
-        validation_rule_names: HashSet::new(),
-        object_names: HashSet::new(),
-        lwc_names: [meta.component_name.clone()].into_iter().collect(),
-        flexipage_names: HashSet::new(),
-        aura_names: HashSet::new(),
-        custom_metadata_type_names: HashSet::new(),
-        interface_implementors: std::collections::HashMap::new(),
-    });
-
-    let ctx = LwcRenderContext {
-        metadata: meta.clone(),
-        documentation: doc,
-        all_names,
-        folder: String::new(),
-    };
-
-    let bundle = renderer::DocumentationBundle {
-        classes: &[],
-        triggers: &[],
-        flows: &[],
-        validation_rules: &[],
-        objects: &[],
-        lwc: &[ctx],
-        flexipages: &[],
-        custom_metadata: &[],
-        aura: &[],
-    };
-    renderer::write_output(&output_dir, &sfdoc::cli::OutputFormat::Html, &bundle).unwrap();
-
-    assert!(
-        output_dir
-            .join(format!("lwc/{}.html", meta.component_name))
-            .exists(),
-        "LWC HTML page not created"
-    );
-    let html =
-        std::fs::read_to_string(output_dir.join(format!("lwc/{}.html", meta.component_name)))
-            .unwrap();
-    assert!(html.contains("myCard"), "component name missing from HTML");
-    assert!(html.contains("<nav"), "sidebar missing from HTML");
-    assert!(
-        html.contains("LWC") || html.contains("Components"),
-        "LWC sidebar section missing"
-    );
-}
 
 // ---------------------------------------------------------------------------
 // Fixture-based scanner + parser tests for all metadata types
@@ -1899,7 +1715,7 @@ fn mixed_bundle_writes_all_output_dirs() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(tmp.path(), &OutputFormat::Markdown, &bundle).unwrap();
+    renderer::write_output(tmp.path(), &bundle).unwrap();
     assert!(tmp.path().join("classes/Svc.md").exists());
     assert!(tmp.path().join("index.md").exists());
 }
@@ -1955,7 +1771,7 @@ fn flexipage_pipeline_writes_markdown_output() {
         custom_metadata: &[],
         aura: &[],
     };
-    renderer::write_output(&output_dir, &OutputFormat::Markdown, &bundle).unwrap();
+    renderer::write_output(&output_dir, &bundle).unwrap();
 
     assert!(
         output_dir
@@ -2018,7 +1834,7 @@ fn aura_pipeline_writes_markdown_output() {
         custom_metadata: &[],
         aura: &[ctx],
     };
-    renderer::write_output(&output_dir, &OutputFormat::Markdown, &bundle).unwrap();
+    renderer::write_output(&output_dir, &bundle).unwrap();
 
     assert!(
         output_dir.join("aura/myAuraComp.md").exists(),

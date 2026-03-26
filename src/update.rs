@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
 use crate::cache::{self, Cache};
-use crate::cli::{MetadataType, OutputFormat, UpdateArgs};
+use crate::cli::{MetadataType, UpdateArgs};
 use crate::config::resolve_api_key;
 use crate::doc_client::{self, DocClient};
 use crate::gemini::GeminiClient;
@@ -231,20 +231,6 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
     dp[m][n]
 }
 
-/// Detect the output format from the existing output directory.
-/// If `explicit` is `Some`, uses that. Otherwise checks for index.html / index.md.
-/// Falls back to Markdown.
-pub fn detect_output_format(output_dir: &Path, explicit: &Option<OutputFormat>) -> OutputFormat {
-    if let Some(fmt) = explicit {
-        return fmt.clone();
-    }
-    if output_dir.join("index.html").exists() {
-        OutputFormat::Html
-    } else {
-        OutputFormat::Markdown
-    }
-}
-
 /// Recomputes the folder (relative path from source_dir to file's parent).
 fn compute_folder(file_path: &Path, source_dir: &Path) -> String {
     crate::types::compute_folder(file_path, source_dir)
@@ -306,16 +292,7 @@ enum SinglePageContext<'a> {
 }
 
 /// Write a single documentation page to the output directory.
-fn write_single_page(
-    output_dir: &Path,
-    format: &OutputFormat,
-    ctx: SinglePageContext,
-) -> Result<()> {
-    if *format == OutputFormat::Html {
-        // For HTML, the full site is rebuilt in rebuild_index_from_cache
-        return Ok(());
-    }
-
+fn write_single_page(output_dir: &Path, ctx: SinglePageContext) -> Result<()> {
     match ctx {
         SinglePageContext::Class(c) => {
             let dir = output_dir.join("classes");
@@ -386,7 +363,7 @@ fn write_single_page(
 }
 
 /// Rebuild the full index from cached documentation.
-fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path, format: &OutputFormat) -> Result<()> {
+fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path) -> Result<()> {
     let all_names = Arc::new(build_all_names_from_cache(cache));
 
     let class_contexts: Vec<renderer::RenderContext> = cache
@@ -509,19 +486,8 @@ fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path, format: &OutputFor
         aura: &aura_contexts,
     };
 
-    if *format == OutputFormat::Html {
-        // The HTML renderer generates a full self-contained site. Rebuilding from
-        // cache alone produces a degraded site (missing structural metadata like
-        // methods, modifiers, interface implementors). Only regenerate the index;
-        // individual pages from the last `sfdoc generate` remain on disk.
-        eprintln!("Note: For a full HTML site rebuild with complete metadata, run 'sfdoc generate --format html'.");
-        // Still regenerate the index page for updated summaries
-        renderer::write_output(output_dir, format, &bundle)?;
-    } else {
-        // Markdown: only rewrite index.md — individual pages are written by write_single_page
-        let index = renderer::render_index(&bundle);
-        std::fs::write(output_dir.join("index.md"), index)?;
-    }
+    let index = renderer::render_index(&bundle);
+    std::fs::write(output_dir.join("index.md"), index)?;
 
     Ok(())
 }
@@ -535,16 +501,10 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
         .unwrap_or_else(|| provider.default_model().to_string());
 
     // Determine output directory
-    let output_dir = if let Some(ref out) = args.output {
-        out.clone()
-    } else {
-        let site_dir = PathBuf::from("site");
-        if site_dir.join(".sfdoc-cache.json").exists() {
-            site_dir
-        } else {
-            PathBuf::from("docs")
-        }
-    };
+    let output_dir = args
+        .output
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("docs"));
 
     // Check that a prior generate has been run
     let cache_path = output_dir.join(".sfdoc-cache.json");
@@ -556,7 +516,6 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
     }
 
     let mut cache = Cache::load(&output_dir);
-    let format = detect_output_format(&output_dir, &args.format);
 
     // Resolve the target to a source file + metadata type
     let resolved = resolve_target(&args.target, &args.source_dir)?;
@@ -587,22 +546,6 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
         eprintln!("Metadata type:   {}", type_label);
         eprintln!("Provider:        {}", provider.display_name());
         eprintln!("Model:           {}", model);
-        eprintln!(
-            "Format:          {}",
-            if format == OutputFormat::Html {
-                "html"
-            } else {
-                "markdown"
-            }
-        );
-        eprintln!(
-            "Format source:   {}",
-            if args.format.is_some() {
-                "explicit"
-            } else {
-                "auto-detected"
-            }
-        );
     }
 
     // Hash the source and check if it's unchanged
@@ -673,7 +616,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
                 all_names: Arc::new(all_names),
                 folder,
             };
-            write_single_page(&output_dir, &format, SinglePageContext::Class(&ctx))?;
+            write_single_page(&output_dir, SinglePageContext::Class(&ctx))?;
         }
         MetadataType::Triggers => {
             let meta = trigger_parser::parse_apex_trigger(&source_file.raw_source)?;
@@ -693,7 +636,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
                 all_names: Arc::new(all_names),
                 folder,
             };
-            write_single_page(&output_dir, &format, SinglePageContext::Trigger(&ctx))?;
+            write_single_page(&output_dir, SinglePageContext::Trigger(&ctx))?;
         }
         MetadataType::Flows => {
             let api_name = source_file
@@ -717,7 +660,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
                 all_names: Arc::new(all_names),
                 folder,
             };
-            write_single_page(&output_dir, &format, SinglePageContext::Flow(&ctx))?;
+            write_single_page(&output_dir, SinglePageContext::Flow(&ctx))?;
         }
         MetadataType::ValidationRules => {
             let meta = validation_rule_parser::parse_validation_rule(
@@ -739,11 +682,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
                 documentation: doc,
                 all_names: Arc::new(all_names),
             };
-            write_single_page(
-                &output_dir,
-                &format,
-                SinglePageContext::ValidationRule(&ctx),
-            )?;
+            write_single_page(&output_dir, SinglePageContext::ValidationRule(&ctx))?;
         }
         MetadataType::Objects => {
             let meta = object_parser::parse_object(&source_file.path, &source_file.raw_source)?;
@@ -763,7 +702,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
                 all_names: Arc::new(all_names),
                 folder,
             };
-            write_single_page(&output_dir, &format, SinglePageContext::Object(&ctx))?;
+            write_single_page(&output_dir, SinglePageContext::Object(&ctx))?;
         }
         MetadataType::Lwc => {
             let meta = lwc_parser::parse_lwc(&source_file.path, &source_file.raw_source)?;
@@ -783,7 +722,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
                 all_names: Arc::new(all_names),
                 folder,
             };
-            write_single_page(&output_dir, &format, SinglePageContext::Lwc(&ctx))?;
+            write_single_page(&output_dir, SinglePageContext::Lwc(&ctx))?;
         }
         MetadataType::Flexipages => {
             let api_name = source_file
@@ -807,7 +746,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
                 all_names: Arc::new(all_names),
                 folder,
             };
-            write_single_page(&output_dir, &format, SinglePageContext::FlexiPage(&ctx))?;
+            write_single_page(&output_dir, SinglePageContext::FlexiPage(&ctx))?;
         }
         MetadataType::CustomMetadata => {
             // Unreachable — we bail early above for custom metadata.
@@ -831,12 +770,12 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
                 all_names: Arc::new(all_names),
                 folder,
             };
-            write_single_page(&output_dir, &format, SinglePageContext::Aura(&ctx))?;
+            write_single_page(&output_dir, SinglePageContext::Aura(&ctx))?;
         }
     }
 
     // Rebuild the full index
-    rebuild_index_from_cache(&cache, &output_dir, &format)?;
+    rebuild_index_from_cache(&cache, &output_dir)?;
     println!("\u{2713} Index regenerated");
 
     // Save cache
@@ -936,39 +875,4 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("File not found"));
     }
 
-    #[test]
-    fn detect_format_html_when_index_html_exists() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("index.html"), "<html></html>").unwrap();
-        assert_eq!(detect_output_format(tmp.path(), &None), OutputFormat::Html);
-    }
-
-    #[test]
-    fn detect_format_markdown_when_index_md_exists() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("index.md"), "# Index").unwrap();
-        assert_eq!(
-            detect_output_format(tmp.path(), &None),
-            OutputFormat::Markdown
-        );
-    }
-
-    #[test]
-    fn detect_format_defaults_to_markdown() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        assert_eq!(
-            detect_output_format(tmp.path(), &None),
-            OutputFormat::Markdown
-        );
-    }
-
-    #[test]
-    fn detect_format_explicit_override() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        std::fs::write(tmp.path().join("index.md"), "# Index").unwrap();
-        assert_eq!(
-            detect_output_format(tmp.path(), &Some(OutputFormat::Html)),
-            OutputFormat::Html
-        );
-    }
 }

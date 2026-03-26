@@ -13,7 +13,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
-use cli::{Cli, Commands, MetadataType, OutputFormat};
+use cli::{Cli, Commands, MetadataType};
 use doc_client::DocClient;
 
 use config::{delete_api_key, has_stored_key, resolve_api_key, save_api_key};
@@ -84,14 +84,10 @@ async fn main() -> Result<()> {
             let model: Arc<str> =
                 Arc::from(args.model.as_deref().unwrap_or(provider.default_model()));
 
-            // Default output directory depends on format: docs/ for Markdown, site/ for HTML.
-            let output_dir = args.output.clone().unwrap_or_else(|| {
-                if args.format == OutputFormat::Html {
-                    std::path::PathBuf::from("site")
-                } else {
-                    std::path::PathBuf::from("docs")
-                }
-            });
+            let output_dir = args
+                .output
+                .clone()
+                .unwrap_or_else(|| std::path::PathBuf::from("docs"));
 
             if args.verbose {
                 eprintln!("Provider:    {}", provider.display_name());
@@ -1035,7 +1031,7 @@ async fn main() -> Result<()> {
                 custom_metadata: &custom_metadata_contexts,
                 aura: &aura_contexts,
             };
-            renderer::write_output(&output_dir, &args.format, &bundle)?;
+            renderer::write_output(&output_dir, &bundle)?;
             println!("Documentation written to {}", output_dir.display());
 
             // Persist the updated cache — only reached if all API calls succeeded
