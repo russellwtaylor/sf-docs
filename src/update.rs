@@ -23,8 +23,8 @@ use crate::types::{
 
 // Parser modules
 use crate::{
-    aura_parser, custom_metadata_parser, flexipage_parser, flow_parser, lwc_parser,
-    object_parser, parser, trigger_parser, validation_rule_parser,
+    aura_parser, custom_metadata_parser, flexipage_parser, flow_parser, lwc_parser, object_parser,
+    parser, trigger_parser, validation_rule_parser,
 };
 
 // Prompt modules
@@ -126,11 +126,7 @@ fn resolve_name_target(name: &str, source_dir: &Path) -> Result<ResolvedTarget> 
             MetadataType::ValidationRules,
             ".validationRule-meta.xml",
         ),
-        (
-            &ObjectScanner,
-            MetadataType::Objects,
-            ".object-meta.xml",
-        ),
+        (&ObjectScanner, MetadataType::Objects, ".object-meta.xml"),
         (&LwcScanner, MetadataType::Lwc, ".js-meta.xml"),
         (
             &FlexiPageScanner,
@@ -150,10 +146,7 @@ fn resolve_name_target(name: &str, source_dir: &Path) -> Result<ResolvedTarget> 
     for (scanner, mt, suffix) in &scanners {
         if let Ok(files) = scanner.scan(source_dir) {
             for file in files {
-                let stem = file
-                    .filename
-                    .strip_suffix(suffix)
-                    .unwrap_or(&file.filename);
+                let stem = file.filename.strip_suffix(suffix).unwrap_or(&file.filename);
                 if stem.eq_ignore_ascii_case(name) {
                     matches.push((file, *mt));
                 }
@@ -167,10 +160,7 @@ fn resolve_name_target(name: &str, source_dir: &Path) -> Result<ResolvedTarget> 
             for (scanner, _, suffix) in &scanners {
                 if let Ok(files) = scanner.scan(source_dir) {
                     for file in files {
-                        let stem = file
-                            .filename
-                            .strip_suffix(suffix)
-                            .unwrap_or(&file.filename);
+                        let stem = file.filename.strip_suffix(suffix).unwrap_or(&file.filename);
                         all_names.push(stem.to_string());
                     }
                 }
@@ -404,11 +394,7 @@ fn write_single_page(
 }
 
 /// Rebuild the full index from cached documentation.
-fn rebuild_index_from_cache(
-    cache: &Cache,
-    output_dir: &Path,
-    format: &OutputFormat,
-) -> Result<()> {
+fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path, format: &OutputFormat) -> Result<()> {
     let all_names = Arc::new(build_all_names_from_cache(cache));
 
     let class_contexts: Vec<renderer::RenderContext> = cache
@@ -729,8 +715,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             )?;
         }
         MetadataType::Objects => {
-            let meta =
-                object_parser::parse_object(&source_file.path, &source_file.raw_source)?;
+            let meta = object_parser::parse_object(&source_file.path, &source_file.raw_source)?;
             let doc: ObjectDocumentation = doc_client::document(
                 client.as_ref(),
                 OBJECT_SYSTEM_PROMPT,
@@ -803,8 +788,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             );
         }
         MetadataType::Aura => {
-            let meta =
-                aura_parser::parse_aura(&source_file.path, &source_file.raw_source)?;
+            let meta = aura_parser::parse_aura(&source_file.path, &source_file.raw_source)?;
             let doc: AuraDocumentation = doc_client::document(
                 client.as_ref(),
                 AURA_SYSTEM_PROMPT,
@@ -937,13 +921,19 @@ mod tests {
     fn detect_format_markdown_when_index_md_exists() {
         let tmp = tempfile::TempDir::new().unwrap();
         std::fs::write(tmp.path().join("index.md"), "# Index").unwrap();
-        assert_eq!(detect_output_format(tmp.path(), &None), OutputFormat::Markdown);
+        assert_eq!(
+            detect_output_format(tmp.path(), &None),
+            OutputFormat::Markdown
+        );
     }
 
     #[test]
     fn detect_format_defaults_to_markdown() {
         let tmp = tempfile::TempDir::new().unwrap();
-        assert_eq!(detect_output_format(tmp.path(), &None), OutputFormat::Markdown);
+        assert_eq!(
+            detect_output_format(tmp.path(), &None),
+            OutputFormat::Markdown
+        );
     }
 
     #[test]

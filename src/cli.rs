@@ -358,7 +358,10 @@ mod tests {
     #[test]
     fn update_default_flags() {
         let args = parse_update(&["Foo"]);
-        assert_eq!(args.source_dir, std::path::PathBuf::from("force-app/main/default"));
+        assert_eq!(
+            args.source_dir,
+            std::path::PathBuf::from("force-app/main/default")
+        );
         assert!(args.output.is_none());
         assert_eq!(args.provider, crate::providers::Provider::Gemini);
         assert!(args.model.is_none());
@@ -370,11 +373,16 @@ mod tests {
     fn update_accepts_all_flags() {
         let args = parse_update(&[
             "MyClass",
-            "--source-dir", "src",
-            "--output", "out",
-            "--provider", "openai",
-            "--model", "gpt-4o",
-            "--format", "html",
+            "--source-dir",
+            "src",
+            "--output",
+            "out",
+            "--provider",
+            "openai",
+            "--model",
+            "gpt-4o",
+            "--format",
+            "html",
             "--verbose",
         ]);
         assert_eq!(args.target, "MyClass");
