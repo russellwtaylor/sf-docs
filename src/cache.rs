@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::path::Path;
 
+use crate::cli::MetadataType;
 use crate::types::{
     AuraDocumentation, ClassDocumentation, FlexiPageDocumentation, FlowDocumentation,
     LwcDocumentation, ObjectDocumentation, TriggerDocumentation, ValidationRuleDocumentation,
@@ -154,6 +155,22 @@ impl Cache {
         let data = serde_json::to_string_pretty(self)?;
         std::fs::write(output_dir.join(CACHE_FILE), data)?;
         Ok(())
+    }
+
+    /// Check cache freshness for any AI-documented metadata type.
+    /// CustomMetadata is not cached and always returns false.
+    pub fn is_fresh(&self, metadata_type: MetadataType, key: &str, hash: &str, model: &str) -> bool {
+        match metadata_type {
+            MetadataType::Apex => self.get_if_fresh(key, hash, model).is_some(),
+            MetadataType::Triggers => self.get_trigger_if_fresh(key, hash, model).is_some(),
+            MetadataType::Flows => self.get_flow_if_fresh(key, hash, model).is_some(),
+            MetadataType::ValidationRules => self.get_validation_rule_if_fresh(key, hash, model).is_some(),
+            MetadataType::Objects => self.get_object_if_fresh(key, hash, model).is_some(),
+            MetadataType::Lwc => self.get_lwc_if_fresh(key, hash, model).is_some(),
+            MetadataType::Flexipages => self.get_flexipage_if_fresh(key, hash, model).is_some(),
+            MetadataType::Aura => self.get_aura_if_fresh(key, hash, model).is_some(),
+            MetadataType::CustomMetadata => false,
+        }
     }
 
     cache_accessors!(

@@ -580,25 +580,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
     let source_dir = &args.source_dir;
 
     // Inform user if source hasn't changed since last build
-    let is_unchanged = match metadata_type {
-        MetadataType::Apex => cache.get_if_fresh(&cache_key, &hash, &model).is_some(),
-        MetadataType::Triggers => cache
-            .get_trigger_if_fresh(&cache_key, &hash, &model)
-            .is_some(),
-        MetadataType::Flows => cache.get_flow_if_fresh(&cache_key, &hash, &model).is_some(),
-        MetadataType::ValidationRules => cache
-            .get_validation_rule_if_fresh(&cache_key, &hash, &model)
-            .is_some(),
-        MetadataType::Objects => cache
-            .get_object_if_fresh(&cache_key, &hash, &model)
-            .is_some(),
-        MetadataType::Lwc => cache.get_lwc_if_fresh(&cache_key, &hash, &model).is_some(),
-        MetadataType::Flexipages => cache
-            .get_flexipage_if_fresh(&cache_key, &hash, &model)
-            .is_some(),
-        MetadataType::Aura => cache.get_aura_if_fresh(&cache_key, &hash, &model).is_some(),
-        MetadataType::CustomMetadata => false,
-    };
+    let is_unchanged = cache.is_fresh(metadata_type, &cache_key, &hash, &model);
     if is_unchanged {
         eprintln!("Note: Source is unchanged since last build. Re-generating anyway.");
     }
