@@ -303,6 +303,9 @@ fn build_all_names_from_cache(cache: &Cache) -> AllNames {
             .aura_entries()
             .map(|(_, e)| e.documentation.component_name.clone())
             .collect(),
+        // Not available from cache alone — would require storing parsed metadata.
+        // Index cross-linking still works for named entities; only interface→implementor
+        // links and custom metadata type groupings are missing.
         custom_metadata_type_names: std::collections::HashSet::new(),
         interface_implementors: std::collections::HashMap::new(),
     }
@@ -576,21 +579,9 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
     let metadata_type = resolved.metadata_type;
 
     let type_label = metadata_type.cli_name();
-    let display_name = source_file
-        .filename
-        .strip_suffix(".cls")
-        .or_else(|| source_file.filename.strip_suffix(".trigger"))
-        .or_else(|| source_file.filename.strip_suffix(".flow-meta.xml"))
-        .or_else(|| {
-            source_file
-                .filename
-                .strip_suffix(".validationRule-meta.xml")
-        })
-        .or_else(|| source_file.filename.strip_suffix(".object-meta.xml"))
-        .or_else(|| source_file.filename.strip_suffix(".js-meta.xml"))
-        .or_else(|| source_file.filename.strip_suffix(".flexipage-meta.xml"))
-        .or_else(|| source_file.filename.strip_suffix(".md-meta.xml"))
-        .or_else(|| source_file.filename.strip_suffix(".cmp"))
+    let display_name = EXTENSION_MAP
+        .iter()
+        .find_map(|(ext, _)| source_file.filename.strip_suffix(ext))
         .unwrap_or(&source_file.filename);
 
     println!(
