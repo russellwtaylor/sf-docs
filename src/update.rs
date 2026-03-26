@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use std::path::{Path, PathBuf};
 
 use crate::cache::{self, Cache};
@@ -98,12 +98,14 @@ pub fn resolve_target(target: &str, source_dir: &Path) -> Result<ResolvedTarget>
 
 fn resolve_path_target(target: &str) -> Result<ResolvedTarget> {
     let path = PathBuf::from(target);
-    if !path.exists() {
-        bail!("File not found: '{}'", path.display());
-    }
+    let raw_source = std::fs::read_to_string(&path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            anyhow::anyhow!("File not found: '{}'", path.display())
+        } else {
+            anyhow::anyhow!("Failed to read '{}': {}", path.display(), e)
+        }
+    })?;
     let metadata_type = metadata_type_from_path(&path)?;
-    let raw_source = std::fs::read_to_string(&path)
-        .with_context(|| format!("Failed to read '{}'", path.display()))?;
     let filename = path
         .file_name()
         .and_then(|n| n.to_str())
@@ -210,10 +212,10 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
     let m = a_chars.len();
     let n = b_chars.len();
     let mut dp = vec![vec![0usize; n + 1]; m + 1];
-    for (i, row) in dp.iter_mut().enumerate().take(m + 1) {
+    for (i, row) in dp.iter_mut().enumerate() {
         row[0] = i;
     }
-    for (j, val) in dp[0].iter_mut().enumerate().take(n + 1) {
+    for (j, val) in dp[0].iter_mut().enumerate() {
         *val = j;
     }
     for i in 1..=m {
@@ -606,11 +608,10 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             .await?;
             cache.update(cache_key, hash, &model, doc.clone());
             let folder = compute_folder(&source_file.path, source_dir);
-            let all_names = build_all_names_from_cache(&cache);
             let ctx = renderer::RenderContext {
                 metadata: meta,
                 documentation: doc,
-                all_names: Arc::new(all_names),
+                all_names: Arc::new(build_all_names_from_cache(&cache)),
                 folder,
             };
             write_single_page(&output_dir, SinglePageContext::Class(&ctx))?;
@@ -626,11 +627,10 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             .await?;
             cache.update_trigger(cache_key, hash, &model, doc.clone());
             let folder = compute_folder(&source_file.path, source_dir);
-            let all_names = build_all_names_from_cache(&cache);
             let ctx = renderer::TriggerRenderContext {
                 metadata: meta,
                 documentation: doc,
-                all_names: Arc::new(all_names),
+                all_names: Arc::new(build_all_names_from_cache(&cache)),
                 folder,
             };
             write_single_page(&output_dir, SinglePageContext::Trigger(&ctx))?;
@@ -650,11 +650,10 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             .await?;
             cache.update_flow(cache_key, hash, &model, doc.clone());
             let folder = compute_folder(&source_file.path, source_dir);
-            let all_names = build_all_names_from_cache(&cache);
             let ctx = renderer::FlowRenderContext {
                 metadata: meta,
                 documentation: doc,
-                all_names: Arc::new(all_names),
+                all_names: Arc::new(build_all_names_from_cache(&cache)),
                 folder,
             };
             write_single_page(&output_dir, SinglePageContext::Flow(&ctx))?;
@@ -672,12 +671,11 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             )
             .await?;
             cache.update_validation_rule(cache_key, hash, &model, doc.clone());
-            let all_names = build_all_names_from_cache(&cache);
             let ctx = renderer::ValidationRuleRenderContext {
                 folder: meta.object_name.clone(),
                 metadata: meta,
                 documentation: doc,
-                all_names: Arc::new(all_names),
+                all_names: Arc::new(build_all_names_from_cache(&cache)),
             };
             write_single_page(&output_dir, SinglePageContext::ValidationRule(&ctx))?;
         }
@@ -692,11 +690,10 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             .await?;
             cache.update_object(cache_key, hash, &model, doc.clone());
             let folder = compute_folder(&source_file.path, source_dir);
-            let all_names = build_all_names_from_cache(&cache);
             let ctx = renderer::ObjectRenderContext {
                 metadata: meta,
                 documentation: doc,
-                all_names: Arc::new(all_names),
+                all_names: Arc::new(build_all_names_from_cache(&cache)),
                 folder,
             };
             write_single_page(&output_dir, SinglePageContext::Object(&ctx))?;
@@ -712,11 +709,10 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             .await?;
             cache.update_lwc(cache_key, hash, &model, doc.clone());
             let folder = compute_folder(&source_file.path, source_dir);
-            let all_names = build_all_names_from_cache(&cache);
             let ctx = renderer::LwcRenderContext {
                 metadata: meta,
                 documentation: doc,
-                all_names: Arc::new(all_names),
+                all_names: Arc::new(build_all_names_from_cache(&cache)),
                 folder,
             };
             write_single_page(&output_dir, SinglePageContext::Lwc(&ctx))?;
@@ -736,11 +732,10 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             .await?;
             cache.update_flexipage(cache_key, hash, &model, doc.clone());
             let folder = compute_folder(&source_file.path, source_dir);
-            let all_names = build_all_names_from_cache(&cache);
             let ctx = renderer::FlexiPageRenderContext {
                 metadata: meta,
                 documentation: doc,
-                all_names: Arc::new(all_names),
+                all_names: Arc::new(build_all_names_from_cache(&cache)),
                 folder,
             };
             write_single_page(&output_dir, SinglePageContext::FlexiPage(&ctx))?;
@@ -760,11 +755,10 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             .await?;
             cache.update_aura(cache_key, hash, &model, doc.clone());
             let folder = compute_folder(&source_file.path, source_dir);
-            let all_names = build_all_names_from_cache(&cache);
             let ctx = renderer::AuraRenderContext {
                 metadata: meta,
                 documentation: doc,
-                all_names: Arc::new(all_names),
+                all_names: Arc::new(build_all_names_from_cache(&cache)),
                 folder,
             };
             write_single_page(&output_dir, SinglePageContext::Aura(&ctx))?;
