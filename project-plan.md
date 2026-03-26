@@ -86,7 +86,7 @@ todos:
       status: done
     - id: single-file-update
       content: "Phase 28: sfdoc update <file> — re-document a single file without a full rebuild"
-      status: todo
+      status: done
     - id: diff-aware-docs
       content: "Phase 29: Diff-aware summaries — include git diff in AI prompt so docs describe what changed"
       status: todo
