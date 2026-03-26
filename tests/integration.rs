@@ -2082,3 +2082,99 @@ fn tag_filter_matches_case_insensitive() {
     assert!(args.tag_matches(&["INTEGRATION".to_string()]));
     assert!(!args.tag_matches(&["unrelated".to_string()]));
 }
+
+#[test]
+fn update_no_target_shows_error() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_sfdoc"))
+        .args(["update"])
+        .output()
+        .expect("failed to run sfdoc");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("required") || stderr.contains("Usage"),
+        "Expected usage/required error, got: {stderr}"
+    );
+}
+
+#[test]
+fn update_no_cache_shows_error() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_sfdoc"))
+        .args([
+            "update",
+            "SomeClass",
+            "--source-dir",
+            tmp.path().to_str().unwrap(),
+            "--output",
+            tmp.path().join("out").to_str().unwrap(),
+        ])
+        .output()
+        .expect("failed to run sfdoc");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("No existing documentation found") || stderr.contains("sfdoc generate"),
+        "Expected 'run generate first' error, got: {stderr}"
+    );
+}
+
+#[test]
+fn update_file_not_found_shows_error() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let out_dir = tmp.path().join("out");
+    std::fs::create_dir_all(&out_dir).unwrap();
+    std::fs::write(
+        out_dir.join(".sfdoc-cache.json"),
+        r#"{"cache_version":1,"entries":{},"trigger_entries":{},"flow_entries":{},"validation_rule_entries":{},"object_entries":{},"lwc_entries":{},"flexipage_entries":{},"aura_entries":{}}"#,
+    )
+    .unwrap();
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_sfdoc"))
+        .args([
+            "update",
+            "/nonexistent/path/Foo.cls",
+            "--output",
+            out_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("failed to run sfdoc");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("File not found"),
+        "Expected 'file not found' error, got: {stderr}"
+    );
+}
+
+#[test]
+fn update_name_not_found_shows_error() {
+    let tmp = tempfile::TempDir::new().unwrap();
+    let src_dir = tmp.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+    let out_dir = tmp.path().join("out");
+    std::fs::create_dir_all(&out_dir).unwrap();
+    std::fs::write(
+        out_dir.join(".sfdoc-cache.json"),
+        r#"{"cache_version":1,"entries":{},"trigger_entries":{},"flow_entries":{},"validation_rule_entries":{},"object_entries":{},"lwc_entries":{},"flexipage_entries":{},"aura_entries":{}}"#,
+    )
+    .unwrap();
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_sfdoc"))
+        .args([
+            "update",
+            "NonexistentClass",
+            "--source-dir",
+            src_dir.to_str().unwrap(),
+            "--output",
+            out_dir.to_str().unwrap(),
+        ])
+        .output()
+        .expect("failed to run sfdoc");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("No source file matching"),
+        "Expected 'no source file' error, got: {stderr}"
+    );
+}
