@@ -16,9 +16,10 @@ use crate::scanner::{
     LwcScanner, ObjectScanner, TriggerScanner, ValidationRuleScanner,
 };
 use crate::types::{
-    AllNames, AuraDocumentation, ClassDocumentation, FlexiPageDocumentation, FlowDocumentation,
-    LwcDocumentation, ObjectDocumentation, SourceFile, TriggerDocumentation,
-    ValidationRuleDocumentation,
+    AllNames, AuraDocumentation, AuraMetadata, ClassDocumentation, ClassMetadata,
+    FlexiPageDocumentation, FlexiPageMetadata, FlowDocumentation, FlowMetadata, LwcDocumentation,
+    LwcMetadata, ObjectDocumentation, ObjectMetadata, SourceFile, TriggerDocumentation,
+    TriggerMetadata, ValidationRuleDocumentation, ValidationRuleMetadata,
 };
 
 // Parser modules
@@ -28,14 +29,12 @@ use crate::{
 };
 
 // Prompt modules
-use crate::aura_prompt::{build_aura_prompt, AURA_SYSTEM_PROMPT};
-use crate::flexipage_prompt::{build_flexipage_prompt, FLEXIPAGE_SYSTEM_PROMPT};
-use crate::flow_prompt::{build_flow_prompt, FLOW_SYSTEM_PROMPT};
-use crate::lwc_prompt::{build_lwc_prompt, LWC_SYSTEM_PROMPT};
-use crate::object_prompt::{build_object_prompt, OBJECT_SYSTEM_PROMPT};
-use crate::prompt::{build_prompt, SYSTEM_PROMPT};
-use crate::trigger_prompt::{build_trigger_prompt, TRIGGER_SYSTEM_PROMPT};
-use crate::validation_rule_prompt::{build_validation_rule_prompt, VALIDATION_RULE_SYSTEM_PROMPT};
+use crate::prompts::{
+    build_aura_prompt, build_class_prompt, build_flexipage_prompt, build_flow_prompt,
+    build_lwc_prompt, build_object_prompt, build_trigger_prompt, build_validation_rule_prompt,
+    AURA_SYSTEM_PROMPT, CLASS_SYSTEM_PROMPT, FLEXIPAGE_SYSTEM_PROMPT, FLOW_SYSTEM_PROMPT,
+    LWC_SYSTEM_PROMPT, OBJECT_SYSTEM_PROMPT, TRIGGER_SYSTEM_PROMPT, VALIDATION_RULE_SYSTEM_PROMPT,
+};
 
 /// Known file extensions and their metadata types.
 const EXTENSION_MAP: &[(&str, MetadataType)] = &[
@@ -283,14 +282,16 @@ fn build_all_names_from_cache(cache: &Cache) -> AllNames {
 
 /// Context enum for rendering a single page of any metadata type.
 enum SinglePageContext<'a> {
-    Class(&'a renderer::RenderContext),
-    Trigger(&'a renderer::TriggerRenderContext),
-    Flow(&'a renderer::FlowRenderContext),
-    ValidationRule(&'a renderer::ValidationRuleRenderContext),
-    Object(&'a renderer::ObjectRenderContext),
-    Lwc(&'a renderer::LwcRenderContext),
-    FlexiPage(&'a renderer::FlexiPageRenderContext),
-    Aura(&'a renderer::AuraRenderContext),
+    Class(&'a renderer::RenderContext<ClassMetadata, ClassDocumentation>),
+    Trigger(&'a renderer::RenderContext<TriggerMetadata, TriggerDocumentation>),
+    Flow(&'a renderer::RenderContext<FlowMetadata, FlowDocumentation>),
+    ValidationRule(
+        &'a renderer::RenderContext<ValidationRuleMetadata, ValidationRuleDocumentation>,
+    ),
+    Object(&'a renderer::RenderContext<ObjectMetadata, ObjectDocumentation>),
+    Lwc(&'a renderer::RenderContext<LwcMetadata, LwcDocumentation>),
+    FlexiPage(&'a renderer::RenderContext<FlexiPageMetadata, FlexiPageDocumentation>),
+    Aura(&'a renderer::RenderContext<AuraMetadata, AuraDocumentation>),
 }
 
 /// Write a single documentation page to the output directory.
@@ -368,7 +369,7 @@ fn write_single_page(output_dir: &Path, ctx: SinglePageContext) -> Result<()> {
 fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path) -> Result<()> {
     let all_names = Arc::new(build_all_names_from_cache(cache));
 
-    let class_contexts: Vec<renderer::RenderContext> = cache
+    let class_contexts: Vec<renderer::RenderContext<ClassMetadata, ClassDocumentation>> = cache
         .class_entries()
         .map(|(_, e)| renderer::RenderContext {
             metadata: crate::types::ClassMetadata {
@@ -381,23 +382,24 @@ fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path) -> Result<()> {
         })
         .collect();
 
-    let trigger_contexts: Vec<renderer::TriggerRenderContext> = cache
-        .trigger_entries()
-        .map(|(_, e)| renderer::TriggerRenderContext {
-            metadata: crate::types::TriggerMetadata {
-                trigger_name: e.documentation.trigger_name.clone(),
-                sobject: e.documentation.sobject.clone(),
-                ..Default::default()
-            },
-            documentation: e.documentation.clone(),
-            all_names: Arc::clone(&all_names),
-            folder: String::new(),
-        })
-        .collect();
+    let trigger_contexts: Vec<renderer::RenderContext<TriggerMetadata, TriggerDocumentation>> =
+        cache
+            .trigger_entries()
+            .map(|(_, e)| renderer::RenderContext {
+                metadata: crate::types::TriggerMetadata {
+                    trigger_name: e.documentation.trigger_name.clone(),
+                    sobject: e.documentation.sobject.clone(),
+                    ..Default::default()
+                },
+                documentation: e.documentation.clone(),
+                all_names: Arc::clone(&all_names),
+                folder: String::new(),
+            })
+            .collect();
 
-    let flow_contexts: Vec<renderer::FlowRenderContext> = cache
+    let flow_contexts: Vec<renderer::RenderContext<FlowMetadata, FlowDocumentation>> = cache
         .flow_entries()
-        .map(|(_, e)| renderer::FlowRenderContext {
+        .map(|(_, e)| renderer::RenderContext {
             metadata: crate::types::FlowMetadata {
                 api_name: e.documentation.api_name.clone(),
                 label: e.documentation.label.clone(),
@@ -409,9 +411,11 @@ fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path) -> Result<()> {
         })
         .collect();
 
-    let vr_contexts: Vec<renderer::ValidationRuleRenderContext> = cache
+    let vr_contexts: Vec<
+        renderer::RenderContext<ValidationRuleMetadata, ValidationRuleDocumentation>,
+    > = cache
         .validation_rule_entries()
-        .map(|(_, e)| renderer::ValidationRuleRenderContext {
+        .map(|(_, e)| renderer::RenderContext {
             folder: e.documentation.object_name.clone(),
             metadata: crate::types::ValidationRuleMetadata {
                 rule_name: e.documentation.rule_name.clone(),
@@ -423,9 +427,9 @@ fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path) -> Result<()> {
         })
         .collect();
 
-    let object_contexts: Vec<renderer::ObjectRenderContext> = cache
+    let object_contexts: Vec<renderer::RenderContext<ObjectMetadata, ObjectDocumentation>> = cache
         .object_entries()
-        .map(|(_, e)| renderer::ObjectRenderContext {
+        .map(|(_, e)| renderer::RenderContext {
             metadata: crate::types::ObjectMetadata {
                 object_name: e.documentation.object_name.clone(),
                 label: e.documentation.label.clone(),
@@ -437,9 +441,9 @@ fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path) -> Result<()> {
         })
         .collect();
 
-    let lwc_contexts: Vec<renderer::LwcRenderContext> = cache
+    let lwc_contexts: Vec<renderer::RenderContext<LwcMetadata, LwcDocumentation>> = cache
         .lwc_entries()
-        .map(|(_, e)| renderer::LwcRenderContext {
+        .map(|(_, e)| renderer::RenderContext {
             metadata: crate::types::LwcMetadata {
                 component_name: e.documentation.component_name.clone(),
                 ..Default::default()
@@ -450,9 +454,11 @@ fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path) -> Result<()> {
         })
         .collect();
 
-    let flexipage_contexts: Vec<renderer::FlexiPageRenderContext> = cache
+    let flexipage_contexts: Vec<
+        renderer::RenderContext<FlexiPageMetadata, FlexiPageDocumentation>,
+    > = cache
         .flexipage_entries()
-        .map(|(_, e)| renderer::FlexiPageRenderContext {
+        .map(|(_, e)| renderer::RenderContext {
             metadata: crate::types::FlexiPageMetadata {
                 api_name: e.documentation.api_name.clone(),
                 ..Default::default()
@@ -463,9 +469,9 @@ fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path) -> Result<()> {
         })
         .collect();
 
-    let aura_contexts: Vec<renderer::AuraRenderContext> = cache
+    let aura_contexts: Vec<renderer::RenderContext<AuraMetadata, AuraDocumentation>> = cache
         .aura_entries()
-        .map(|(_, e)| renderer::AuraRenderContext {
+        .map(|(_, e)| renderer::RenderContext {
             metadata: crate::types::AuraMetadata {
                 component_name: e.documentation.component_name.clone(),
                 ..Default::default()
@@ -573,25 +579,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
     let source_dir = &args.source_dir;
 
     // Inform user if source hasn't changed since last build
-    let is_unchanged = match metadata_type {
-        MetadataType::Apex => cache.get_if_fresh(&cache_key, &hash, &model).is_some(),
-        MetadataType::Triggers => cache
-            .get_trigger_if_fresh(&cache_key, &hash, &model)
-            .is_some(),
-        MetadataType::Flows => cache.get_flow_if_fresh(&cache_key, &hash, &model).is_some(),
-        MetadataType::ValidationRules => cache
-            .get_validation_rule_if_fresh(&cache_key, &hash, &model)
-            .is_some(),
-        MetadataType::Objects => cache
-            .get_object_if_fresh(&cache_key, &hash, &model)
-            .is_some(),
-        MetadataType::Lwc => cache.get_lwc_if_fresh(&cache_key, &hash, &model).is_some(),
-        MetadataType::Flexipages => cache
-            .get_flexipage_if_fresh(&cache_key, &hash, &model)
-            .is_some(),
-        MetadataType::Aura => cache.get_aura_if_fresh(&cache_key, &hash, &model).is_some(),
-        MetadataType::CustomMetadata => false,
-    };
+    let is_unchanged = cache.is_fresh(metadata_type, &cache_key, &hash, &model);
     if is_unchanged {
         eprintln!("Note: Source is unchanged since last build. Re-generating anyway.");
     }
@@ -601,8 +589,8 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             let meta = parser::parse_apex_class(&source_file.raw_source)?;
             let doc: ClassDocumentation = doc_client::document(
                 client.as_ref(),
-                SYSTEM_PROMPT,
-                &build_prompt(&source_file, &meta),
+                CLASS_SYSTEM_PROMPT,
+                &build_class_prompt(&source_file, &meta),
                 &meta.class_name,
             )
             .await?;
@@ -627,7 +615,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             .await?;
             cache.update_trigger(cache_key, hash, &model, doc.clone());
             let folder = compute_folder(&source_file.path, source_dir);
-            let ctx = renderer::TriggerRenderContext {
+            let ctx = renderer::RenderContext {
                 metadata: meta,
                 documentation: doc,
                 all_names: Arc::new(build_all_names_from_cache(&cache)),
@@ -650,7 +638,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             .await?;
             cache.update_flow(cache_key, hash, &model, doc.clone());
             let folder = compute_folder(&source_file.path, source_dir);
-            let ctx = renderer::FlowRenderContext {
+            let ctx = renderer::RenderContext {
                 metadata: meta,
                 documentation: doc,
                 all_names: Arc::new(build_all_names_from_cache(&cache)),
@@ -671,7 +659,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             )
             .await?;
             cache.update_validation_rule(cache_key, hash, &model, doc.clone());
-            let ctx = renderer::ValidationRuleRenderContext {
+            let ctx = renderer::RenderContext {
                 folder: meta.object_name.clone(),
                 metadata: meta,
                 documentation: doc,
@@ -690,7 +678,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             .await?;
             cache.update_object(cache_key, hash, &model, doc.clone());
             let folder = compute_folder(&source_file.path, source_dir);
-            let ctx = renderer::ObjectRenderContext {
+            let ctx = renderer::RenderContext {
                 metadata: meta,
                 documentation: doc,
                 all_names: Arc::new(build_all_names_from_cache(&cache)),
@@ -709,7 +697,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             .await?;
             cache.update_lwc(cache_key, hash, &model, doc.clone());
             let folder = compute_folder(&source_file.path, source_dir);
-            let ctx = renderer::LwcRenderContext {
+            let ctx = renderer::RenderContext {
                 metadata: meta,
                 documentation: doc,
                 all_names: Arc::new(build_all_names_from_cache(&cache)),
@@ -732,7 +720,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             .await?;
             cache.update_flexipage(cache_key, hash, &model, doc.clone());
             let folder = compute_folder(&source_file.path, source_dir);
-            let ctx = renderer::FlexiPageRenderContext {
+            let ctx = renderer::RenderContext {
                 metadata: meta,
                 documentation: doc,
                 all_names: Arc::new(build_all_names_from_cache(&cache)),
@@ -755,7 +743,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             .await?;
             cache.update_aura(cache_key, hash, &model, doc.clone());
             let folder = compute_folder(&source_file.path, source_dir);
-            let ctx = renderer::AuraRenderContext {
+            let ctx = renderer::RenderContext {
                 metadata: meta,
                 documentation: doc,
                 all_names: Arc::new(build_all_names_from_cache(&cache)),
