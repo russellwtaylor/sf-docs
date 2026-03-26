@@ -1,12 +1,41 @@
+use std::sync::Arc;
+
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
-use crate::cli::{MetadataType, OutputFormat};
+use crate::cache::{self, Cache};
+use crate::cli::{MetadataType, OutputFormat, UpdateArgs};
+use crate::config::resolve_api_key;
+use crate::doc_client::{self, DocClient};
+use crate::gemini::GeminiClient;
+use crate::openai_compat::OpenAiCompatClient;
+use crate::providers::Provider;
+use crate::renderer;
 use crate::scanner::{
     ApexScanner, AuraScanner, CustomMetadataScanner, FileScanner, FlexiPageScanner, FlowScanner,
     LwcScanner, ObjectScanner, TriggerScanner, ValidationRuleScanner,
 };
-use crate::types::SourceFile;
+use crate::types::{
+    AllNames, AuraDocumentation, ClassDocumentation, FlexiPageDocumentation, FlowDocumentation,
+    LwcDocumentation, ObjectDocumentation, SourceFile, TriggerDocumentation,
+    ValidationRuleDocumentation,
+};
+
+// Parser modules
+use crate::{
+    aura_parser, custom_metadata_parser, flexipage_parser, flow_parser, lwc_parser,
+    object_parser, parser, trigger_parser, validation_rule_parser,
+};
+
+// Prompt modules
+use crate::aura_prompt::{build_aura_prompt, AURA_SYSTEM_PROMPT};
+use crate::flexipage_prompt::{build_flexipage_prompt, FLEXIPAGE_SYSTEM_PROMPT};
+use crate::flow_prompt::{build_flow_prompt, FLOW_SYSTEM_PROMPT};
+use crate::lwc_prompt::{build_lwc_prompt, LWC_SYSTEM_PROMPT};
+use crate::object_prompt::{build_object_prompt, OBJECT_SYSTEM_PROMPT};
+use crate::prompt::{build_prompt, SYSTEM_PROMPT};
+use crate::trigger_prompt::{build_trigger_prompt, TRIGGER_SYSTEM_PROMPT};
+use crate::validation_rule_prompt::{build_validation_rule_prompt, VALIDATION_RULE_SYSTEM_PROMPT};
 
 /// Known file extensions and their metadata types.
 const EXTENSION_MAP: &[(&str, MetadataType)] = &[
@@ -228,6 +257,594 @@ pub fn detect_output_format(output_dir: &Path, explicit: &Option<OutputFormat>) 
     } else {
         OutputFormat::Markdown
     }
+}
+
+/// Recomputes the folder (relative path from source_dir to file's parent).
+fn compute_folder(file_path: &Path, source_dir: &Path) -> String {
+    file_path
+        .parent()
+        .and_then(|p| p.strip_prefix(source_dir).ok())
+        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default()
+}
+
+/// Build an AllNames cross-linking index from the cache's stored documentation.
+fn build_all_names_from_cache(cache: &Cache) -> AllNames {
+    AllNames {
+        class_names: cache
+            .class_entries()
+            .map(|(_, e)| e.documentation.class_name.clone())
+            .collect(),
+        trigger_names: cache
+            .trigger_entries()
+            .map(|(_, e)| e.documentation.trigger_name.clone())
+            .collect(),
+        flow_names: cache
+            .flow_entries()
+            .map(|(_, e)| e.documentation.api_name.clone())
+            .collect(),
+        validation_rule_names: cache
+            .validation_rule_entries()
+            .map(|(_, e)| e.documentation.rule_name.clone())
+            .collect(),
+        object_names: cache
+            .object_entries()
+            .map(|(_, e)| e.documentation.object_name.clone())
+            .collect(),
+        lwc_names: cache
+            .lwc_entries()
+            .map(|(_, e)| e.documentation.component_name.clone())
+            .collect(),
+        flexipage_names: cache
+            .flexipage_entries()
+            .map(|(_, e)| e.documentation.api_name.clone())
+            .collect(),
+        aura_names: cache
+            .aura_entries()
+            .map(|(_, e)| e.documentation.component_name.clone())
+            .collect(),
+        custom_metadata_type_names: std::collections::HashSet::new(),
+        interface_implementors: std::collections::HashMap::new(),
+    }
+}
+
+/// Context enum for rendering a single page of any metadata type.
+enum SinglePageContext<'a> {
+    Class(&'a renderer::RenderContext),
+    Trigger(&'a renderer::TriggerRenderContext),
+    Flow(&'a renderer::FlowRenderContext),
+    ValidationRule(&'a renderer::ValidationRuleRenderContext),
+    Object(&'a renderer::ObjectRenderContext),
+    Lwc(&'a renderer::LwcRenderContext),
+    FlexiPage(&'a renderer::FlexiPageRenderContext),
+    Aura(&'a renderer::AuraRenderContext),
+}
+
+/// Write a single documentation page to the output directory.
+fn write_single_page(
+    output_dir: &Path,
+    format: &OutputFormat,
+    ctx: SinglePageContext,
+) -> Result<()> {
+    if *format == OutputFormat::Html {
+        // For HTML, the full site is rebuilt in rebuild_index_from_cache
+        return Ok(());
+    }
+
+    match ctx {
+        SinglePageContext::Class(c) => {
+            let dir = output_dir.join("classes");
+            std::fs::create_dir_all(&dir)?;
+            let page = renderer::render_class_page(c);
+            let name = renderer::sanitize_filename(&c.metadata.class_name);
+            std::fs::write(dir.join(format!("{name}.md")), page)?;
+            println!("\u{2713} Documentation updated: classes/{name}.md");
+        }
+        SinglePageContext::Trigger(c) => {
+            let dir = output_dir.join("triggers");
+            std::fs::create_dir_all(&dir)?;
+            let page = renderer::render_trigger_page(c);
+            let name = renderer::sanitize_filename(&c.metadata.trigger_name);
+            std::fs::write(dir.join(format!("{name}.md")), page)?;
+            println!("\u{2713} Documentation updated: triggers/{name}.md");
+        }
+        SinglePageContext::Flow(c) => {
+            let dir = output_dir.join("flows");
+            std::fs::create_dir_all(&dir)?;
+            let page = renderer::render_flow_page(c);
+            let name = renderer::sanitize_filename(&c.metadata.api_name);
+            std::fs::write(dir.join(format!("{name}.md")), page)?;
+            println!("\u{2713} Documentation updated: flows/{name}.md");
+        }
+        SinglePageContext::ValidationRule(c) => {
+            let dir = output_dir.join("validation-rules");
+            std::fs::create_dir_all(&dir)?;
+            let page = renderer::render_validation_rule_page(c);
+            let name = renderer::sanitize_filename(&c.metadata.rule_name);
+            std::fs::write(dir.join(format!("{name}.md")), page)?;
+            println!("\u{2713} Documentation updated: validation-rules/{name}.md");
+        }
+        SinglePageContext::Object(c) => {
+            let dir = output_dir.join("objects");
+            std::fs::create_dir_all(&dir)?;
+            let page = renderer::render_object_page(c);
+            let name = renderer::sanitize_filename(&c.metadata.object_name);
+            std::fs::write(dir.join(format!("{name}.md")), page)?;
+            println!("\u{2713} Documentation updated: objects/{name}.md");
+        }
+        SinglePageContext::Lwc(c) => {
+            let dir = output_dir.join("lwc");
+            std::fs::create_dir_all(&dir)?;
+            let page = renderer::render_lwc_page(c);
+            let name = renderer::sanitize_filename(&c.metadata.component_name);
+            std::fs::write(dir.join(format!("{name}.md")), page)?;
+            println!("\u{2713} Documentation updated: lwc/{name}.md");
+        }
+        SinglePageContext::FlexiPage(c) => {
+            let dir = output_dir.join("flexipages");
+            std::fs::create_dir_all(&dir)?;
+            let page = renderer::render_flexipage_page(c);
+            let name = renderer::sanitize_filename(&c.metadata.api_name);
+            std::fs::write(dir.join(format!("{name}.md")), page)?;
+            println!("\u{2713} Documentation updated: flexipages/{name}.md");
+        }
+        SinglePageContext::Aura(c) => {
+            let dir = output_dir.join("aura");
+            std::fs::create_dir_all(&dir)?;
+            let page = renderer::render_aura_page(c);
+            let name = renderer::sanitize_filename(&c.metadata.component_name);
+            std::fs::write(dir.join(format!("{name}.md")), page)?;
+            println!("\u{2713} Documentation updated: aura/{name}.md");
+        }
+    }
+    Ok(())
+}
+
+/// Rebuild the full index from cached documentation.
+fn rebuild_index_from_cache(
+    cache: &Cache,
+    output_dir: &Path,
+    format: &OutputFormat,
+) -> Result<()> {
+    let all_names = Arc::new(build_all_names_from_cache(cache));
+
+    let class_contexts: Vec<renderer::RenderContext> = cache
+        .class_entries()
+        .map(|(_, e)| renderer::RenderContext {
+            metadata: crate::types::ClassMetadata {
+                class_name: e.documentation.class_name.clone(),
+                ..Default::default()
+            },
+            documentation: e.documentation.clone(),
+            all_names: Arc::clone(&all_names),
+            folder: String::new(),
+        })
+        .collect();
+
+    let trigger_contexts: Vec<renderer::TriggerRenderContext> = cache
+        .trigger_entries()
+        .map(|(_, e)| renderer::TriggerRenderContext {
+            metadata: crate::types::TriggerMetadata {
+                trigger_name: e.documentation.trigger_name.clone(),
+                sobject: e.documentation.sobject.clone(),
+                ..Default::default()
+            },
+            documentation: e.documentation.clone(),
+            all_names: Arc::clone(&all_names),
+            folder: String::new(),
+        })
+        .collect();
+
+    let flow_contexts: Vec<renderer::FlowRenderContext> = cache
+        .flow_entries()
+        .map(|(_, e)| renderer::FlowRenderContext {
+            metadata: crate::types::FlowMetadata {
+                api_name: e.documentation.api_name.clone(),
+                label: e.documentation.label.clone(),
+                ..Default::default()
+            },
+            documentation: e.documentation.clone(),
+            all_names: Arc::clone(&all_names),
+            folder: String::new(),
+        })
+        .collect();
+
+    let vr_contexts: Vec<renderer::ValidationRuleRenderContext> = cache
+        .validation_rule_entries()
+        .map(|(_, e)| renderer::ValidationRuleRenderContext {
+            folder: e.documentation.object_name.clone(),
+            metadata: crate::types::ValidationRuleMetadata {
+                rule_name: e.documentation.rule_name.clone(),
+                object_name: e.documentation.object_name.clone(),
+                ..Default::default()
+            },
+            documentation: e.documentation.clone(),
+            all_names: Arc::clone(&all_names),
+        })
+        .collect();
+
+    let object_contexts: Vec<renderer::ObjectRenderContext> = cache
+        .object_entries()
+        .map(|(_, e)| renderer::ObjectRenderContext {
+            metadata: crate::types::ObjectMetadata {
+                object_name: e.documentation.object_name.clone(),
+                label: e.documentation.label.clone(),
+                ..Default::default()
+            },
+            documentation: e.documentation.clone(),
+            all_names: Arc::clone(&all_names),
+            folder: String::new(),
+        })
+        .collect();
+
+    let lwc_contexts: Vec<renderer::LwcRenderContext> = cache
+        .lwc_entries()
+        .map(|(_, e)| renderer::LwcRenderContext {
+            metadata: crate::types::LwcMetadata {
+                component_name: e.documentation.component_name.clone(),
+                ..Default::default()
+            },
+            documentation: e.documentation.clone(),
+            all_names: Arc::clone(&all_names),
+            folder: String::new(),
+        })
+        .collect();
+
+    let flexipage_contexts: Vec<renderer::FlexiPageRenderContext> = cache
+        .flexipage_entries()
+        .map(|(_, e)| renderer::FlexiPageRenderContext {
+            metadata: crate::types::FlexiPageMetadata {
+                api_name: e.documentation.api_name.clone(),
+                ..Default::default()
+            },
+            documentation: e.documentation.clone(),
+            all_names: Arc::clone(&all_names),
+            folder: String::new(),
+        })
+        .collect();
+
+    let aura_contexts: Vec<renderer::AuraRenderContext> = cache
+        .aura_entries()
+        .map(|(_, e)| renderer::AuraRenderContext {
+            metadata: crate::types::AuraMetadata {
+                component_name: e.documentation.component_name.clone(),
+                ..Default::default()
+            },
+            documentation: e.documentation.clone(),
+            all_names: Arc::clone(&all_names),
+            folder: String::new(),
+        })
+        .collect();
+
+    let bundle = renderer::DocumentationBundle {
+        classes: &class_contexts,
+        triggers: &trigger_contexts,
+        flows: &flow_contexts,
+        validation_rules: &vr_contexts,
+        objects: &object_contexts,
+        lwc: &lwc_contexts,
+        flexipages: &flexipage_contexts,
+        custom_metadata: &[],
+        aura: &aura_contexts,
+    };
+
+    if *format == OutputFormat::Html {
+        renderer::write_output(output_dir, format, &bundle)?;
+    } else {
+        let index = renderer::render_index(&bundle);
+        std::fs::write(output_dir.join("index.md"), index)?;
+    }
+
+    Ok(())
+}
+
+/// Entry point for `sfdoc update <target>`.
+pub async fn run_update(args: &UpdateArgs) -> Result<()> {
+    let provider = &args.provider;
+    let model: String = args
+        .model
+        .clone()
+        .unwrap_or_else(|| provider.default_model().to_string());
+
+    // Determine output directory
+    let output_dir = if let Some(ref out) = args.output {
+        out.clone()
+    } else {
+        let site_dir = PathBuf::from("site");
+        if site_dir.join(".sfdoc-cache.json").exists() {
+            site_dir
+        } else {
+            PathBuf::from("docs")
+        }
+    };
+
+    // Check that a prior generate has been run
+    let cache_path = output_dir.join(".sfdoc-cache.json");
+    if !cache_path.exists() {
+        bail!(
+            "No existing documentation found in '{}'. Run 'sfdoc generate' first, then use 'sfdoc update' to refresh individual files.",
+            output_dir.display()
+        );
+    }
+
+    let mut cache = Cache::load(&output_dir);
+    let format = detect_output_format(&output_dir, &args.format);
+
+    // Resolve the target to a source file + metadata type
+    let resolved = resolve_target(&args.target, &args.source_dir)?;
+    let source_file = resolved.source_file;
+    let metadata_type = resolved.metadata_type;
+
+    let type_label = metadata_type.cli_name();
+    let display_name = source_file
+        .filename
+        .strip_suffix(".cls")
+        .or_else(|| source_file.filename.strip_suffix(".trigger"))
+        .or_else(|| source_file.filename.strip_suffix(".flow-meta.xml"))
+        .or_else(|| {
+            source_file
+                .filename
+                .strip_suffix(".validationRule-meta.xml")
+        })
+        .or_else(|| source_file.filename.strip_suffix(".object-meta.xml"))
+        .or_else(|| source_file.filename.strip_suffix(".js-meta.xml"))
+        .or_else(|| source_file.filename.strip_suffix(".flexipage-meta.xml"))
+        .or_else(|| source_file.filename.strip_suffix(".md-meta.xml"))
+        .or_else(|| source_file.filename.strip_suffix(".cmp"))
+        .unwrap_or(&source_file.filename);
+
+    println!(
+        "Updating documentation for {} ({})...",
+        display_name, type_label
+    );
+
+    if args.verbose {
+        eprintln!("Resolved target: {}", source_file.path.display());
+        eprintln!("Metadata type:   {}", type_label);
+        eprintln!("Provider:        {}", provider.display_name());
+        eprintln!("Model:           {}", model);
+        eprintln!(
+            "Format:          {}",
+            if format == OutputFormat::Html {
+                "html"
+            } else {
+                "markdown"
+            }
+        );
+        eprintln!(
+            "Format source:   {}",
+            if args.format.is_some() {
+                "explicit"
+            } else {
+                "auto-detected"
+            }
+        );
+    }
+
+    // Hash the source
+    let hash = cache::hash_source(&source_file.raw_source);
+    if args.verbose {
+        eprintln!("Source hash:     {}", hash);
+    }
+
+    // Create AI client (single concurrency, no rate limit)
+    let api_key = resolve_api_key(provider)?;
+    let client: Arc<dyn DocClient> = match provider {
+        Provider::Gemini => Arc::new(GeminiClient::new(api_key, &model, 1, 0)?),
+        _ => Arc::new(OpenAiCompatClient::new(
+            api_key,
+            &model,
+            provider
+                .base_url()
+                .expect("non-Gemini provider must have a base URL"),
+            1,
+            provider.display_name(),
+            0,
+        )?),
+    };
+
+    let cache_key = source_file.path.to_string_lossy().into_owned();
+    let source_dir = &args.source_dir;
+
+    match metadata_type {
+        MetadataType::Apex => {
+            let meta = parser::parse_apex_class(&source_file.raw_source)?;
+            let doc: ClassDocumentation = doc_client::document(
+                client.as_ref(),
+                SYSTEM_PROMPT,
+                &build_prompt(&source_file, &meta),
+                &meta.class_name,
+            )
+            .await?;
+            cache.update(cache_key, hash, &model, doc.clone());
+            let folder = compute_folder(&source_file.path, source_dir);
+            let all_names = build_all_names_from_cache(&cache);
+            let ctx = renderer::RenderContext {
+                metadata: meta,
+                documentation: doc,
+                all_names: Arc::new(all_names),
+                folder,
+            };
+            write_single_page(&output_dir, &format, SinglePageContext::Class(&ctx))?;
+        }
+        MetadataType::Triggers => {
+            let meta = trigger_parser::parse_apex_trigger(&source_file.raw_source)?;
+            let doc: TriggerDocumentation = doc_client::document(
+                client.as_ref(),
+                TRIGGER_SYSTEM_PROMPT,
+                &build_trigger_prompt(&source_file, &meta),
+                &meta.trigger_name,
+            )
+            .await?;
+            cache.update_trigger(cache_key, hash, &model, doc.clone());
+            let folder = compute_folder(&source_file.path, source_dir);
+            let all_names = build_all_names_from_cache(&cache);
+            let ctx = renderer::TriggerRenderContext {
+                metadata: meta,
+                documentation: doc,
+                all_names: Arc::new(all_names),
+                folder,
+            };
+            write_single_page(&output_dir, &format, SinglePageContext::Trigger(&ctx))?;
+        }
+        MetadataType::Flows => {
+            let api_name = source_file
+                .filename
+                .strip_suffix(".flow-meta.xml")
+                .unwrap_or(&source_file.filename);
+            let meta = flow_parser::parse_flow(api_name, &source_file.raw_source)?;
+            let doc: FlowDocumentation = doc_client::document(
+                client.as_ref(),
+                FLOW_SYSTEM_PROMPT,
+                &build_flow_prompt(&source_file, &meta),
+                &meta.api_name,
+            )
+            .await?;
+            cache.update_flow(cache_key, hash, &model, doc.clone());
+            let folder = compute_folder(&source_file.path, source_dir);
+            let all_names = build_all_names_from_cache(&cache);
+            let ctx = renderer::FlowRenderContext {
+                metadata: meta,
+                documentation: doc,
+                all_names: Arc::new(all_names),
+                folder,
+            };
+            write_single_page(&output_dir, &format, SinglePageContext::Flow(&ctx))?;
+        }
+        MetadataType::ValidationRules => {
+            let meta = validation_rule_parser::parse_validation_rule(
+                &source_file.path,
+                &source_file.raw_source,
+            )?;
+            let doc: ValidationRuleDocumentation = doc_client::document(
+                client.as_ref(),
+                VALIDATION_RULE_SYSTEM_PROMPT,
+                &build_validation_rule_prompt(&source_file, &meta),
+                &meta.rule_name,
+            )
+            .await?;
+            cache.update_validation_rule(cache_key, hash, &model, doc.clone());
+            let all_names = build_all_names_from_cache(&cache);
+            let ctx = renderer::ValidationRuleRenderContext {
+                folder: meta.object_name.clone(),
+                metadata: meta,
+                documentation: doc,
+                all_names: Arc::new(all_names),
+            };
+            write_single_page(
+                &output_dir,
+                &format,
+                SinglePageContext::ValidationRule(&ctx),
+            )?;
+        }
+        MetadataType::Objects => {
+            let meta =
+                object_parser::parse_object(&source_file.path, &source_file.raw_source)?;
+            let doc: ObjectDocumentation = doc_client::document(
+                client.as_ref(),
+                OBJECT_SYSTEM_PROMPT,
+                &build_object_prompt(&source_file, &meta),
+                &meta.object_name,
+            )
+            .await?;
+            cache.update_object(cache_key, hash, &model, doc.clone());
+            let folder = compute_folder(&source_file.path, source_dir);
+            let all_names = build_all_names_from_cache(&cache);
+            let ctx = renderer::ObjectRenderContext {
+                metadata: meta,
+                documentation: doc,
+                all_names: Arc::new(all_names),
+                folder,
+            };
+            write_single_page(&output_dir, &format, SinglePageContext::Object(&ctx))?;
+        }
+        MetadataType::Lwc => {
+            let meta = lwc_parser::parse_lwc(&source_file.path, &source_file.raw_source)?;
+            let doc: LwcDocumentation = doc_client::document(
+                client.as_ref(),
+                LWC_SYSTEM_PROMPT,
+                &build_lwc_prompt(&source_file, &meta),
+                &meta.component_name,
+            )
+            .await?;
+            cache.update_lwc(cache_key, hash, &model, doc.clone());
+            let folder = compute_folder(&source_file.path, source_dir);
+            let all_names = build_all_names_from_cache(&cache);
+            let ctx = renderer::LwcRenderContext {
+                metadata: meta,
+                documentation: doc,
+                all_names: Arc::new(all_names),
+                folder,
+            };
+            write_single_page(&output_dir, &format, SinglePageContext::Lwc(&ctx))?;
+        }
+        MetadataType::Flexipages => {
+            let api_name = source_file
+                .filename
+                .strip_suffix(".flexipage-meta.xml")
+                .unwrap_or(&source_file.filename);
+            let meta = flexipage_parser::parse_flexipage(api_name, &source_file.raw_source)?;
+            let doc: FlexiPageDocumentation = doc_client::document(
+                client.as_ref(),
+                FLEXIPAGE_SYSTEM_PROMPT,
+                &build_flexipage_prompt(&source_file, &meta),
+                &meta.api_name,
+            )
+            .await?;
+            cache.update_flexipage(cache_key, hash, &model, doc.clone());
+            let folder = compute_folder(&source_file.path, source_dir);
+            let all_names = build_all_names_from_cache(&cache);
+            let ctx = renderer::FlexiPageRenderContext {
+                metadata: meta,
+                documentation: doc,
+                all_names: Arc::new(all_names),
+                folder,
+            };
+            write_single_page(&output_dir, &format, SinglePageContext::FlexiPage(&ctx))?;
+        }
+        MetadataType::CustomMetadata => {
+            let _record = custom_metadata_parser::parse_custom_metadata_record(
+                &source_file.path,
+                &source_file.raw_source,
+            )?;
+            eprintln!(
+                "Note: Custom metadata records don't use AI generation. Re-rendering index only."
+            );
+        }
+        MetadataType::Aura => {
+            let meta =
+                aura_parser::parse_aura(&source_file.path, &source_file.raw_source)?;
+            let doc: AuraDocumentation = doc_client::document(
+                client.as_ref(),
+                AURA_SYSTEM_PROMPT,
+                &build_aura_prompt(&source_file, &meta),
+                &meta.component_name,
+            )
+            .await?;
+            cache.update_aura(cache_key, hash, &model, doc.clone());
+            let folder = compute_folder(&source_file.path, source_dir);
+            let all_names = build_all_names_from_cache(&cache);
+            let ctx = renderer::AuraRenderContext {
+                metadata: meta,
+                documentation: doc,
+                all_names: Arc::new(all_names),
+                folder,
+            };
+            write_single_page(&output_dir, &format, SinglePageContext::Aura(&ctx))?;
+        }
+    }
+
+    // Rebuild the full index
+    rebuild_index_from_cache(&cache, &output_dir, &format)?;
+    println!("\u{2713} Index regenerated");
+
+    // Save cache
+    cache.save(&output_dir)?;
+    if args.verbose {
+        eprintln!("Cache saved");
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

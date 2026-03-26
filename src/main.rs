@@ -69,8 +69,8 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Update(_args) => {
-            anyhow::bail!("sfdoc update is not yet implemented");
+        Commands::Update(args) => {
+            sfdoc::update::run_update(&args).await?;
         }
         Commands::Auth(args) => {
             run_auth(&args.provider)?;
