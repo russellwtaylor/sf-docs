@@ -27,16 +27,15 @@ use types::{
     ValidationRuleDocumentation, ValidationRuleMetadata,
 };
 
-use crate::aura_prompt::{build_aura_prompt, AURA_SYSTEM_PROMPT};
 use crate::config;
-use crate::flexipage_prompt::{build_flexipage_prompt, FLEXIPAGE_SYSTEM_PROMPT};
-use crate::flow_prompt::{build_flow_prompt, FLOW_SYSTEM_PROMPT};
-use crate::lwc_prompt::{build_lwc_prompt, LWC_SYSTEM_PROMPT};
-use crate::object_prompt::{build_object_prompt, OBJECT_SYSTEM_PROMPT};
-use crate::prompt::{build_prompt, SYSTEM_PROMPT};
+use crate::prompts::{
+    build_aura_prompt, build_class_prompt, build_flexipage_prompt, build_flow_prompt,
+    build_lwc_prompt, build_object_prompt, build_trigger_prompt, build_validation_rule_prompt,
+    AURA_SYSTEM_PROMPT, CLASS_SYSTEM_PROMPT, FLEXIPAGE_SYSTEM_PROMPT, FLOW_SYSTEM_PROMPT,
+    LWC_SYSTEM_PROMPT, OBJECT_SYSTEM_PROMPT, TRIGGER_SYSTEM_PROMPT,
+    VALIDATION_RULE_SYSTEM_PROMPT,
+};
 use crate::providers;
-use crate::trigger_prompt::{build_trigger_prompt, TRIGGER_SYSTEM_PROMPT};
-use crate::validation_rule_prompt::{build_validation_rule_prompt, VALIDATION_RULE_SYSTEM_PROMPT};
 
 /// Filters parallel file/metadata vectors, keeping only entries where the
 /// metadata's tags match the CLI `--tag` filter.
@@ -606,8 +605,8 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
             tasks.spawn(async move {
                 let doc: ClassDocumentation = doc_client::document(
                     client.as_ref(),
-                    SYSTEM_PROMPT,
-                    &build_prompt(&files[idx], &class_meta[idx]),
+                    CLASS_SYSTEM_PROMPT,
+                    &build_class_prompt(&files[idx], &class_meta[idx]),
                     &class_meta[idx].class_name,
                 )
                 .await?;

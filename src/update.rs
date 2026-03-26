@@ -29,14 +29,13 @@ use crate::{
 };
 
 // Prompt modules
-use crate::aura_prompt::{build_aura_prompt, AURA_SYSTEM_PROMPT};
-use crate::flexipage_prompt::{build_flexipage_prompt, FLEXIPAGE_SYSTEM_PROMPT};
-use crate::flow_prompt::{build_flow_prompt, FLOW_SYSTEM_PROMPT};
-use crate::lwc_prompt::{build_lwc_prompt, LWC_SYSTEM_PROMPT};
-use crate::object_prompt::{build_object_prompt, OBJECT_SYSTEM_PROMPT};
-use crate::prompt::{build_prompt, SYSTEM_PROMPT};
-use crate::trigger_prompt::{build_trigger_prompt, TRIGGER_SYSTEM_PROMPT};
-use crate::validation_rule_prompt::{build_validation_rule_prompt, VALIDATION_RULE_SYSTEM_PROMPT};
+use crate::prompts::{
+    build_aura_prompt, build_class_prompt, build_flexipage_prompt, build_flow_prompt,
+    build_lwc_prompt, build_object_prompt, build_trigger_prompt, build_validation_rule_prompt,
+    AURA_SYSTEM_PROMPT, CLASS_SYSTEM_PROMPT, FLEXIPAGE_SYSTEM_PROMPT, FLOW_SYSTEM_PROMPT,
+    LWC_SYSTEM_PROMPT, OBJECT_SYSTEM_PROMPT, TRIGGER_SYSTEM_PROMPT,
+    VALIDATION_RULE_SYSTEM_PROMPT,
+};
 
 /// Known file extensions and their metadata types.
 const EXTENSION_MAP: &[(&str, MetadataType)] = &[
@@ -609,8 +608,8 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             let meta = parser::parse_apex_class(&source_file.raw_source)?;
             let doc: ClassDocumentation = doc_client::document(
                 client.as_ref(),
-                SYSTEM_PROMPT,
-                &build_prompt(&source_file, &meta),
+                CLASS_SYSTEM_PROMPT,
+                &build_class_prompt(&source_file, &meta),
                 &meta.class_name,
             )
             .await?;

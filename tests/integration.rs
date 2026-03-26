@@ -665,8 +665,8 @@ async fn openai_compat_client_documents_class() {
     let meta = parser::parse_apex_class(&file.raw_source).unwrap();
     let doc: sfdoc::types::ClassDocumentation = sfdoc::doc_client::document(
         &client,
-        sfdoc::prompt::SYSTEM_PROMPT,
-        &sfdoc::prompt::build_prompt(&file, &meta),
+        sfdoc::prompts::CLASS_SYSTEM_PROMPT,
+        &sfdoc::prompts::build_class_prompt(&file, &meta),
         &meta.class_name,
     )
     .await
@@ -711,8 +711,8 @@ async fn openai_compat_client_documents_trigger() {
     let meta = trigger_parser::parse_apex_trigger(&file.raw_source).unwrap();
     let doc: sfdoc::types::TriggerDocumentation = sfdoc::doc_client::document(
         &client,
-        sfdoc::trigger_prompt::TRIGGER_SYSTEM_PROMPT,
-        &sfdoc::trigger_prompt::build_trigger_prompt(&apex_file, &meta),
+        sfdoc::prompts::TRIGGER_SYSTEM_PROMPT,
+        &sfdoc::prompts::build_trigger_prompt(&apex_file, &meta),
         &meta.trigger_name,
     )
     .await
@@ -751,8 +751,8 @@ async fn openai_compat_client_returns_error_on_non_200() {
     let meta = parser::parse_apex_class(&file.raw_source).unwrap();
     let result: Result<sfdoc::types::ClassDocumentation, _> = sfdoc::doc_client::document(
         &client,
-        sfdoc::prompt::SYSTEM_PROMPT,
-        &sfdoc::prompt::build_prompt(&file, &meta),
+        sfdoc::prompts::CLASS_SYSTEM_PROMPT,
+        &sfdoc::prompts::build_class_prompt(&file, &meta),
         &meta.class_name,
     )
     .await;
@@ -841,8 +841,8 @@ async fn e2e_scan_parse_ai_render_markdown() {
     for (file, meta) in class_files.iter().zip(class_meta.iter()) {
         let doc: ClassDocumentation = sfdoc::doc_client::document(
             client.as_ref(),
-            sfdoc::prompt::SYSTEM_PROMPT,
-            &sfdoc::prompt::build_prompt(file, meta),
+            sfdoc::prompts::CLASS_SYSTEM_PROMPT,
+            &sfdoc::prompts::build_class_prompt(file, meta),
             &meta.class_name,
         )
         .await
@@ -853,8 +853,8 @@ async fn e2e_scan_parse_ai_render_markdown() {
     for (file, meta) in trigger_files.iter().zip(trigger_meta.iter()) {
         let doc: TriggerDocumentation = sfdoc::doc_client::document(
             client.as_ref(),
-            sfdoc::trigger_prompt::TRIGGER_SYSTEM_PROMPT,
-            &sfdoc::trigger_prompt::build_trigger_prompt(file, meta),
+            sfdoc::prompts::TRIGGER_SYSTEM_PROMPT,
+            &sfdoc::prompts::build_trigger_prompt(file, meta),
             &meta.trigger_name,
         )
         .await
