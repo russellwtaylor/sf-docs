@@ -34,6 +34,8 @@ SFDX project → scan → parse → AI provider → Markdown / HTML output
 | OpenAI        | `openai`             | `gpt-4o-mini`             | Paid                        |
 | Ollama        | `ollama`             | `llama3.2`                | Local — no API key required |
 
+> **Privacy notice:** sfdoc sends your Salesforce source code (Apex classes, triggers, Flow XML, etc.) to the configured AI provider for documentation generation. If your code contains sensitive business logic, credentials, or proprietary information, consider using Ollama for fully local processing or review your provider's data retention policies.
+
 ## Prerequisites
 
 - [Rust](https://rustup.rs/) 1.70 or later

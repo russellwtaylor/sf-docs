@@ -7,6 +7,12 @@ pub fn re_type_ref() -> &'static Regex {
     RE.get_or_init(|| Regex::new(r"\b([A-Z][a-zA-Z0-9_]+)\b").unwrap())
 }
 
+/// Matches ApexDoc block comments: `/** ... */`
+pub fn re_apexdoc() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"/\*\*[\s\S]*?\*/").unwrap())
+}
+
 fn re_tag() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new(r"@tag\s+(\w[\w-]*)").unwrap())

@@ -2,7 +2,7 @@ use anyhow::Result;
 use regex::Regex;
 use std::sync::OnceLock;
 
-use crate::apex_common::{extract_tags, re_type_ref, APEX_BUILTINS};
+use crate::apex_common::{extract_tags, re_apexdoc, re_type_ref, APEX_BUILTINS};
 use crate::types::{TriggerEvent, TriggerMetadata};
 
 // ---------------------------------------------------------------------------
@@ -15,11 +15,6 @@ fn re_trigger() -> &'static Regex {
         Regex::new(r"(?i)trigger\s+(?P<name>\w+)\s+on\s+(?P<sobject>\w+)\s*\((?P<events>[^)]+)\)")
             .unwrap()
     })
-}
-
-fn re_apexdoc() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"/\*\*[\s\S]*?\*/").unwrap())
 }
 
 // ---------------------------------------------------------------------------

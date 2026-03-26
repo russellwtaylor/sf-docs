@@ -91,7 +91,7 @@ pub fn build_flow_prompt(file: &SourceFile, metadata: &FlowMetadata) -> String {
     let xml_preview: String = file.raw_source.chars().take(3000).collect();
     prompt.push_str("## XML Preview\n\n```xml\n");
     prompt.push_str(&xml_preview);
-    if file.raw_source.len() > 3000 {
+    if file.raw_source.chars().count() > 3000 {
         prompt.push_str("\n... (truncated)");
     }
     prompt.push_str("\n```\n\n");
