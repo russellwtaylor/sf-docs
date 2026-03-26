@@ -10,6 +10,7 @@ pub mod flexipage_parser;
 pub mod flexipage_prompt;
 pub mod flow_parser;
 pub mod flow_prompt;
+pub mod generate;
 pub mod gemini;
 pub mod lwc_parser;
 pub mod lwc_prompt;
