@@ -13,11 +13,7 @@ use sfdoc::cache::{self, Cache};
 use sfdoc::flow_parser;
 use sfdoc::lwc_parser;
 use sfdoc::parser;
-use sfdoc::renderer::{self, RenderContext, TriggerRenderContext};
-use sfdoc::renderer::{
-    AuraRenderContext, FlexiPageRenderContext, FlowRenderContext, LwcRenderContext,
-    ObjectRenderContext, ValidationRuleRenderContext,
-};
+use sfdoc::renderer::{self, RenderContext};
 use sfdoc::scanner::{ApexScanner, FileScanner, FlowScanner, LwcScanner, TriggerScanner};
 use sfdoc::trigger_parser;
 use sfdoc::types::{
@@ -297,7 +293,7 @@ fn full_pipeline_writes_markdown_output() {
         interface_implementors: std::collections::HashMap::new(),
     });
 
-    let class_contexts: Vec<RenderContext> = class_files
+    let class_contexts: Vec<_> = class_files
         .iter()
         .zip(class_meta.iter())
         .map(|(file, meta)| {
@@ -316,7 +312,7 @@ fn full_pipeline_writes_markdown_output() {
         })
         .collect();
 
-    let trigger_contexts: Vec<TriggerRenderContext> = trigger_files
+    let trigger_contexts: Vec<_> = trigger_files
         .iter()
         .zip(trigger_meta.iter())
         .map(|(file, meta)| {
@@ -326,7 +322,7 @@ fn full_pipeline_writes_markdown_output() {
                 .and_then(|p| p.strip_prefix(trigger_fixtures_dir()).ok())
                 .map(|r| r.to_string_lossy().replace('\\', "/"))
                 .unwrap_or_default();
-            TriggerRenderContext {
+            RenderContext {
                 folder,
                 metadata: meta.clone(),
                 documentation: stub_trigger_doc(&meta.trigger_name, &meta.sobject),
@@ -387,7 +383,7 @@ fn markdown_class_page_contains_expected_sections() {
         interface_implementors: std::collections::HashMap::new(),
     });
 
-    let class_contexts: Vec<RenderContext> = class_files
+    let class_contexts: Vec<_> = class_files
         .iter()
         .zip(class_meta.iter())
         .map(|(_, meta)| RenderContext {
@@ -446,7 +442,7 @@ fn markdown_index_groups_by_folder() {
         interface_implementors: std::collections::HashMap::new(),
     });
 
-    let class_contexts: Vec<RenderContext> = class_files
+    let class_contexts: Vec<_> = class_files
         .iter()
         .zip(class_meta.iter())
         .map(|(file, meta)| {
@@ -882,7 +878,7 @@ async fn e2e_scan_parse_ai_render_markdown() {
         custom_metadata_type_names: HashSet::new(),
         interface_implementors: std::collections::HashMap::new(),
     });
-    let class_contexts: Vec<RenderContext> = class_files
+    let class_contexts: Vec<_> = class_files
         .iter()
         .zip(class_meta.iter())
         .zip(class_docs.iter())
@@ -901,7 +897,7 @@ async fn e2e_scan_parse_ai_render_markdown() {
             }
         })
         .collect();
-    let trigger_contexts: Vec<TriggerRenderContext> = trigger_files
+    let trigger_contexts: Vec<_> = trigger_files
         .iter()
         .zip(trigger_meta.iter())
         .zip(trigger_docs.iter())
@@ -912,7 +908,7 @@ async fn e2e_scan_parse_ai_render_markdown() {
                 .and_then(|p| p.strip_prefix(trigger_fixtures_dir()).ok())
                 .map(|r| r.to_string_lossy().replace('\\', "/"))
                 .unwrap_or_default();
-            TriggerRenderContext {
+            RenderContext {
                 folder,
                 metadata: meta.clone(),
                 documentation: doc.clone(),
@@ -1008,7 +1004,7 @@ fn flow_pipeline_writes_markdown_output() {
         interface_implementors: std::collections::HashMap::new(),
     });
 
-    let ctx = FlowRenderContext {
+    let ctx = RenderContext {
         metadata: meta,
         documentation: doc,
         all_names,
@@ -1114,7 +1110,7 @@ fn validation_rule_pipeline_writes_markdown_output() {
         interface_implementors: std::collections::HashMap::new(),
     });
 
-    let ctx = ValidationRuleRenderContext {
+    let ctx = RenderContext {
         metadata: meta.clone(),
         documentation: doc,
         all_names,
@@ -1199,7 +1195,7 @@ fn object_pipeline_writes_markdown_output() {
         interface_implementors: std::collections::HashMap::new(),
     });
 
-    let ctx = ObjectRenderContext {
+    let ctx = RenderContext {
         metadata: meta.clone(),
         documentation: doc,
         all_names,
@@ -1302,7 +1298,7 @@ fn lwc_pipeline_writes_markdown_output() {
         interface_implementors: std::collections::HashMap::new(),
     });
 
-    let ctx = LwcRenderContext {
+    let ctx = RenderContext {
         metadata: meta.clone(),
         documentation: doc,
         all_names,
@@ -1629,7 +1625,7 @@ fn mixed_bundle_renders_index_with_all_sections() {
         folder: "classes".to_string(),
     };
 
-    let trigger_ctx = TriggerRenderContext {
+    let trigger_ctx = RenderContext {
         metadata: trigger_parser::parse_apex_trigger(
             "trigger AccountTrigger on Account (before insert) { }",
         )
@@ -1639,7 +1635,7 @@ fn mixed_bundle_renders_index_with_all_sections() {
         folder: "triggers".to_string(),
     };
 
-    let flow_ctx = FlowRenderContext {
+    let flow_ctx = RenderContext {
         metadata: sfdoc::types::FlowMetadata {
             api_name: "My_Flow".to_string(),
             label: "My Flow".to_string(),
@@ -1650,7 +1646,7 @@ fn mixed_bundle_renders_index_with_all_sections() {
         folder: "flows".to_string(),
     };
 
-    let lwc_ctx = LwcRenderContext {
+    let lwc_ctx = RenderContext {
         metadata: sfdoc::types::LwcMetadata {
             component_name: "myButton".to_string(),
             ..Default::default()
@@ -1752,7 +1748,7 @@ fn flexipage_pipeline_writes_markdown_output() {
         interface_implementors: std::collections::HashMap::new(),
     });
 
-    let ctx = FlexiPageRenderContext {
+    let ctx = RenderContext {
         metadata: meta,
         documentation: stub_flexipage_doc("Account_Record_Page"),
         all_names,
@@ -1815,7 +1811,7 @@ fn aura_pipeline_writes_markdown_output() {
         interface_implementors: std::collections::HashMap::new(),
     });
 
-    let ctx = AuraRenderContext {
+    let ctx = RenderContext {
         metadata: meta,
         documentation: stub_aura_doc("myAuraComp"),
         all_names,

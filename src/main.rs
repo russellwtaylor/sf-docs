@@ -25,8 +25,10 @@ use scanner::{
     LwcScanner, ObjectScanner, TriggerScanner, ValidationRuleScanner,
 };
 use types::{
-    AllNames, AuraDocumentation, ClassDocumentation, FlexiPageDocumentation, FlowDocumentation,
-    LwcDocumentation, ObjectDocumentation, TriggerDocumentation, ValidationRuleDocumentation,
+    AllNames, AuraDocumentation, AuraMetadata, ClassDocumentation, ClassMetadata,
+    FlexiPageDocumentation, FlexiPageMetadata, FlowDocumentation, FlowMetadata, LwcDocumentation,
+    LwcMetadata, ObjectDocumentation, ObjectMetadata, TriggerDocumentation, TriggerMetadata,
+    ValidationRuleDocumentation, ValidationRuleMetadata,
 };
 
 // Prompt modules for building AI prompts per metadata type.
@@ -894,7 +896,7 @@ async fn main() -> Result<()> {
             let aura_files = Arc::try_unwrap(aura_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
             let aura_meta = Arc::try_unwrap(aura_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
 
-            let class_contexts: Vec<renderer::RenderContext> = files
+            let class_contexts: Vec<renderer::RenderContext<ClassMetadata, ClassDocumentation>> = files
                 .into_iter()
                 .zip(class_meta)
                 .zip(class_docs)
@@ -908,12 +910,12 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
-            let trigger_contexts: Vec<renderer::TriggerRenderContext> = trigger_files
+            let trigger_contexts: Vec<renderer::RenderContext<TriggerMetadata, TriggerDocumentation>> = trigger_files
                 .into_iter()
                 .zip(trigger_meta)
                 .zip(trigger_docs)
                 .filter_map(|((file, meta), doc)| {
-                    doc.map(|d| renderer::TriggerRenderContext {
+                    doc.map(|d| renderer::RenderContext {
                         folder: compute_folder(&file.path, &args.source_dir),
                         metadata: meta,
                         documentation: d,
@@ -922,12 +924,12 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
-            let flow_contexts: Vec<renderer::FlowRenderContext> = flow_files
+            let flow_contexts: Vec<renderer::RenderContext<FlowMetadata, FlowDocumentation>> = flow_files
                 .into_iter()
                 .zip(flow_meta)
                 .zip(flow_docs)
                 .filter_map(|((file, meta), doc)| {
-                    doc.map(|d| renderer::FlowRenderContext {
+                    doc.map(|d| renderer::RenderContext {
                         folder: compute_folder(&file.path, &args.source_dir),
                         metadata: meta,
                         documentation: d,
@@ -936,12 +938,12 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
-            let vr_contexts: Vec<renderer::ValidationRuleRenderContext> = vr_files
+            let vr_contexts: Vec<renderer::RenderContext<ValidationRuleMetadata, ValidationRuleDocumentation>> = vr_files
                 .into_iter()
                 .zip(vr_meta)
                 .zip(vr_docs)
                 .filter_map(|((_, meta), doc)| {
-                    doc.map(|d| renderer::ValidationRuleRenderContext {
+                    doc.map(|d| renderer::RenderContext {
                         folder: meta.object_name.clone(),
                         metadata: meta,
                         documentation: d,
@@ -950,12 +952,12 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
-            let object_contexts: Vec<renderer::ObjectRenderContext> = object_files
+            let object_contexts: Vec<renderer::RenderContext<ObjectMetadata, ObjectDocumentation>> = object_files
                 .into_iter()
                 .zip(object_meta)
                 .zip(object_docs)
                 .filter_map(|((file, meta), doc)| {
-                    doc.map(|d| renderer::ObjectRenderContext {
+                    doc.map(|d| renderer::RenderContext {
                         folder: compute_folder(&file.path, &args.source_dir),
                         metadata: meta,
                         documentation: d,
@@ -964,12 +966,12 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
-            let lwc_contexts: Vec<renderer::LwcRenderContext> = lwc_files
+            let lwc_contexts: Vec<renderer::RenderContext<LwcMetadata, LwcDocumentation>> = lwc_files
                 .into_iter()
                 .zip(lwc_meta)
                 .zip(lwc_docs)
                 .filter_map(|((file, meta), doc)| {
-                    doc.map(|d| renderer::LwcRenderContext {
+                    doc.map(|d| renderer::RenderContext {
                         folder: compute_folder(&file.path, &args.source_dir),
                         metadata: meta,
                         documentation: d,
@@ -978,12 +980,12 @@ async fn main() -> Result<()> {
                 })
                 .collect();
 
-            let flexipage_contexts: Vec<renderer::FlexiPageRenderContext> = flexipage_files
+            let flexipage_contexts: Vec<renderer::RenderContext<FlexiPageMetadata, FlexiPageDocumentation>> = flexipage_files
                 .into_iter()
                 .zip(flexipage_meta)
                 .zip(flexipage_docs)
                 .filter_map(|((file, meta), doc)| {
-                    doc.map(|d| renderer::FlexiPageRenderContext {
+                    doc.map(|d| renderer::RenderContext {
                         folder: compute_folder(&file.path, &args.source_dir),
                         metadata: meta,
                         documentation: d,
@@ -1005,12 +1007,12 @@ async fn main() -> Result<()> {
                 )
                 .collect();
 
-            let aura_contexts: Vec<renderer::AuraRenderContext> = aura_files
+            let aura_contexts: Vec<renderer::RenderContext<AuraMetadata, AuraDocumentation>> = aura_files
                 .into_iter()
                 .zip(aura_meta)
                 .zip(aura_docs)
                 .filter_map(|((file, meta), doc)| {
-                    doc.map(|d| renderer::AuraRenderContext {
+                    doc.map(|d| renderer::RenderContext {
                         folder: compute_folder(&file.path, &args.source_dir),
                         metadata: meta,
                         documentation: d,
