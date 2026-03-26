@@ -501,10 +501,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
         .unwrap_or_else(|| provider.default_model().to_string());
 
     // Determine output directory
-    let output_dir = args
-        .output
-        .clone()
-        .unwrap_or_else(|| PathBuf::from("docs"));
+    let output_dir = args.output.clone().unwrap_or_else(|| PathBuf::from("docs"));
 
     // Check that a prior generate has been run
     let cache_path = output_dir.join(".sfdoc-cache.json");
@@ -874,5 +871,4 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("File not found"));
     }
-
 }

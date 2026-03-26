@@ -1347,7 +1347,6 @@ fn lwc_pipeline_writes_markdown_output() {
     );
 }
 
-
 // ---------------------------------------------------------------------------
 // Fixture-based scanner + parser tests for all metadata types
 // ---------------------------------------------------------------------------

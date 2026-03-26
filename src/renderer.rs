@@ -1405,10 +1405,7 @@ pub fn render_aura_page(ctx: &AuraRenderContext) -> String {
     out
 }
 
-pub fn write_output(
-    output_dir: &Path,
-    bundle: &DocumentationBundle,
-) -> Result<()> {
+pub fn write_output(output_dir: &Path, bundle: &DocumentationBundle) -> Result<()> {
     let class_contexts = bundle.classes;
     let trigger_contexts = bundle.triggers;
     let flow_contexts = bundle.flows;
