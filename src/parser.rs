@@ -2,7 +2,7 @@ use anyhow::Result;
 use regex::Regex;
 use std::sync::OnceLock;
 
-use crate::apex_common::{extract_tags, re_type_ref, APEX_BUILTINS};
+use crate::apex_common::{extract_tags, re_apexdoc, re_type_ref, APEX_BUILTINS};
 use crate::types::{ClassMetadata, MethodMetadata, ParamMetadata, PropertyMetadata};
 
 // ---------------------------------------------------------------------------
@@ -55,11 +55,6 @@ fn re_property() -> &'static Regex {
         )
         .unwrap()
     })
-}
-
-fn re_apexdoc() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"/\*\*[\s\S]*?\*/").unwrap())
 }
 
 // ---------------------------------------------------------------------------

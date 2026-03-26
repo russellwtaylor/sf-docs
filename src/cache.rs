@@ -12,6 +12,9 @@ use crate::types::{
 
 const CACHE_FILE: &str = ".sfdoc-cache.json";
 
+/// Bump this when the cache schema changes to force a full rebuild.
+const CACHE_VERSION: u32 = 1;
+
 // ---------------------------------------------------------------------------
 // Cache types
 // ---------------------------------------------------------------------------
@@ -34,8 +37,11 @@ pub type LwcCacheEntry = TypedEntry<LwcDocumentation>;
 pub type FlexiPageCacheEntry = TypedEntry<FlexiPageDocumentation>;
 pub type AuraCacheEntry = TypedEntry<AuraDocumentation>;
 
-#[derive(Serialize, Deserialize, Default)]
+#[derive(Serialize, Deserialize)]
 pub struct Cache {
+    /// Schema version — the entire cache is discarded when this doesn't match CACHE_VERSION.
+    #[serde(default)]
+    cache_version: u32,
     entries: HashMap<String, CacheEntry>,
     /// Trigger entries are in a separate map so the field can be absent in
     /// cache files written before trigger support was added.
@@ -65,6 +71,22 @@ pub struct Cache {
     /// cache files written before Aura support was added.
     #[serde(default)]
     aura_entries: HashMap<String, AuraCacheEntry>,
+}
+
+impl Default for Cache {
+    fn default() -> Self {
+        Self {
+            cache_version: CACHE_VERSION,
+            entries: HashMap::default(),
+            trigger_entries: HashMap::default(),
+            flow_entries: HashMap::default(),
+            validation_rule_entries: HashMap::default(),
+            object_entries: HashMap::default(),
+            lwc_entries: HashMap::default(),
+            flexipage_entries: HashMap::default(),
+            aura_entries: HashMap::default(),
+        }
+    }
 }
 
 /// Generates a `get_*_if_fresh` / `update_*` pair for a given HashMap field.
@@ -107,8 +129,15 @@ impl Cache {
                 return Self::default();
             }
         };
-        match serde_json::from_str(&data) {
-            Ok(cache) => cache,
+        match serde_json::from_str::<Cache>(&data) {
+            Ok(cache) if cache.cache_version == CACHE_VERSION => cache,
+            Ok(cache) => {
+                eprintln!(
+                    "Warning: cache version mismatch (found {}, expected {}) — rebuilding",
+                    cache.cache_version, CACHE_VERSION
+                );
+                Self::default()
+            }
             Err(e) => {
                 eprintln!(
                     "Warning: cache file at {} is corrupt and will be ignored: {e}",

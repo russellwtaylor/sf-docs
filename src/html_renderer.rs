@@ -1677,94 +1677,109 @@ fn render_lwc_page(
         body.push_str("<h2>See Also</h2>\n");
         body.push_str("<ul>\n");
         for rel in &doc.relationships {
-            let linked = class_names
-                .iter()
-                .find(|&&name| rel.contains(name))
-                .map(|&name| {
-                    let (_, folder, _) = class_items.iter().find(|&&(n, _, _)| n == name).unwrap();
-                    format!(
-                        "<a href=\"../classes/{}/{}.html\">{}</a>",
-                        escape(folder),
-                        escape(name),
-                        escape(rel)
-                    )
-                })
-                .or_else(|| {
-                    trigger_names
-                        .iter()
-                        .find(|&&name| rel.contains(name))
-                        .map(|&name| {
-                            let (_, folder, _) =
-                                trigger_items.iter().find(|&&(n, _, _)| n == name).unwrap();
-                            format!(
-                                "<a href=\"../triggers/{}/{}.html\">{}</a>",
-                                escape(folder),
-                                escape(name),
-                                escape(rel)
-                            )
-                        })
-                })
-                .or_else(|| {
-                    flow_names
-                        .iter()
-                        .find(|&&name| rel.contains(name))
-                        .map(|&name| {
-                            let (_, folder, _) =
-                                flow_items.iter().find(|&&(n, _, _)| n == name).unwrap();
-                            format!(
-                                "<a href=\"../flows/{}/{}.html\">{}</a>",
-                                escape(folder),
-                                escape(name),
-                                escape(rel)
-                            )
-                        })
-                })
-                .or_else(|| {
-                    vr_names
-                        .iter()
-                        .find(|&&name| rel.contains(name))
-                        .map(|&name| {
-                            let (_, folder, _) =
-                                vr_items.iter().find(|&&(n, _, _)| n == name).unwrap();
-                            format!(
-                                "<a href=\"../validation-rules/{}/{}.html\">{}</a>",
-                                escape(folder),
-                                escape(name),
-                                escape(rel)
-                            )
-                        })
-                })
-                .or_else(|| {
-                    obj_names
-                        .iter()
-                        .find(|&&name| rel.contains(name))
-                        .map(|&name| {
-                            let (_, folder, _) =
-                                obj_items.iter().find(|&&(n, _, _)| n == name).unwrap();
-                            format!(
-                                "<a href=\"../objects/{}/{}.html\">{}</a>",
-                                escape(folder),
-                                escape(name),
-                                escape(rel)
-                            )
-                        })
-                })
-                .or_else(|| {
-                    lwc_names
-                        .iter()
-                        .find(|&&name| rel.contains(name))
-                        .map(|&name| {
-                            let (_, folder, _) =
-                                lwc_items.iter().find(|&&(n, _, _)| n == name).unwrap();
-                            format!(
-                                "<a href=\"../lwc/{}/{}.html\">{}</a>",
-                                escape(folder),
-                                escape(name),
-                                escape(rel)
-                            )
-                        })
-                })
-                .unwrap_or_else(|| escape(rel));
+            let linked =
+                class_names
+                    .iter()
+                    .find(|&&name| rel.contains(name))
+                    .and_then(|&name| {
+                        class_items
+                            .iter()
+                            .find(|&&(n, _, _)| n == name)
+                            .map(|&(_, folder, _)| {
+                                format!(
+                                    "<a href=\"../classes/{}/{}.html\">{}</a>",
+                                    escape(folder),
+                                    escape(name),
+                                    escape(rel)
+                                )
+                            })
+                    })
+                    .or_else(|| {
+                        trigger_names
+                            .iter()
+                            .find(|&&name| rel.contains(name))
+                            .and_then(|&name| {
+                                trigger_items.iter().find(|&&(n, _, _)| n == name).map(
+                                    |&(_, folder, _)| {
+                                        format!(
+                                            "<a href=\"../triggers/{}/{}.html\">{}</a>",
+                                            escape(folder),
+                                            escape(name),
+                                            escape(rel)
+                                        )
+                                    },
+                                )
+                            })
+                    })
+                    .or_else(|| {
+                        flow_names
+                            .iter()
+                            .find(|&&name| rel.contains(name))
+                            .and_then(|&name| {
+                                flow_items.iter().find(|&&(n, _, _)| n == name).map(
+                                    |&(_, folder, _)| {
+                                        format!(
+                                            "<a href=\"../flows/{}/{}.html\">{}</a>",
+                                            escape(folder),
+                                            escape(name),
+                                            escape(rel)
+                                        )
+                                    },
+                                )
+                            })
+                    })
+                    .or_else(|| {
+                        vr_names
+                            .iter()
+                            .find(|&&name| rel.contains(name))
+                            .and_then(|&name| {
+                                vr_items.iter().find(|&&(n, _, _)| n == name).map(
+                                    |&(_, folder, _)| {
+                                        format!(
+                                            "<a href=\"../validation-rules/{}/{}.html\">{}</a>",
+                                            escape(folder),
+                                            escape(name),
+                                            escape(rel)
+                                        )
+                                    },
+                                )
+                            })
+                    })
+                    .or_else(|| {
+                        obj_names
+                            .iter()
+                            .find(|&&name| rel.contains(name))
+                            .and_then(|&name| {
+                                obj_items.iter().find(|&&(n, _, _)| n == name).map(
+                                    |&(_, folder, _)| {
+                                        format!(
+                                            "<a href=\"../objects/{}/{}.html\">{}</a>",
+                                            escape(folder),
+                                            escape(name),
+                                            escape(rel)
+                                        )
+                                    },
+                                )
+                            })
+                    })
+                    .or_else(|| {
+                        lwc_names
+                            .iter()
+                            .find(|&&name| rel.contains(name))
+                            .and_then(|&name| {
+                                lwc_items.iter().find(|&&(n, _, _)| n == name).map(
+                                    |&(_, folder, _)| {
+                                        format!(
+                                            "<a href=\"../lwc/{}/{}.html\">{}</a>",
+                                            escape(folder),
+                                            escape(name),
+                                            escape(rel)
+                                        )
+                                    },
+                                )
+                            })
+                    })
+                    .unwrap_or_else(|| escape(rel));
             body.push_str(&format!("<li>{linked}</li>\n"));
         }
         body.push_str("</ul>\n");

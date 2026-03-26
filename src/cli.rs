@@ -110,7 +110,7 @@ pub struct GenerateArgs {
 
     /// Only document files whose name matches this glob pattern (e.g. 'Order*', '*Service').
     /// Applied across all metadata types against the logical filename.
-    #[arg(long)]
+    #[arg(long, value_parser = parse_glob_pattern)]
     pub name_filter: Option<String>,
 
     /// Only document items tagged with at least one of these labels (comma-separated).
@@ -137,8 +137,9 @@ impl GenerateArgs {
         match &self.name_filter {
             None => true,
             Some(pattern) => {
-                let glob = globset::Glob::new(pattern)
-                    .unwrap_or_else(|_| globset::Glob::new("*").unwrap());
+                // Pattern is pre-validated by parse_glob_pattern at CLI parse time.
+                let glob =
+                    globset::Glob::new(pattern).expect("pattern was validated at parse time");
                 glob.compile_matcher().is_match(filename_stem)
             }
         }
@@ -155,6 +156,12 @@ impl GenerateArgs {
             .iter()
             .any(|t| self.tags.iter().any(|f| f.eq_ignore_ascii_case(t)))
     }
+}
+
+fn parse_glob_pattern(s: &str) -> Result<String, String> {
+    globset::Glob::new(s)
+        .map(|_| s.to_string())
+        .map_err(|e| format!("invalid glob pattern '{s}': {e}"))
 }
 
 fn parse_concurrency(s: &str) -> Result<usize, String> {
