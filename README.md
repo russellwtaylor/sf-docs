@@ -158,6 +158,24 @@ By default, `sfdoc` skips files whose source hasn't changed since the last run (
 sfdoc generate --force
 ```
 
+### Update a single file
+
+Re-document one file without running a full rebuild:
+
+```bash
+# By name (searches existing cache for a match)
+sfdoc update OrderService
+
+# By file path
+sfdoc update force-app/main/default/classes/OrderService.cls
+```
+
+The output format is auto-detected from your existing docs directory. Override with `--format`:
+
+```bash
+sfdoc update OrderService --format html
+```
+
 ### Tune concurrency
 
 ```bash
@@ -233,6 +251,7 @@ sfdoc <COMMAND>
 
 Commands:
   generate    Generate documentation from Apex source files
+  update      Re-document a single file without a full rebuild
   auth        Save an AI provider API key to the OS keychain
   status      Show installation status and configuration
   help        Print this message or the help of the given subcommand(s)
@@ -261,6 +280,22 @@ Options:
   --verbose              Enable verbose logging
   -h, --help             Print help
   -V, --version          Print version
+
+sfdoc update <TARGET> [OPTIONS]
+
+Arguments:
+  <TARGET>               File path or name to re-document
+                         (e.g. 'OrderService' or 'force-app/.../OrderService.cls')
+
+Options:
+  --source-dir <PATH>    Path to Apex source directory
+                         [default: force-app/main/default]
+  --output <PATH>        Output directory for generated files
+  --provider <PROVIDER>  AI provider [default: gemini]
+  --model <MODEL>        Model override (uses provider default if omitted)
+  --format <FORMAT>      Output format (auto-detected from existing output if omitted)
+                         [possible values: markdown, html]
+  --verbose              Enable verbose logging
 
 sfdoc auth [OPTIONS]
 
