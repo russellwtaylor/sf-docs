@@ -7,12 +7,11 @@ use crate::{
 use anyhow::{Context, Result};
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
-use std::path::Path;
 use std::sync::Arc;
 use tokio::task::JoinSet;
 
 use cli::MetadataType;
-use config::{resolve_api_key};
+use config::resolve_api_key;
 use doc_client::DocClient;
 use gemini::GeminiClient;
 use openai_compat::OpenAiCompatClient;
@@ -64,11 +63,6 @@ where
     (kept_files, kept_meta)
 }
 
-/// Re-export from types for backward compatibility.
-fn compute_folder(file_path: &Path, source_dir: &Path) -> String {
-    types::compute_folder(file_path, source_dir)
-}
-
 pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
     let provider = &args.provider;
     // Arc<str> so task closures get a cheap pointer copy instead of a String clone.
@@ -100,9 +94,9 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
     // Scan for supported source types, skipping those excluded by --type.
     let scan = |enabled, scanner: &dyn FileScanner, label: &str| -> Result<Vec<_>> {
         if enabled {
-            scanner.scan(&args.source_dir).with_context(|| {
-                format!("Failed to scan {label} in {}", args.source_dir.display())
-            })
+            scanner
+                .scan(&args.source_dir)
+                .with_context(|| format!("Failed to scan {label} in {}", args.source_dir.display()))
         } else {
             Ok(Vec::new())
         }
@@ -509,8 +503,7 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
     }
 
     let mut flexipage_work: Vec<usize> = Vec::new();
-    let mut flexipage_docs: Vec<Option<FlexiPageDocumentation>> =
-        vec![None; flexipage_files.len()];
+    let mut flexipage_docs: Vec<Option<FlexiPageDocumentation>> = vec![None; flexipage_files.len()];
     for (i, (f, h)) in flexipage_files
         .iter()
         .zip(flexipage_hashes.iter())
@@ -767,12 +760,7 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
                     }
                     WorkResult::Trigger(idx, doc) => {
                         let key = trigger_files[idx].path.to_string_lossy().into_owned();
-                        cache.update_trigger(
-                            key,
-                            trigger_hashes[idx].clone(),
-                            &model,
-                            doc.clone(),
-                        );
+                        cache.update_trigger(key, trigger_hashes[idx].clone(), &model, doc.clone());
                         trigger_docs[idx] = Some(doc);
                     }
                     WorkResult::Flow(idx, doc) => {
@@ -792,12 +780,7 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
                     }
                     WorkResult::Object(idx, doc) => {
                         let key = object_files[idx].path.to_string_lossy().into_owned();
-                        cache.update_object(
-                            key,
-                            object_hashes[idx].clone(),
-                            &model,
-                            doc.clone(),
-                        );
+                        cache.update_object(key, object_hashes[idx].clone(), &model, doc.clone());
                         object_docs[idx] = Some(doc);
                     }
                     WorkResult::Lwc(idx, doc) => {
@@ -817,12 +800,7 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
                     }
                     WorkResult::Aura(idx, doc) => {
                         let key = aura_files[idx].path.to_string_lossy().into_owned();
-                        cache.update_aura(
-                            key,
-                            aura_hashes[idx].clone(),
-                            &model,
-                            doc.clone(),
-                        );
+                        cache.update_aura(key, aura_hashes[idx].clone(), &model, doc.clone());
                         aura_docs[idx] = Some(doc);
                     }
                 },
@@ -850,23 +828,18 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
         "Internal error: could not reclaim resources after documentation generation. Please retry.";
     let files = Arc::try_unwrap(files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
     let class_meta = Arc::try_unwrap(class_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
-    let trigger_files =
-        Arc::try_unwrap(trigger_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
-    let trigger_meta =
-        Arc::try_unwrap(trigger_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+    let trigger_files = Arc::try_unwrap(trigger_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+    let trigger_meta = Arc::try_unwrap(trigger_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
     let flow_files = Arc::try_unwrap(flow_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
     let flow_meta = Arc::try_unwrap(flow_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
     let vr_files = Arc::try_unwrap(vr_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
     let vr_meta = Arc::try_unwrap(vr_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
-    let object_files =
-        Arc::try_unwrap(object_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+    let object_files = Arc::try_unwrap(object_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
     let object_meta = Arc::try_unwrap(object_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
     let lwc_files = Arc::try_unwrap(lwc_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
     let lwc_meta = Arc::try_unwrap(lwc_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
-    let flexipage_files =
-        Arc::try_unwrap(flexipage_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
-    let flexipage_meta =
-        Arc::try_unwrap(flexipage_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+    let flexipage_files = Arc::try_unwrap(flexipage_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+    let flexipage_meta = Arc::try_unwrap(flexipage_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
     let aura_files = Arc::try_unwrap(aura_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
     let aura_meta = Arc::try_unwrap(aura_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
 
@@ -876,7 +849,7 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
         .zip(class_docs)
         .filter_map(|((file, meta), doc)| {
             doc.map(|d| renderer::RenderContext {
-                folder: compute_folder(&file.path, &args.source_dir),
+                folder: types::compute_folder(&file.path, &args.source_dir),
                 metadata: meta,
                 documentation: d,
                 all_names: Arc::clone(&all_names),
@@ -891,7 +864,7 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
             .zip(trigger_docs)
             .filter_map(|((file, meta), doc)| {
                 doc.map(|d| renderer::RenderContext {
-                    folder: compute_folder(&file.path, &args.source_dir),
+                    folder: types::compute_folder(&file.path, &args.source_dir),
                     metadata: meta,
                     documentation: d,
                     all_names: Arc::clone(&all_names),
@@ -905,7 +878,7 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
         .zip(flow_docs)
         .filter_map(|((file, meta), doc)| {
             doc.map(|d| renderer::RenderContext {
-                folder: compute_folder(&file.path, &args.source_dir),
+                folder: types::compute_folder(&file.path, &args.source_dir),
                 metadata: meta,
                 documentation: d,
                 all_names: Arc::clone(&all_names),
@@ -936,7 +909,7 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
             .zip(object_docs)
             .filter_map(|((file, meta), doc)| {
                 doc.map(|d| renderer::RenderContext {
-                    folder: compute_folder(&file.path, &args.source_dir),
+                    folder: types::compute_folder(&file.path, &args.source_dir),
                     metadata: meta,
                     documentation: d,
                     all_names: Arc::clone(&all_names),
@@ -950,7 +923,7 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
         .zip(lwc_docs)
         .filter_map(|((file, meta), doc)| {
             doc.map(|d| renderer::RenderContext {
-                folder: compute_folder(&file.path, &args.source_dir),
+                folder: types::compute_folder(&file.path, &args.source_dir),
                 metadata: meta,
                 documentation: d,
                 all_names: Arc::clone(&all_names),
@@ -966,7 +939,7 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
         .zip(flexipage_docs)
         .filter_map(|((file, meta), doc)| {
             doc.map(|d| renderer::RenderContext {
-                folder: compute_folder(&file.path, &args.source_dir),
+                folder: types::compute_folder(&file.path, &args.source_dir),
                 metadata: meta,
                 documentation: d,
                 all_names: Arc::clone(&all_names),
@@ -979,12 +952,7 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
     // documentation is generated for them, so there is no cache look-up or API call.
     let custom_metadata_contexts: Vec<renderer::CustomMetadataRenderContext> = cm_by_type
         .into_iter()
-        .map(
-            |(type_name, records)| renderer::CustomMetadataRenderContext {
-                type_name,
-                records,
-            },
-        )
+        .map(|(type_name, records)| renderer::CustomMetadataRenderContext { type_name, records })
         .collect();
 
     let aura_contexts: Vec<renderer::RenderContext<AuraMetadata, AuraDocumentation>> = aura_files
@@ -993,7 +961,7 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
         .zip(aura_docs)
         .filter_map(|((file, meta), doc)| {
             doc.map(|d| renderer::RenderContext {
-                folder: compute_folder(&file.path, &args.source_dir),
+                folder: types::compute_folder(&file.path, &args.source_dir),
                 metadata: meta,
                 documentation: d,
                 all_names: Arc::clone(&all_names),

@@ -287,7 +287,9 @@ enum SinglePageContext<'a> {
     Class(&'a renderer::RenderContext<ClassMetadata, ClassDocumentation>),
     Trigger(&'a renderer::RenderContext<TriggerMetadata, TriggerDocumentation>),
     Flow(&'a renderer::RenderContext<FlowMetadata, FlowDocumentation>),
-    ValidationRule(&'a renderer::RenderContext<ValidationRuleMetadata, ValidationRuleDocumentation>),
+    ValidationRule(
+        &'a renderer::RenderContext<ValidationRuleMetadata, ValidationRuleDocumentation>,
+    ),
     Object(&'a renderer::RenderContext<ObjectMetadata, ObjectDocumentation>),
     Lwc(&'a renderer::RenderContext<LwcMetadata, LwcDocumentation>),
     FlexiPage(&'a renderer::RenderContext<FlexiPageMetadata, FlexiPageDocumentation>),
@@ -382,19 +384,20 @@ fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path) -> Result<()> {
         })
         .collect();
 
-    let trigger_contexts: Vec<renderer::RenderContext<TriggerMetadata, TriggerDocumentation>> = cache
-        .trigger_entries()
-        .map(|(_, e)| renderer::RenderContext {
-            metadata: crate::types::TriggerMetadata {
-                trigger_name: e.documentation.trigger_name.clone(),
-                sobject: e.documentation.sobject.clone(),
-                ..Default::default()
-            },
-            documentation: e.documentation.clone(),
-            all_names: Arc::clone(&all_names),
-            folder: String::new(),
-        })
-        .collect();
+    let trigger_contexts: Vec<renderer::RenderContext<TriggerMetadata, TriggerDocumentation>> =
+        cache
+            .trigger_entries()
+            .map(|(_, e)| renderer::RenderContext {
+                metadata: crate::types::TriggerMetadata {
+                    trigger_name: e.documentation.trigger_name.clone(),
+                    sobject: e.documentation.sobject.clone(),
+                    ..Default::default()
+                },
+                documentation: e.documentation.clone(),
+                all_names: Arc::clone(&all_names),
+                folder: String::new(),
+            })
+            .collect();
 
     let flow_contexts: Vec<renderer::RenderContext<FlowMetadata, FlowDocumentation>> = cache
         .flow_entries()
@@ -410,7 +413,9 @@ fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path) -> Result<()> {
         })
         .collect();
 
-    let vr_contexts: Vec<renderer::RenderContext<ValidationRuleMetadata, ValidationRuleDocumentation>> = cache
+    let vr_contexts: Vec<
+        renderer::RenderContext<ValidationRuleMetadata, ValidationRuleDocumentation>,
+    > = cache
         .validation_rule_entries()
         .map(|(_, e)| renderer::RenderContext {
             folder: e.documentation.object_name.clone(),
@@ -451,7 +456,9 @@ fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path) -> Result<()> {
         })
         .collect();
 
-    let flexipage_contexts: Vec<renderer::RenderContext<FlexiPageMetadata, FlexiPageDocumentation>> = cache
+    let flexipage_contexts: Vec<
+        renderer::RenderContext<FlexiPageMetadata, FlexiPageDocumentation>,
+    > = cache
         .flexipage_entries()
         .map(|(_, e)| renderer::RenderContext {
             metadata: crate::types::FlexiPageMetadata {
