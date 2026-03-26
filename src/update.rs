@@ -1,7 +1,7 @@
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
-use crate::cli::MetadataType;
+use crate::cli::{MetadataType, OutputFormat};
 use crate::scanner::{
     ApexScanner, AuraScanner, CustomMetadataScanner, FileScanner, FlexiPageScanner, FlowScanner,
     LwcScanner, ObjectScanner, TriggerScanner, ValidationRuleScanner,
@@ -216,6 +216,20 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
     dp[m][n]
 }
 
+/// Detect the output format from the existing output directory.
+/// If `explicit` is `Some`, uses that. Otherwise checks for index.html / index.md.
+/// Falls back to Markdown.
+pub fn detect_output_format(output_dir: &Path, explicit: &Option<OutputFormat>) -> OutputFormat {
+    if let Some(fmt) = explicit {
+        return fmt.clone();
+    }
+    if output_dir.join("index.html").exists() {
+        OutputFormat::Html
+    } else {
+        OutputFormat::Markdown
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -302,5 +316,35 @@ mod tests {
         let result = resolve_path_target("/nonexistent/path/Foo.cls");
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("File not found"));
+    }
+
+    #[test]
+    fn detect_format_html_when_index_html_exists() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("index.html"), "<html></html>").unwrap();
+        assert_eq!(detect_output_format(tmp.path(), &None), OutputFormat::Html);
+    }
+
+    #[test]
+    fn detect_format_markdown_when_index_md_exists() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("index.md"), "# Index").unwrap();
+        assert_eq!(detect_output_format(tmp.path(), &None), OutputFormat::Markdown);
+    }
+
+    #[test]
+    fn detect_format_defaults_to_markdown() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        assert_eq!(detect_output_format(tmp.path(), &None), OutputFormat::Markdown);
+    }
+
+    #[test]
+    fn detect_format_explicit_override() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("index.md"), "# Index").unwrap();
+        assert_eq!(
+            detect_output_format(tmp.path(), &Some(OutputFormat::Html)),
+            OutputFormat::Html
+        );
     }
 }
