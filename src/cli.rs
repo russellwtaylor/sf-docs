@@ -3,15 +3,6 @@ use std::path::PathBuf;
 
 use crate::providers::Provider;
 
-#[derive(clap::ValueEnum, Clone, Debug, Default, PartialEq)]
-pub enum OutputFormat {
-    /// Wiki-style Markdown files (default)
-    #[default]
-    Markdown,
-    /// Self-contained HTML site with sidebar navigation
-    Html,
-}
-
 /// Metadata types that sfdoc can document.
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum MetadataType {
@@ -73,8 +64,7 @@ pub struct GenerateArgs {
     #[arg(long, default_value = "force-app/main/default")]
     pub source_dir: PathBuf,
 
-    /// Output directory for generated files.
-    /// Defaults to `docs` for Markdown output and `site` for HTML output.
+    /// Output directory for generated files (default: `docs`)
     #[arg(long, short)]
     pub output: Option<PathBuf>,
 
@@ -94,10 +84,6 @@ pub struct GenerateArgs {
     /// Use this to stay within your provider's RPM quota without lowering concurrency.
     #[arg(long, default_value_t = 0)]
     pub rpm: u32,
-
-    /// Output format
-    #[arg(long, default_value = "markdown")]
-    pub format: OutputFormat,
 
     /// Regenerate all documentation, ignoring the incremental build cache
     #[arg(long)]
@@ -197,10 +183,6 @@ pub struct UpdateArgs {
     /// Model to use (defaults to the provider's recommended model if not set)
     #[arg(long)]
     pub model: Option<String>,
-
-    /// Output format (auto-detected from existing output if not specified)
-    #[arg(long)]
-    pub format: Option<OutputFormat>,
 
     /// Enable verbose logging
     #[arg(long, short)]
@@ -365,7 +347,6 @@ mod tests {
         assert!(args.output.is_none());
         assert_eq!(args.provider, crate::providers::Provider::Gemini);
         assert!(args.model.is_none());
-        assert!(args.format.is_none());
         assert!(!args.verbose);
     }
 
@@ -381,14 +362,11 @@ mod tests {
             "openai",
             "--model",
             "gpt-4o",
-            "--format",
-            "html",
             "--verbose",
         ]);
         assert_eq!(args.target, "MyClass");
         assert_eq!(args.source_dir, std::path::PathBuf::from("src"));
         assert_eq!(args.output, Some(std::path::PathBuf::from("out")));
-        assert_eq!(args.format, Some(OutputFormat::Html));
         assert!(args.verbose);
     }
 }

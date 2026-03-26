@@ -11,7 +11,6 @@ pub mod flexipage_prompt;
 pub mod flow_parser;
 pub mod flow_prompt;
 pub mod gemini;
-pub mod html_renderer;
 pub mod lwc_parser;
 pub mod lwc_prompt;
 pub mod object_parser;

@@ -1,13 +1,13 @@
 # sfdoc
 
-> AI-powered documentation for Salesforce projects — Apex classes, triggers, Flows, validation rules, custom objects, and Lightning Web Components turned into rich, interlinked Markdown or HTML in seconds.
+> AI-powered documentation for Salesforce projects — Apex classes, triggers, Flows, validation rules, custom objects, and Lightning Web Components turned into rich, interlinked Markdown in seconds.
 
 `sfdoc` is a Rust CLI tool that scans your SFDX project, extracts structural metadata from your Salesforce source files, and uses an AI provider of your choice to generate professional wiki-style documentation. It ships with an incremental build cache so that only changed files ever hit the API.
 
 ## How it works
 
 ```
-SFDX project → scan → parse → AI provider → Markdown / HTML output
+SFDX project → scan → parse → AI provider → Markdown output
                                     ↑
                          skips unchanged files
                          (SHA-256 cache)
@@ -19,7 +19,7 @@ SFDX project → scan → parse → AI provider → Markdown / HTML output
 - Distinguishes Apex interfaces from classes — interface pages show "Implemented By:" lists; class pages link to implemented interfaces
 - Extracts structural metadata (class signatures, methods, properties, ApexDoc comments, trigger events, flow elements, validation formulas, LWC `@api` props, FlexiPage components, Aura attributes) without a full AST
 - Generates rich documentation pages with summaries, parameter tables, usage examples, and cross-links
-- Outputs interlinked **Markdown** pages or a self-contained **HTML** site with sidebar navigation
+- Outputs interlinked **Markdown** pages
 - **Incremental builds** — tracks SHA-256 hashes and skips unchanged files; use `--force` to regenerate everything
 - **Multi-provider** — Gemini (default), Groq, OpenAI, or Ollama; swap with a single flag
 - API keys stored securely in the OS keychain (macOS Keychain, Linux Secret Service, Windows Credential Manager)
@@ -134,22 +134,6 @@ sfdoc generate --provider openai --model gpt-4o
 sfdoc generate --provider ollama --model llama3.1
 ```
 
-### HTML output
-
-Generate a self-contained static site instead of Markdown:
-
-```bash
-sfdoc generate --format html
-```
-
-HTML output is written to `site/` by default (separate from the Markdown `docs/` directory). Override with `--output`:
-
-```bash
-sfdoc generate --format html --output public
-```
-
-No external dependencies — works fully offline and can be deployed to any static host.
-
 ### Incremental builds
 
 By default, `sfdoc` skips files whose source hasn't changed since the last run (tracked via SHA-256 hashes in `.sfdoc-cache.json`). To force a full regeneration:
@@ -168,12 +152,6 @@ sfdoc update OrderService
 
 # By file path
 sfdoc update force-app/main/default/classes/OrderService.cls
-```
-
-The output format is auto-detected from your existing docs directory. Override with `--format`:
-
-```bash
-sfdoc update OrderService --format html
 ```
 
 ### Tune concurrency
@@ -195,7 +173,7 @@ sfdoc generate --type apex,triggers
 sfdoc generate --type lwc
 
 # Combine with other flags
-sfdoc generate --type flows,validation-rules --format html
+sfdoc generate --type flows,validation-rules --provider groq
 ```
 
 Valid types: `apex`, `triggers`, `flows`, `validation-rules`, `objects`, `lwc`, `flexipages`, `custom-metadata`, `aura`. When omitted, all types are included.
@@ -234,10 +212,6 @@ sfdoc generate --type apex --name-filter 'Order*' --tag billing
 
 When `--tag` is specified, only Apex classes and triggers with matching tags are included.
 
-### Search
-
-HTML output includes a built-in search bar powered by fuse.js. Search by class name, method name, or summary text. No server required — search runs entirely in the browser.
-
 ### Verbose output
 
 ```bash
@@ -262,13 +236,11 @@ Options:
   --source-dir <PATH>    Path to Apex source directory
                          [default: force-app/main/default/classes]
   --output <PATH>        Output directory for generated files
-                         [default: docs (markdown) | site (html)]
+                         [default: docs]
   --provider <PROVIDER>  AI provider [default: gemini]
                          [possible values: gemini, groq, openai, ollama]
   --model <MODEL>        Model override (uses provider default if omitted)
   --concurrency <N>      Maximum parallel API requests [default: 3]
-  --format <FORMAT>      Output format [default: markdown]
-                         [possible values: markdown, html]
   --force                Ignore the incremental build cache; regenerate all docs
   --type <TYPES>         Only document these metadata types (comma-separated)
                          [possible values: apex, triggers, flows, validation-rules,
@@ -293,8 +265,6 @@ Options:
   --output <PATH>        Output directory for generated files
   --provider <PROVIDER>  AI provider [default: gemini]
   --model <MODEL>        Model override (uses provider default if omitted)
-  --format <FORMAT>      Output format (auto-detected from existing output if omitted)
-                         [possible values: markdown, html]
   --verbose              Enable verbose logging
 
 sfdoc auth [OPTIONS]
@@ -305,7 +275,7 @@ Options:
 
 ## Output
 
-### Markdown (default)
+### Markdown
 
 ```
 docs/
@@ -330,35 +300,6 @@ docs/
     MyComponent.md                              # One page per Aura component
   .sfdoc-cache.json                             # Incremental build cache (do not edit manually)
 ```
-
-### HTML
-
-```
-site/
-  index.html                                    # Home page with sidebar navigation
-  search.js                                     # Fuzzy search powered by fuse.js
-  search-index.json                             # Pre-built search index
-  classes/
-    AccountService.html
-  triggers/
-    OrderTrigger.html
-  flows/
-    Account_Onboarding_Flow.html
-  validation-rules/
-    Require_Start_Date.html
-  objects/
-    Account.html
-  lwc/
-    myComponent.html
-  flexipages/
-    My_App_Page.html
-  custom-metadata/
-    MyType__mdt.html
-  aura/
-    MyComponent.html
-```
-
-Markdown and HTML outputs default to separate directories (`docs/` and `site/`) so both formats can coexist without overwriting each other.
 
 ### What each page contains
 
@@ -583,7 +524,6 @@ src/
   openai_compat.rs              OpenAI-compatible client (Groq, OpenAI, Ollama)
   retry.rs                      Retry logic with exponential backoff
   renderer.rs                   Markdown generation and cross-linking
-  html_renderer.rs              Self-contained HTML site generator
   cache.rs                      SHA-256 incremental build cache
   types.rs                      Shared data structures
 ```

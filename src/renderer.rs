@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::cli::OutputFormat;
 use crate::types::{
     AllNames, AuraDocumentation, AuraMetadata, ClassDocumentation, ClassMetadata,
     CustomMetadataRecord, FlexiPageDocumentation, FlexiPageMetadata, FlowDocumentation,
@@ -1406,26 +1405,7 @@ pub fn render_aura_page(ctx: &AuraRenderContext) -> String {
     out
 }
 
-pub fn write_output(
-    output_dir: &Path,
-    format: &OutputFormat,
-    bundle: &DocumentationBundle,
-) -> Result<()> {
-    if *format == OutputFormat::Html {
-        return crate::html_renderer::write_html_output(
-            output_dir,
-            bundle.classes,
-            bundle.triggers,
-            bundle.flows,
-            bundle.validation_rules,
-            bundle.objects,
-            bundle.lwc,
-            bundle.flexipages,
-            bundle.custom_metadata,
-            bundle.aura,
-        );
-    }
-
+pub fn write_output(output_dir: &Path, bundle: &DocumentationBundle) -> Result<()> {
     let class_contexts = bundle.classes;
     let trigger_contexts = bundle.triggers;
     let flow_contexts = bundle.flows;
@@ -1793,7 +1773,7 @@ mod tests {
             custom_metadata: &[],
             aura: &[],
         };
-        write_output(tmp.path(), &crate::cli::OutputFormat::Markdown, &bundle).unwrap();
+        write_output(tmp.path(), &bundle).unwrap();
         assert!(tmp.path().join("classes/AccountService.md").exists());
         assert!(tmp.path().join("index.md").exists());
     }
@@ -1866,25 +1846,6 @@ mod tests {
         };
         let index = render_index(&bundle);
         assert!(index.contains("# Apex Documentation Index"));
-    }
-
-    #[test]
-    fn write_output_html_creates_index() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let ctx = sample_context();
-        let bundle = DocumentationBundle {
-            classes: &[ctx],
-            triggers: &[],
-            flows: &[],
-            validation_rules: &[],
-            objects: &[],
-            lwc: &[],
-            flexipages: &[],
-            custom_metadata: &[],
-            aura: &[],
-        };
-        write_output(tmp.path(), &crate::cli::OutputFormat::Html, &bundle).unwrap();
-        assert!(tmp.path().join("index.html").exists());
     }
 
     #[test]
