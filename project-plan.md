@@ -77,13 +77,13 @@ todos:
       status: done
     - id: name-filter
       content: "Phase 25: --name-filter / --glob flag — filter by name pattern (e.g. --name-filter 'Order*')"
-      status: todo
+      status: done
     - id: html-search
       content: "Phase 26: Client-side search in HTML site — inline lunr.js or fuse.js for searching by class/method/field name"
-      status: todo
+      status: done
     - id: tag-filter
       content: "Phase 27: Tag/label filtering — support @tag annotations in ApexDoc; filter index by tag in HTML site"
-      status: todo
+      status: done
     - id: single-file-update
       content: "Phase 28: sfdoc update <file> — re-document a single file without a full rebuild"
       status: todo
@@ -590,7 +590,7 @@ Validation rules are stored per-object under `force-app/main/default/objects/{Ob
 
 ---
 
-### Phase 25: `--name-filter` / `--glob` Flag
+### Phase 25: `--name-filter` / `--glob` Flag ✅
 
 **Goal:** Narrow docs to files matching a name pattern, useful for documenting a single feature area (e.g. all `Order*` classes).
 
@@ -603,9 +603,11 @@ Validation rules are stored per-object under `force-app/main/default/objects/{Ob
 
 **Impact:** Low implementation cost; dramatically improves UX for partial rebuilds on large orgs.
 
+**Implemented:** `--name-filter` added to `GenerateArgs` using `globset` crate. `GenerateArgs::name_matches()` helper compiles the pattern and matches against filename stems. Filter applied in `main.rs` for all metadata types after scanning. Unit tests in `cli.rs` cover no-filter, prefix glob, suffix glob, and contains glob cases.
+
 ---
 
-### Phase 26: Client-Side Search in HTML Site
+### Phase 26: Client-Side Search in HTML Site ✅
 
 **Goal:** Make the generated HTML site searchable by class, method, field, and flow name without a backend.
 
@@ -618,9 +620,11 @@ Validation rules are stored per-object under `force-app/main/default/objects/{Ob
 
 **Impact:** High visibility improvement; makes large doc sites usable without knowing exact names up front.
 
+**Implemented:** fuse.js (minified, inlined) used as the search engine. `html_renderer.rs` builds a JSON search index at generation time and embeds it in a `<script>` tag in `index.html`. A search input in the sidebar filters the entry list in real time using fuse.js fuzzy matching across title, summary, and method names. No external network requests required.
+
 ---
 
-### Phase 27: Tag / Label Filtering
+### Phase 27: Tag / Label Filtering ✅
 
 **Goal:** Allow teams to categorise docs with `@tag` annotations and filter the index by tag.
 
@@ -632,6 +636,8 @@ Validation rules are stored per-object under `force-app/main/default/objects/{Ob
 - Tags propagate to the page header as badges
 
 **Impact:** Enables domain-based organisation (e.g. `@tag billing`, `@tag integration`) on top of the folder structure.
+
+**Implemented:** `extract_tags()` in `apex_common.rs` parses `@tag` annotations from ApexDoc comments. `tags: Vec<String>` added to `ClassMetadata` and `TriggerMetadata`. `GenerateArgs::tag_matches()` applies OR logic with case-insensitive comparison. HTML renderer emits tag badges on class/trigger pages and `data-tags` attributes on sidebar items; clicking a tag pill filters the sidebar via JS. Markdown renderer emits tag badges in the page header. `--tag` filter applied in `main.rs` after parsing, before AI calls.
 
 ---
 

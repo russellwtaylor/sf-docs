@@ -2030,3 +2030,55 @@ fn aura_pipeline_writes_markdown_output() {
         "aura component missing from index"
     );
 }
+
+// ---------------------------------------------------------------------------
+// --name-filter and --tag integration tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn name_filter_matches_glob_pattern() {
+    use clap::Parser;
+
+    // Parse args with --name-filter
+    let cli =
+        sfdoc::cli::Cli::try_parse_from(["sfdoc", "generate", "--name-filter", "Order*"]).unwrap();
+    let args = match cli.command {
+        sfdoc::cli::Commands::Generate(g) => g,
+        _ => panic!("expected Generate"),
+    };
+
+    assert!(args.name_matches("OrderService"));
+    assert!(args.name_matches("OrderHelper"));
+    assert!(!args.name_matches("AccountService"));
+}
+
+#[test]
+fn tag_parsing_from_apex_source() {
+    let source = r#"
+    /**
+     * @tag billing
+     * @tag integration
+     */
+    public class OrderService {
+    }
+    "#;
+    let meta = sfdoc::parser::parse_apex_class(source).unwrap();
+    assert_eq!(meta.tags, vec!["billing", "integration"]);
+}
+
+#[test]
+fn tag_filter_matches_case_insensitive() {
+    use clap::Parser;
+
+    let cli =
+        sfdoc::cli::Cli::try_parse_from(["sfdoc", "generate", "--tag", "billing,Integration"])
+            .unwrap();
+    let args = match cli.command {
+        sfdoc::cli::Commands::Generate(g) => g,
+        _ => panic!("expected Generate"),
+    };
+
+    assert!(args.tag_matches(&["billing".to_string()]));
+    assert!(args.tag_matches(&["INTEGRATION".to_string()]));
+    assert!(!args.tag_matches(&["unrelated".to_string()]));
+}

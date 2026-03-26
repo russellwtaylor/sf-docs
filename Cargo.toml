@@ -29,6 +29,7 @@ rpassword = "7"
 rand = "0.8"
 keyring = "2"
 quick-xml = "0.36"
+globset = "0.4"
 
 [dev-dependencies]
 tempfile = "3"

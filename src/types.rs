@@ -25,6 +25,8 @@ pub struct ClassMetadata {
     pub existing_comments: Vec<String>,
     /// Other class names referenced in this class (field types, param types, return types).
     pub references: Vec<String>,
+    /// Tags extracted from `@tag` annotations in ApexDoc comments.
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -94,6 +96,8 @@ pub struct TriggerMetadata {
     pub events: Vec<TriggerEvent>,
     pub existing_comments: Vec<String>,
     pub references: Vec<String>,
+    /// Tags extracted from `@tag` annotations in ApexDoc comments.
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

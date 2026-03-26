@@ -108,6 +108,17 @@ pub struct GenerateArgs {
     #[arg(long = "type", value_delimiter = ',')]
     pub types: Vec<MetadataType>,
 
+    /// Only document files whose name matches this glob pattern (e.g. 'Order*', '*Service').
+    /// Applied across all metadata types against the logical filename.
+    #[arg(long)]
+    pub name_filter: Option<String>,
+
+    /// Only document items tagged with at least one of these labels (comma-separated).
+    /// Tags are extracted from @tag annotations in ApexDoc comments.
+    /// When --tag is specified, non-taggable metadata types (flows, objects, etc.) are excluded.
+    #[arg(long = "tag", value_delimiter = ',')]
+    pub tags: Vec<String>,
+
     /// Enable verbose logging
     #[arg(long, short)]
     pub verbose: bool,
@@ -118,6 +129,31 @@ impl GenerateArgs {
     /// When `--type` is omitted (empty vec), all types are selected.
     pub fn type_enabled(&self, t: MetadataType) -> bool {
         self.types.is_empty() || self.types.contains(&t)
+    }
+
+    /// Returns `true` if the given filename stem matches the `--name-filter` glob,
+    /// or if no filter was specified.
+    pub fn name_matches(&self, filename_stem: &str) -> bool {
+        match &self.name_filter {
+            None => true,
+            Some(pattern) => {
+                let glob = globset::Glob::new(pattern)
+                    .unwrap_or_else(|_| globset::Glob::new("*").unwrap());
+                glob.compile_matcher().is_match(filename_stem)
+            }
+        }
+    }
+
+    /// Returns `true` if the item's tags overlap with the `--tag` filter (OR logic, case-insensitive).
+    /// Returns `true` when `--tag` is not specified.
+    /// Returns `false` when `--tag` is specified but the item has no tags.
+    pub fn tag_matches(&self, item_tags: &[String]) -> bool {
+        if self.tags.is_empty() {
+            return true;
+        }
+        item_tags
+            .iter()
+            .any(|t| self.tags.iter().any(|f| f.eq_ignore_ascii_case(t)))
     }
 }
 
@@ -202,5 +238,59 @@ mod tests {
         assert!(args.type_enabled(MetadataType::Apex));
         assert!(args.type_enabled(MetadataType::Triggers));
         assert!(!args.type_enabled(MetadataType::Flows));
+    }
+
+    #[test]
+    fn name_filter_not_set_matches_all() {
+        let args = parse_generate(&[]);
+        assert!(args.name_matches("OrderService"));
+        assert!(args.name_matches("anything"));
+    }
+
+    #[test]
+    fn name_filter_matches_glob() {
+        let args = parse_generate(&["--name-filter", "Order*"]);
+        assert!(args.name_matches("OrderService"));
+        assert!(args.name_matches("OrderHelper"));
+        assert!(!args.name_matches("AccountService"));
+    }
+
+    #[test]
+    fn name_filter_suffix_glob() {
+        let args = parse_generate(&["--name-filter", "*Service"]);
+        assert!(args.name_matches("OrderService"));
+        assert!(!args.name_matches("OrderHelper"));
+    }
+
+    #[test]
+    fn name_filter_contains_glob() {
+        let args = parse_generate(&["--name-filter", "*Order*"]);
+        assert!(args.name_matches("OrderService"));
+        assert!(args.name_matches("MyOrderHelper"));
+        assert!(!args.name_matches("AccountService"));
+    }
+
+    #[test]
+    fn no_tag_flag_matches_all() {
+        let args = parse_generate(&[]);
+        assert!(args.tag_matches(&["billing".to_string()]));
+        assert!(args.tag_matches(&[]));
+    }
+
+    #[test]
+    fn tag_flag_matches_or_logic() {
+        let args = parse_generate(&["--tag", "billing,integration"]);
+        assert!(args.tag_matches(&["billing".to_string()]));
+        assert!(args.tag_matches(&["integration".to_string()]));
+        assert!(args.tag_matches(&["billing".to_string(), "other".to_string()]));
+        assert!(!args.tag_matches(&["unrelated".to_string()]));
+        assert!(!args.tag_matches(&[]));
+    }
+
+    #[test]
+    fn tag_flag_case_insensitive() {
+        let args = parse_generate(&["--tag", "Billing"]);
+        assert!(args.tag_matches(&["billing".to_string()]));
+        assert!(args.tag_matches(&["BILLING".to_string()]));
     }
 }

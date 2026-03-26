@@ -2,7 +2,7 @@ use anyhow::Result;
 use regex::Regex;
 use std::sync::OnceLock;
 
-use crate::apex_common::{re_type_ref, APEX_BUILTINS};
+use crate::apex_common::{extract_tags, re_type_ref, APEX_BUILTINS};
 use crate::types::{ClassMetadata, MethodMetadata, ParamMetadata, PropertyMetadata};
 
 // ---------------------------------------------------------------------------
@@ -73,6 +73,7 @@ pub fn parse_apex_class(source: &str) -> Result<ClassMetadata> {
     // but keep ApexDoc comments so we can extract them first.
     let apexdoc_comments = extract_apexdoc_comments(source);
     meta.existing_comments = apexdoc_comments;
+    meta.tags = extract_tags(&meta.existing_comments);
 
     // Strip all comments for structural parsing
     let stripped = strip_comments(source);
@@ -653,6 +654,65 @@ public class OverloadService {
         let meta = parse_apex_class(src).unwrap();
         assert!(!meta.references.contains(&"String".to_string()));
         assert!(!meta.references.contains(&"Integer".to_string()));
+    }
+
+    // -----------------------------------------------------------------------
+    // @tag annotation tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn parses_single_tag() {
+        let source = r#"
+    /**
+     * @tag billing
+     * Service class for orders
+     */
+    public class OrderService {
+    }
+    "#;
+        let meta = parse_apex_class(source).unwrap();
+        assert_eq!(meta.tags, vec!["billing"]);
+    }
+
+    #[test]
+    fn parses_multiple_tags() {
+        let source = r#"
+    /**
+     * @tag billing
+     * @tag integration
+     * Service class
+     */
+    public class OrderService {
+    }
+    "#;
+        let meta = parse_apex_class(source).unwrap();
+        assert_eq!(meta.tags, vec!["billing", "integration"]);
+    }
+
+    #[test]
+    fn parses_hyphenated_tag() {
+        let source = r#"
+    /**
+     * @tag order-management
+     */
+    public class OrderService {
+    }
+    "#;
+        let meta = parse_apex_class(source).unwrap();
+        assert_eq!(meta.tags, vec!["order-management"]);
+    }
+
+    #[test]
+    fn no_tags_returns_empty() {
+        let source = r#"
+    /**
+     * Service class
+     */
+    public class OrderService {
+    }
+    "#;
+        let meta = parse_apex_class(source).unwrap();
+        assert!(meta.tags.is_empty());
     }
 
     #[test]

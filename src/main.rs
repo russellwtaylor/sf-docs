@@ -39,6 +39,31 @@ use sfdoc::prompt::{build_prompt, SYSTEM_PROMPT};
 use sfdoc::trigger_prompt::{build_trigger_prompt, TRIGGER_SYSTEM_PROMPT};
 use sfdoc::validation_rule_prompt::{build_validation_rule_prompt, VALIDATION_RULE_SYSTEM_PROMPT};
 
+/// Filters parallel file/metadata vectors, keeping only entries where the
+/// metadata's tags match the CLI `--tag` filter.
+fn filter_by_tags<M, F>(
+    files: Vec<types::SourceFile>,
+    meta: Vec<M>,
+    get_tags: F,
+    args: &cli::GenerateArgs,
+) -> (Vec<types::SourceFile>, Vec<M>)
+where
+    F: Fn(&M) -> &[String],
+{
+    if args.tags.is_empty() {
+        return (files, meta);
+    }
+    let mut kept_files = Vec::new();
+    let mut kept_meta = Vec::new();
+    for (f, m) in files.into_iter().zip(meta.into_iter()) {
+        if args.tag_matches(get_tags(&m)) {
+            kept_files.push(f);
+            kept_meta.push(m);
+        }
+    }
+    (kept_files, kept_meta)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -74,6 +99,12 @@ async fn main() -> Result<()> {
                 if !args.types.is_empty() {
                     let names: Vec<&str> = args.types.iter().map(|t| t.cli_name()).collect();
                     eprintln!("Types:       {}", names.join(", "));
+                }
+                if let Some(ref pattern) = args.name_filter {
+                    eprintln!("Name filter: {}", pattern);
+                }
+                if !args.tags.is_empty() {
+                    eprintln!("Tags:        {}", args.tags.join(", "));
                 }
             }
 
@@ -129,6 +160,26 @@ async fn main() -> Result<()> {
                 &AuraScanner,
                 "Aura components",
             )?;
+
+            // Apply --name-filter: drop files whose logical name doesn't match the glob.
+            let name_filter = |files: Vec<types::SourceFile>| -> Vec<types::SourceFile> {
+                if args.name_filter.is_none() {
+                    return files;
+                }
+                files
+                    .into_iter()
+                    .filter(|f| args.name_matches(&f.filename))
+                    .collect()
+            };
+            let files = name_filter(files);
+            let trigger_files = name_filter(trigger_files);
+            let flow_files = name_filter(flow_files);
+            let vr_files = name_filter(vr_files);
+            let object_files = name_filter(object_files);
+            let lwc_files = name_filter(lwc_files);
+            let flexipage_files = name_filter(flexipage_files);
+            let custom_metadata_files = name_filter(custom_metadata_files);
+            let aura_files = name_filter(aura_files);
 
             // Require at least one file of any enabled type.
             if files.is_empty()
@@ -243,6 +294,49 @@ async fn main() -> Result<()> {
                 .par_iter()
                 .map(|f| aura_parser::parse_aura(&f.path, &f.raw_source))
                 .collect::<Result<_>>()?;
+
+            // Apply --tag filter post-parse, pre-AI.
+            let (files, class_meta) = filter_by_tags(files, class_meta, |m| &m.tags, &args);
+            let (trigger_files, trigger_meta) =
+                filter_by_tags(trigger_files, trigger_meta, |m| &m.tags, &args);
+
+            // When --tag is active, exclude non-taggable metadata types entirely.
+            let (flow_files, flow_meta) = if args.tags.is_empty() {
+                (flow_files, flow_meta)
+            } else {
+                (Vec::new(), Vec::new())
+            };
+            let (vr_files, vr_meta) = if args.tags.is_empty() {
+                (vr_files, vr_meta)
+            } else {
+                (Vec::new(), Vec::new())
+            };
+            let (object_files, object_meta) = if args.tags.is_empty() {
+                (object_files, object_meta)
+            } else {
+                (Vec::new(), Vec::new())
+            };
+            let (lwc_files, lwc_meta) = if args.tags.is_empty() {
+                (lwc_files, lwc_meta)
+            } else {
+                (Vec::new(), Vec::new())
+            };
+            let (flexipage_files, flexipage_meta) = if args.tags.is_empty() {
+                (flexipage_files, flexipage_meta)
+            } else {
+                (Vec::new(), Vec::new())
+            };
+            let custom_metadata_records: Vec<types::CustomMetadataRecord> = if args.tags.is_empty()
+            {
+                custom_metadata_records
+            } else {
+                Vec::new()
+            };
+            let (aura_files, aura_meta) = if args.tags.is_empty() {
+                (aura_files, aura_meta)
+            } else {
+                (Vec::new(), Vec::new())
+            };
 
             // Wrap in Arc so task closures share the data without cloning raw_source.
             let files = Arc::new(files);
