@@ -23,8 +23,8 @@ use crate::types::{
 
 // Parser modules
 use crate::{
-    aura_parser, custom_metadata_parser, flexipage_parser, flow_parser, lwc_parser, object_parser,
-    parser, trigger_parser, validation_rule_parser,
+    aura_parser, flexipage_parser, flow_parser, lwc_parser, object_parser, parser, trigger_parser,
+    validation_rule_parser,
 };
 
 // Prompt modules
@@ -67,7 +67,10 @@ fn is_path_target(target: &str) -> bool {
 
 /// Determines the metadata type from a file path's extension.
 fn metadata_type_from_path(path: &Path) -> Result<MetadataType> {
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Cannot extract filename from '{}'", path.display()))?;
     for (ext, mt) in EXTENSION_MAP {
         if name.ends_with(ext) {
             return Ok(*mt);
@@ -104,7 +107,7 @@ fn resolve_path_target(target: &str) -> Result<ResolvedTarget> {
     let filename = path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("")
+        .ok_or_else(|| anyhow::anyhow!("Cannot extract filename from '{}'", path.display()))?
         .to_string();
     Ok(ResolvedTarget {
         source_file: SourceFile {
@@ -142,11 +145,13 @@ fn resolve_name_target(name: &str, source_dir: &Path) -> Result<ResolvedTarget> 
     ];
 
     let mut matches: Vec<(SourceFile, MetadataType)> = Vec::new();
+    let mut all_names: Vec<String> = Vec::new();
 
     for (scanner, mt, suffix) in &scanners {
         if let Ok(files) = scanner.scan(source_dir) {
             for file in files {
                 let stem = file.filename.strip_suffix(suffix).unwrap_or(&file.filename);
+                all_names.push(stem.to_string());
                 if stem.eq_ignore_ascii_case(name) {
                     matches.push((file, *mt));
                 }
@@ -156,15 +161,6 @@ fn resolve_name_target(name: &str, source_dir: &Path) -> Result<ResolvedTarget> 
 
     match matches.len() {
         0 => {
-            let mut all_names: Vec<String> = Vec::new();
-            for (scanner, _, suffix) in &scanners {
-                if let Ok(files) = scanner.scan(source_dir) {
-                    for file in files {
-                        let stem = file.filename.strip_suffix(suffix).unwrap_or(&file.filename);
-                        all_names.push(stem.to_string());
-                    }
-                }
-            }
             let suggestions = find_similar_names(name, &all_names);
             let mut msg = format!(
                 "No source file matching '{}' found in '{}'.",
@@ -251,11 +247,7 @@ pub fn detect_output_format(output_dir: &Path, explicit: &Option<OutputFormat>) 
 
 /// Recomputes the folder (relative path from source_dir to file's parent).
 fn compute_folder(file_path: &Path, source_dir: &Path) -> String {
-    file_path
-        .parent()
-        .and_then(|p| p.strip_prefix(source_dir).ok())
-        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_default()
+    crate::types::compute_folder(file_path, source_dir)
 }
 
 /// Build an AllNames cross-linking index from the cache's stored documentation.
@@ -518,8 +510,15 @@ fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path, format: &OutputFor
     };
 
     if *format == OutputFormat::Html {
+        // The HTML renderer generates a full self-contained site. Rebuilding from
+        // cache alone produces a degraded site (missing structural metadata like
+        // methods, modifiers, interface implementors). Only regenerate the index;
+        // individual pages from the last `sfdoc generate` remain on disk.
+        eprintln!("Note: For a full HTML site rebuild with complete metadata, run 'sfdoc generate --format html'.");
+        // Still regenerate the index page for updated summaries
         renderer::write_output(output_dir, format, &bundle)?;
     } else {
+        // Markdown: only rewrite index.md — individual pages are written by write_single_page
         let index = renderer::render_index(&bundle);
         std::fs::write(output_dir.join("index.md"), index)?;
     }
@@ -570,6 +569,14 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
         .find_map(|(ext, _)| source_file.filename.strip_suffix(ext))
         .unwrap_or(&source_file.filename);
 
+    // Custom metadata records are structural tables without AI generation.
+    // They can't be meaningfully "updated" via this command.
+    if metadata_type == MetadataType::CustomMetadata {
+        bail!(
+            "Custom metadata records don't use AI documentation. Use 'sfdoc generate' to rebuild all docs including custom metadata."
+        );
+    }
+
     println!(
         "Updating documentation for {} ({})...",
         display_name, type_label
@@ -598,7 +605,7 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
         );
     }
 
-    // Hash the source
+    // Hash the source and check if it's unchanged
     let hash = cache::hash_source(&source_file.raw_source);
     if args.verbose {
         eprintln!("Source hash:     {}", hash);
@@ -622,6 +629,30 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
 
     let cache_key = source_file.path.to_string_lossy().into_owned();
     let source_dir = &args.source_dir;
+
+    // Inform user if source hasn't changed since last build
+    let is_unchanged = match metadata_type {
+        MetadataType::Apex => cache.get_if_fresh(&cache_key, &hash, &model).is_some(),
+        MetadataType::Triggers => cache
+            .get_trigger_if_fresh(&cache_key, &hash, &model)
+            .is_some(),
+        MetadataType::Flows => cache.get_flow_if_fresh(&cache_key, &hash, &model).is_some(),
+        MetadataType::ValidationRules => cache
+            .get_validation_rule_if_fresh(&cache_key, &hash, &model)
+            .is_some(),
+        MetadataType::Objects => cache
+            .get_object_if_fresh(&cache_key, &hash, &model)
+            .is_some(),
+        MetadataType::Lwc => cache.get_lwc_if_fresh(&cache_key, &hash, &model).is_some(),
+        MetadataType::Flexipages => cache
+            .get_flexipage_if_fresh(&cache_key, &hash, &model)
+            .is_some(),
+        MetadataType::Aura => cache.get_aura_if_fresh(&cache_key, &hash, &model).is_some(),
+        MetadataType::CustomMetadata => false,
+    };
+    if is_unchanged {
+        eprintln!("Note: Source is unchanged since last build. Re-generating anyway.");
+    }
 
     match metadata_type {
         MetadataType::Apex => {
@@ -779,13 +810,8 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
             write_single_page(&output_dir, &format, SinglePageContext::FlexiPage(&ctx))?;
         }
         MetadataType::CustomMetadata => {
-            let _record = custom_metadata_parser::parse_custom_metadata_record(
-                &source_file.path,
-                &source_file.raw_source,
-            )?;
-            eprintln!(
-                "Note: Custom metadata records don't use AI generation. Re-rendering index only."
-            );
+            // Unreachable — we bail early above for custom metadata.
+            unreachable!("custom metadata is handled before AI client creation");
         }
         MetadataType::Aura => {
             let meta = aura_parser::parse_aura(&source_file.path, &source_file.raw_source)?;

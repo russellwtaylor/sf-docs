@@ -1046,15 +1046,9 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Returns the relative path from `source_dir` to `file_path`'s parent directory,
-/// using forward slashes regardless of platform. Used to group the index by
-/// namespace/folder (e.g. `"classes"`, `"classes/account"`).
+/// Re-export from types for backward compatibility within main.
 fn compute_folder(file_path: &Path, source_dir: &Path) -> String {
-    file_path
-        .parent()
-        .and_then(|p| p.strip_prefix(source_dir).ok())
-        .map(|rel| rel.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_default()
+    types::compute_folder(file_path, source_dir)
 }
 
 fn run_status() {
