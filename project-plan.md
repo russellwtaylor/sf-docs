@@ -87,41 +87,66 @@ todos:
     - id: single-file-update
       content: "Phase 28: sfdoc update <file> — re-document a single file without a full rebuild"
       status: done
-    - id: diff-aware-docs
-      content: "Phase 29: Diff-aware summaries — include git diff in AI prompt so docs describe what changed"
+    # --- Tier 1: CI/CD Trust (reliability for unattended runs) ---
+    - id: atomic-cache
+      content: "Phase 29: Atomic cache writes — write to temp file + rename to prevent corruption from crashes or concurrent runs"
       status: todo
-    - id: quality-scores
-      content: "Phase 30: Confidence/quality scores — AI rates doc completeness; flag low-context methods"
+    - id: graceful-shutdown
+      content: "Phase 30: Graceful shutdown — handle SIGINT/SIGTERM to save cache and in-flight progress before exiting"
       status: todo
-    - id: dependency-graph
-      content: "Phase 31: Dependency graph — Mermaid/DOT visualization of class-call, flow-object, and LWC-Apex relationships"
+    - id: file-lock
+      content: "Phase 31: File-level locking — prevent two sfdoc processes from racing on the same output directory and cache"
       status: todo
-    - id: impact-analysis
-      content: "Phase 32: sfdoc impact <Name> — CLI command listing all metadata that references a given class/object/flow"
+    - id: quiet-mode
+      content: "Phase 32: --quiet mode — suppress progress bars and informational output for CI environments"
       status: todo
-    - id: dead-code-hints
-      content: "Phase 33: Dead code hints — flag classes/methods with no incoming cross-references across the documented org"
+    - id: json-output
+      content: "Phase 33: --json structured output — machine-parseable results with file counts, successes, failures, timings, and cache hit rate"
       status: todo
-    - id: watch-mode
-      content: "Phase 34: Watch mode — sfdoc watch auto-rebuilds on file save during development"
+    - id: run-timeout
+      content: "Phase 34: --timeout flag — overall run timeout to prevent hung API calls from blocking CI pipelines indefinitely"
       status: todo
-    - id: confluence-deploy
-      content: "Phase 35: Deploy to Confluence/Notion — push generated docs to a team wiki via API"
+    # --- Tier 2: Distribution (get docs where people read them) ---
+    - id: sfdoc-publish
+      content: "Phase 35: sfdoc publish — push generated docs to GitHub Pages, Confluence, Notion, or a static site host"
       status: todo
     - id: ci-deploy
-      content: "Phase 36: GitHub Pages / Netlify CI integration — example workflow YAML to publish docs on push to main"
+      content: "Phase 36: GitHub Actions workflow template — ready-made .github/workflows/sfdoc.yml to generate + publish docs on push to main"
       status: todo
-    - id: dark-mode
-      content: "Phase 37: Dark mode — CSS dark theme for the HTML output site"
+    - id: static-site
+      content: "Phase 37: Static site wrapper — wrap markdown output in a lightweight site (mdbook/mkdocs) with search, navigation sidebar, and landing page"
+      status: todo
+    # --- Tier 3: Workflow Completeness (key missing commands) ---
+    - id: sfdoc-validate
+      content: "Phase 38: sfdoc validate — verify all cross-links resolve; catch renamed classes that break doc links (CI-friendly gate)"
       status: todo
     - id: sfdoc-diff
-      content: "Phase 38: sfdoc diff — show which files have changed since last build without regenerating"
-      status: todo
-    - id: sfdoc-validate
-      content: "Phase 39: sfdoc validate — verify all cross-links resolve; catch renamed classes that break doc links (CI-friendly)"
+      content: "Phase 39: sfdoc diff — show which files have changed since last build without regenerating; quick CI pre-flight check"
       status: todo
     - id: progress-resumption
       content: "Phase 40: Progress resumption — resume interrupted sfdoc generate runs from the last completed file"
+      status: todo
+    - id: impact-analysis
+      content: "Phase 41: sfdoc impact <Name> — CLI command listing all metadata that references a given class/object/flow"
+      status: todo
+    # --- Tier 4: Polish (nice-to-haves) ---
+    - id: dependency-graph
+      content: "Phase 42: Dependency graph — Mermaid/DOT visualization of class-call, flow-object, and LWC-Apex relationships"
+      status: todo
+    - id: diff-aware-docs
+      content: "Phase 43: Diff-aware summaries — include git diff in AI prompt so docs describe what changed"
+      status: todo
+    - id: dead-code-hints
+      content: "Phase 44: Dead code hints — flag classes/methods with no incoming cross-references across the documented org"
+      status: todo
+    - id: quality-scores
+      content: "Phase 45: Confidence/quality scores — AI rates doc completeness; flag low-context methods"
+      status: todo
+    - id: watch-mode
+      content: "Phase 46: Watch mode — sfdoc watch auto-rebuilds on file save during development"
+      status: todo
+    - id: dark-mode
+      content: "Phase 47: Dark mode — CSS dark theme for the HTML output site"
       status: todo
 isProject: true
 ---
@@ -170,30 +195,36 @@ flowchart LR
 sfdoc/
   Cargo.toml
   src/
-    main.rs               # Entry point — CLI dispatch, pipeline orchestration
-    cli.rs                # clap CLI definitions (Commands, GenerateArgs, AuthArgs)
+    main.rs               # Entry point — CLI dispatch, auth/status commands
+    lib.rs                # Module exports
+    cli.rs                # clap CLI definitions (Commands, GenerateArgs, UpdateArgs, AuthArgs)
+    generate.rs           # Main generate pipeline orchestration
+    update.rs             # Single-file update logic (sfdoc update <file>)
     config.rs             # API key storage and resolution (keychain + env var)
     providers.rs          # Provider enum — default models, env vars, base URLs
-    scanner.rs                    # File discovery (FileScanner trait and all scanners)
-    parser.rs                     # Regex-based Apex class structural parser
-    trigger_parser.rs             # Apex trigger structural parser
-    flow_parser.rs                # Salesforce Flow XML structural parser (quick-xml)
-    validation_rule_parser.rs     # Salesforce Validation Rule XML structural parser
-    object_parser.rs              # Custom Object XML structural parser
-    lwc_parser.rs                 # LWC @api/slot/component-ref parser (regex-based)
-    prompt.rs                     # AI prompt construction for Apex classes
-    trigger_prompt.rs             # AI prompt construction for Apex triggers
-    flow_prompt.rs                # AI prompt construction for Flows
-    validation_rule_prompt.rs     # AI prompt construction for Validation Rules
-    object_prompt.rs              # AI prompt construction for Custom Objects
-    lwc_prompt.rs                 # AI prompt construction for LWC components
-    gemini.rs                     # Google Gemini API client
-    openai_compat.rs              # OpenAI-compatible client (Groq, OpenAI, Ollama)
-    retry.rs                      # Exponential backoff with Retry-After header support
-    renderer.rs                   # Markdown generation and cross-linking
-    html_renderer.rs              # Self-contained HTML site generator
-    cache.rs                      # SHA-256 incremental build cache (.sfdoc-cache.json)
-    types.rs                      # Shared data structures (ApexFile, ClassMetadata, etc.)
+    scanner.rs            # File discovery (FileScanner trait + 9 scanner implementations)
+    parser.rs             # Regex-based Apex class structural parser
+    trigger_parser.rs     # Apex trigger structural parser
+    flow_parser.rs        # Salesforce Flow XML structural parser (quick-xml)
+    validation_rule_parser.rs  # Validation Rule XML structural parser
+    object_parser.rs      # Custom Object XML structural parser
+    lwc_parser.rs         # LWC @api/slot/component-ref parser (regex-based)
+    flexipage_parser.rs   # FlexiPage XML structural parser
+    custom_metadata_parser.rs  # Custom Metadata record parser
+    aura_parser.rs        # Aura component parser
+    apex_common.rs        # Shared Apex helpers: type refs, ApexDoc, @tag extraction
+    prompts.rs            # All system prompts + user prompt builders (consolidated)
+    doc_client.rs         # Async DocClient trait for AI providers
+    gemini.rs             # Google Gemini API client
+    openai_compat.rs      # OpenAI-compatible client (Groq, OpenAI, Ollama)
+    rate_limit.rs         # Sliding-window RPM limiter
+    retry.rs              # Exponential backoff with Retry-After header support
+    renderer.rs           # Markdown generation with generic RenderContext<M, D>
+    cache.rs              # SHA-256 incremental build cache (.sfdoc-cache.json)
+    types.rs              # Shared data structures (metadata, documentation, AllNames)
+  tests/
+    integration.rs        # E2E tests with httpmock (all metadata types)
+    fixtures/             # Sample Apex, Flow, LWC, Trigger, Object, VR, Aura, FlexiPage files
   README.md
   project-plan.md
 ```
@@ -213,9 +244,13 @@ sfdoc/
 | `indicatif`            | Terminal progress bars                  |
 | `sha2`                 | SHA-256 hashing for incremental cache   |
 | `anyhow`               | Ergonomic error handling                |
+| `async-trait`          | Async trait methods (DocClient)         |
 | `regex`                | Apex structural parsing                 |
+| `quick-xml`            | XML parsing for Flows, VRs, Objects     |
+| `globset`              | Glob pattern matching for name filters  |
 | `keyring`              | OS keychain integration                 |
 | `rpassword`            | Masked terminal input for API key entry |
+| `rand`                 | Random jitter for retry backoff         |
 
 ---
 
@@ -399,140 +434,275 @@ sfdoc/
 
 ## Upcoming Phases
 
-### Phase 15: End-to-End Integration Tests
-
-**Goal:** Provide a full-pipeline integration test suite that catches regressions without requiring a live AI API.
-
-**Design:**
-
-- `tests/fixtures/` — a curated set of realistic `.cls` and `.trigger` files covering edge cases: abstract classes, interfaces, inner classes, complex generics, full ApexDoc comments, no ApexDoc
-- Mock HTTP server (e.g. `wiremock` crate) returning canned JSON responses for each fixture
-- Integration tests assert on specific content in generated `.md` files: class names present, method sections rendered, cross-links correct, index entries accurate
-- One test exercises `--force` flag to verify cache bypass; one exercises incremental mode to verify unchanged files are skipped
-
-**Impact:** Prevents silent regressions in the parser, prompt, or renderer without live API calls.
+Prioritized into tiers. Tier 1 (CI/CD trust) is prerequisite for running sfdoc unattended in pipelines. Tier 2 (distribution) gets docs where people actually read them. Tier 3 (workflow) adds key missing commands. Tier 4 (polish) is nice-to-have.
 
 ---
 
-### Phase 16: Salesforce Flow Documentation
+### Tier 1: CI/CD Trust
 
-**Goal:** Generate AI documentation for Salesforce Flows (`.flow-meta.xml` files), making the tool useful beyond Apex.
+#### Phase 29: Atomic Cache Writes
 
-**Salesforce Flow metadata overview:**
-Flows are stored as XML under `force-app/main/default/flows/`. A flow definition contains a label, process type (e.g. `AutoLaunchedFlow`, `Flow`, `Workflow`), optional description, and a graph of elements including variables, decisions, loops, assignments, screens (for screen flows), record operations, and action calls.
+**Goal:** Prevent cache corruption from crashes, power loss, or concurrent runs.
 
 **Design:**
+- Write `.sfdoc-cache.json` via temp file + atomic rename (`std::fs::rename`)
+- Guarantees either the old or new cache is valid; never a partial write
+- Add `.sfdoc-cache.json.tmp` to `.gitignore`
 
-- `FlowScanner` — scans for `*.flow-meta.xml` files; skips non-flow XML
-- `flow_parser.rs` — XML parser (using the `quick-xml` crate) that extracts:
-    - Flow label, API name, process type, description
-    - Input/output variables (name, type, direction)
-    - Screen elements (for screen flows): field names and labels
-    - Decision elements: condition counts
-    - Record operations: object names and operation types (lookup, create, update, delete)
-    - Action calls: action names and types (invocable actions, Apex, email alerts, etc.)
-- `FlowMetadata` and `FlowDocumentation` types in `types.rs`
-- `flow_prompt.rs` — AI prompt that sends the structural summary and asks for: plain-English description, explanation of the business process, entry criteria, key decision points, and considerations for administrators
-- Flow renderer template: process type badge, trigger/entry section, element summary table, AI description, usage notes
-- Flows included in index alongside classes and triggers, grouped by process type
-
-**Key implementation notes:**
-
-- `quick-xml` is a streaming parser; extract only needed elements rather than deserialising the full schema
-- Flow XML can be large (hundreds of elements); the prompt should send the structural summary, not the raw XML
-- Cross-links: if a flow calls an Apex action or references a class, link to that class's page
-
-**New CLI behaviour:**
-
-```
-sfdoc generate --source-dir force-app/main/default
-```
-
-With no flags, scans for `.cls`, `.trigger`, and `.flow-meta.xml` files automatically.
+**Impact:** Eliminates the most common cause of unnecessary full regeneration in CI.
 
 ---
 
-### Phase 17: Validation Rule Documentation
+#### Phase 30: Graceful Shutdown
 
-**Goal:** Generate AI documentation for Salesforce Validation Rules, giving admins and developers a plain-English explanation of each rule's formula and business intent.
-
-**Salesforce Validation Rule metadata overview:**
-Validation rules are stored per-object under `force-app/main/default/objects/{ObjectName}/validationRules/{RuleName}.validationRule-meta.xml`. Each rule contains an `active` flag, optional `description`, an `errorConditionFormula` (Salesforce formula syntax that evaluates to `true` when the record is invalid), an optional `errorDisplayField`, and an `errorMessage` shown to the user.
+**Goal:** Save progress when sfdoc is interrupted by Ctrl+C or SIGTERM.
 
 **Design:**
+- Register `tokio::signal::ctrl_c()` handler
+- On signal: cancel pending tasks, save cache with all completed work, exit cleanly
+- Print summary: “Interrupted — N/M files documented, cache saved”
 
-- `ValidationRuleScanner` — walks the `objects/` subtree and collects all `*.validationRule-meta.xml` files, grouping by object name
-- `validation_rule_parser.rs` — XML parser that extracts:
-    - Rule name, active status, description
-    - Error condition formula (raw)
-    - Error display field, error message
-    - Parent object name (derived from directory structure)
-- `ValidationRuleMetadata` and `ValidationRuleDocumentation` types in `types.rs`
-- `validation_rule_prompt.rs` — AI prompt that sends the rule name, formula, error message, and object name, and asks for: plain-English explanation of when the rule fires, what it is protecting, and any edge cases in the formula
-- Renderer template per validation rule: active badge, formula block, error message, AI description
-- Per-object grouping in the index: all rules for `Account` listed under an Account section, etc.
-
-**Key implementation notes:**
-
-- Validation rules do not require the full Salesforce formula evaluator; the raw formula is sent to the AI for explanation
-- Inactive rules (`<active>false</active>`) should be flagged with an "Inactive" badge in the rendered output
-- The `errorConditionFormula` can span multiple lines and contain nested functions; render it in a code block
-- Cross-links: if the formula references a field on a related object, note it in the "See Also" section
+**Impact:** A CI job killed by timeout or OOM doesn't lose all work done so far.
 
 ---
 
-### Phase 18: Custom Object Documentation
+#### Phase 31: File-Level Locking
 
-**Goal:** Document custom (and standard) objects and their fields so validation rules, flows, and Apex can be linked to the object layer. Object-centric docs tie the rest of the metadata together.
-
-**Salesforce Object metadata overview:** Objects live under `force-app/main/default/objects/{ObjectName}/`. Each object has an `*.object-meta.xml` and a `fields/` directory with `*.field-meta.xml` files. Metadata includes label, description, field names, types, help text, and relationships.
+**Goal:** Prevent two sfdoc processes from racing on the same output directory.
 
 **Design:**
+- Acquire an advisory lock on `.sfdoc.lock` in the output directory before starting
+- If lock is held: print clear error message and exit non-zero
+- Release lock on completion or signal
 
-- `ObjectScanner` — discovers object definitions and field metadata from the `objects/` subtree
-- `object_parser.rs` (or equivalent) — extract object name, label, description; per field: name, type, label, help text, reference target (for lookups)
-- `ObjectMetadata` and `ObjectDocumentation` types; optional AI pass for richer descriptions
-- One page per object: purpose, key fields table, then **Validation rules**, **Flows**, and **Apex** that reference this object (cross-links from the existing index/cache)
-- Index can group by object or list objects alongside classes/triggers/flows
-
-**Impact:** Single place to see “what is Account / MyObject\_\_c?” and which automation touches it.
+**Impact:** Safe to have dev + CI, or parallel CI jobs, targeting the same repo.
 
 ---
 
-### Phase 19: Lightning Web Components (LWC)
+#### Phase 32: `--quiet` Mode
 
-**Goal:** Document the UI layer so the doc set covers full stack: Apex, triggers, flows, validation rules, and LWC.
-
-**SFDX layout:** `lwc/<componentName>/` contains `*.js`, `*.html`, `*.css`, and `*.xml` (meta). Public API is via `@api` properties and methods.
+**Goal:** Suppress progress bars and informational output for CI environments.
 
 **Design:**
+- `--quiet` flag suppresses progress bars and println output
+- Errors still go to stderr
+- Combine with `--json` (Phase 33) for fully machine-parseable CI output
 
-- `LwcScanner` — discovers LWC directories under `lwc/`, reads `*.js`, `*.html`, `*.xml`
-- `lwc_parser.rs` — extract component name, `@api` props, public methods, slots from JS/HTML; optional meta.xml for description
-- `LwcMetadata` and `LwcDocumentation` types
-- `lwc_prompt.rs` — AI prompt for component purpose, usage notes, and cross-links to Apex they call
-- Renderer: one page per component (props table, slots, usage), “See Also” to Apex/Flows
-- Index: LWC section alongside Classes, Triggers, Flows
-
-**Impact:** Onboarding and impact analysis for UI and backend in one place.
+**Impact:** Clean CI logs; no interleaved progress bar artifacts.
 
 ---
 
-### Phase 20: Apex Interface Support
+#### Phase 33: `--json` Structured Output
 
-**Goal:** Treat Apex interfaces as first-class so “implementors” and “implements” relationships are easy to follow.
+**Goal:** Machine-parseable results for CI monitoring and alerting.
 
 **Design:**
+- `--json` flag outputs a single JSON object to stdout on completion:
+  ```json
+  {
+    “files_scanned”: 50,
+    “files_documented”: 47,
+    “files_cached”: 38,
+    “files_failed”: 3,
+    “failures”: [“OrderService.cls: rate limit exceeded”, ...],
+    “duration_secs”: 142,
+    “cache_hit_rate”: 0.76
+  }
+  ```
+- Progress bars suppressed when `--json` is active
 
-- In `parser.rs`: detect `interface` vs `class` in the declaration regex; set an `is_interface: bool` (or kind enum) on `ClassMetadata` (or introduce `InterfaceMetadata` if preferred)
-- Index: add an “Interfaces” section; on each interface page list all classes that `implements` it
-- Reuse existing class pipeline; no new scanner. Optional: link from class pages to “Implements: IMyService” with a link to the interface page
-
-**Impact:** Better navigation for interface-based design; small parser and renderer change.
+**Impact:** CI pipelines can parse results, set thresholds, and alert on regressions.
 
 ---
 
-### Phase 21: FlexiPages / Lightning App and Record Pages
+#### Phase 34: `--timeout` Flag
+
+**Goal:** Prevent hung API calls from blocking CI pipelines indefinitely.
+
+**Design:**
+- `--timeout <seconds>` sets an overall run timeout
+- On timeout: save cache (like graceful shutdown), exit with distinct exit code
+- Per-file timeout: skip individual files that exceed a threshold and continue
+
+**Impact:** CI jobs have predictable maximum duration.
+
+---
+
+### Tier 2: Distribution
+
+#### Phase 35: `sfdoc publish`
+
+**Goal:** Push generated docs to where people actually read them.
+
+**Design:**
+- `sfdoc publish` subcommand with target backends:
+  - `--target github-pages` — commit to `gh-pages` branch or configure GitHub Pages
+  - `--target confluence` — push pages via Confluence REST API
+  - `--target notion` — push pages via Notion API
+- Each target is a separate module behind a feature flag
+- Reads output directory and publishes all generated docs
+
+**Impact:** Closes the gap between “docs exist locally” and “docs are accessible to the team.”
+
+---
+
+#### Phase 36: GitHub Actions Workflow Template
+
+**Goal:** Zero-config CI setup for the most common use case.
+
+**Design:**
+- Ship a `.github/workflows/sfdoc.yml` template in the repo
+- Workflow: on push to main → generate docs → publish to GitHub Pages
+- Includes API key setup via GitHub Secrets
+- Optional: PR comment with diff summary of changed docs
+
+**Impact:** Adoption barrier drops to copying one file.
+
+---
+
+#### Phase 37: Static Site Wrapper
+
+**Goal:** Turn raw markdown output into a browsable documentation site.
+
+**Design:**
+- Wrap generated markdown in mdbook or mkdocs-material
+- Auto-generate `SUMMARY.md` / `mkdocs.yml` from the index
+- Includes: full-text search, navigation sidebar, landing page, mobile-friendly layout
+- `sfdoc generate --site` builds the full site in one step
+
+**Impact:** Output looks professional and is usable without a markdown viewer.
+
+---
+
+### Tier 3: Workflow Completeness
+
+#### Phase 38: `sfdoc validate`
+
+**Goal:** Verify all cross-links resolve; catch broken references from renames.
+
+**Design:**
+- Scan all generated `.md` files for internal links
+- Check that each link target exists on disk
+- Report broken links with source file and line
+- Exit non-zero if broken links found (CI gate)
+
+**Impact:** Prevents link rot; cheap to run as a CI check.
+
+---
+
+#### Phase 39: `sfdoc diff`
+
+**Goal:** Show what changed since last build without regenerating.
+
+**Design:**
+- Compare current source file hashes against cache
+- Output list of new, modified, and deleted files
+- `--json` support for CI integration
+
+**Impact:** Quick pre-flight check before committing to a full generate run.
+
+---
+
+#### Phase 40: Progress Resumption
+
+**Goal:** Resume interrupted runs from where they left off.
+
+**Design:**
+- Cache already tracks completed files; leverage this for automatic resume
+- On startup: detect partial run (lock file with metadata), offer to resume
+- `--resume` flag for explicit resume behavior
+
+**Impact:** Critical for large orgs where interrupted runs waste API credits.
+
+---
+
+#### Phase 41: `sfdoc impact <Name>`
+
+**Goal:** Show all metadata that references a given class, object, or flow.
+
+**Design:**
+- Query the cross-reference index (AllNames + cached relationships)
+- Output: list of triggers, flows, VRs, LWC, classes that reference the target
+- Supports `--json` for CI integration
+
+**Impact:** High value for architects assessing change impact.
+
+---
+
+### Tier 4: Polish
+
+#### Phase 42: Dependency Graph
+
+**Goal:** Visualize entity relationships as Mermaid/DOT diagrams.
+
+**Design:**
+- Build graph from AllNames cross-references
+- Output as Mermaid diagram embedded in markdown or standalone `.dot` file
+- Optional: per-entity subgraph showing immediate neighbors
+
+---
+
+#### Phase 43: Diff-Aware Summaries
+
+**Goal:** Include git diff context in AI prompts so regenerated docs mention what changed.
+
+**Design:**
+- Run `git diff` for each changed file
+- Append diff summary to user prompt
+- AI generates a “Recent Changes” section in the documentation
+
+---
+
+#### Phase 44: Dead Code Hints
+
+**Goal:** Flag classes/methods with no incoming cross-references.
+
+**Design:**
+- After building AllNames, identify entities with zero inbound references
+- Add “Potentially Unused” badge to their documentation pages
+- Optional: `sfdoc dead-code` command for standalone report
+
+---
+
+#### Phase 45: Confidence / Quality Scores
+
+**Goal:** AI rates documentation completeness; flag low-context methods.
+
+**Design:**
+- Add `confidence: f32` field to documentation types
+- AI returns a 0-1 score based on how much context it had
+- Low-confidence pages flagged in index for human review
+
+---
+
+#### Phase 46: Watch Mode
+
+**Goal:** Auto-rebuild on file save during development.
+
+**Design:**
+- `sfdoc watch` monitors source directory via `notify` crate
+- Debounce changes, regenerate only affected files
+- Uses `sfdoc update` internally for single-file rebuilds
+
+---
+
+#### Phase 47: Dark Mode
+
+**Goal:** CSS dark theme for the HTML output site.
+
+**Design:**
+- `prefers-color-scheme: dark` media query
+- Toggle button in HTML sidebar
+- Persist preference in localStorage
+
+---
+
+### Historical Phase Notes (collapsed)
+
+<details>
+<summary>Original design notes for completed phases 15–28 and old phase numbering for 29–40 (click to expand)</summary>
+
+### Phase 21 (completed): FlexiPages / Lightning App and Record Pages
 
 **Goal:** Document what appears on each Lightning page (App, Record, Home) for onboarding and change impact.
 
@@ -835,6 +1005,8 @@ Validation rules are stored per-object under `force-app/main/default/objects/{Ob
 - `--resume` flag (explicit) vs. automatic resume based on cache state
 
 **Impact:** Critical for large orgs (hundreds of files) where an interrupted run currently wastes all AI credits spent so far.
+
+</details>
 
 ---
 
