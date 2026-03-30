@@ -215,7 +215,7 @@ fn is_quota_exhausted(body: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::prompt::build_prompt;
+    use crate::prompts::build_class_prompt;
     use crate::types::{ClassMetadata, MethodMetadata, ParamMetadata, SourceFile};
     use std::path::PathBuf;
 
@@ -249,7 +249,7 @@ mod tests {
     fn prompt_contains_class_name() {
         let file = make_file("public class AccountService {}");
         let meta = make_metadata();
-        let prompt = build_prompt(&file, &meta);
+        let prompt = build_class_prompt(&file, &meta);
         assert!(prompt.contains("AccountService"));
         assert!(prompt.contains("processAccounts"));
         assert!(prompt.contains("```apex"));
@@ -261,7 +261,7 @@ mod tests {
         let file = make_file(source);
         let mut meta = make_metadata();
         meta.existing_comments = vec!["/** Service for accounts. */".to_string()];
-        let prompt = build_prompt(&file, &meta);
+        let prompt = build_class_prompt(&file, &meta);
         assert!(prompt.contains("Service for accounts"));
     }
 }

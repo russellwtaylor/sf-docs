@@ -10,56 +10,13 @@ use crate::types::{
     TriggerDocumentation, TriggerMetadata, ValidationRuleDocumentation, ValidationRuleMetadata,
 };
 
-pub struct RenderContext {
-    pub metadata: ClassMetadata,
-    pub documentation: ClassDocumentation,
+/// Generic render context for any AI-documented metadata type.
+pub struct RenderContext<M, D> {
+    pub metadata: M,
+    pub documentation: D,
     pub all_names: Arc<AllNames>,
     /// Relative path from the source directory to this file's parent directory.
     /// Used to group the index by namespace/folder (e.g. `"classes"`, `"classes/account"`).
-    pub folder: String,
-}
-
-pub struct TriggerRenderContext {
-    pub metadata: TriggerMetadata,
-    pub documentation: TriggerDocumentation,
-    pub all_names: Arc<AllNames>,
-    /// Relative path from the source directory to this file's parent directory.
-    pub folder: String,
-}
-
-pub struct FlowRenderContext {
-    pub metadata: FlowMetadata,
-    pub documentation: FlowDocumentation,
-    pub all_names: Arc<AllNames>,
-    pub folder: String,
-}
-
-pub struct ValidationRuleRenderContext {
-    pub metadata: ValidationRuleMetadata,
-    pub documentation: ValidationRuleDocumentation,
-    pub all_names: Arc<AllNames>,
-    /// Set to `object_name` for grouping by object in the index.
-    pub folder: String,
-}
-
-pub struct ObjectRenderContext {
-    pub metadata: ObjectMetadata,
-    pub documentation: ObjectDocumentation,
-    pub all_names: Arc<AllNames>,
-    pub folder: String,
-}
-
-pub struct LwcRenderContext {
-    pub metadata: LwcMetadata,
-    pub documentation: LwcDocumentation,
-    pub all_names: Arc<AllNames>,
-    pub folder: String,
-}
-
-pub struct FlexiPageRenderContext {
-    pub metadata: FlexiPageMetadata,
-    pub documentation: FlexiPageDocumentation,
-    pub all_names: Arc<AllNames>,
     pub folder: String,
 }
 
@@ -68,24 +25,18 @@ pub struct CustomMetadataRenderContext {
     pub records: Vec<CustomMetadataRecord>,
 }
 
-pub struct AuraRenderContext {
-    pub metadata: AuraMetadata,
-    pub documentation: AuraDocumentation,
-    pub all_names: Arc<AllNames>,
-    pub folder: String,
-}
-
 /// Groups all documentation contexts for rendering, eliminating long parameter lists.
 pub struct DocumentationBundle<'a> {
-    pub classes: &'a [RenderContext],
-    pub triggers: &'a [TriggerRenderContext],
-    pub flows: &'a [FlowRenderContext],
-    pub validation_rules: &'a [ValidationRuleRenderContext],
-    pub objects: &'a [ObjectRenderContext],
-    pub lwc: &'a [LwcRenderContext],
-    pub flexipages: &'a [FlexiPageRenderContext],
+    pub classes: &'a [RenderContext<ClassMetadata, ClassDocumentation>],
+    pub triggers: &'a [RenderContext<TriggerMetadata, TriggerDocumentation>],
+    pub flows: &'a [RenderContext<FlowMetadata, FlowDocumentation>],
+    pub validation_rules:
+        &'a [RenderContext<ValidationRuleMetadata, ValidationRuleDocumentation>],
+    pub objects: &'a [RenderContext<ObjectMetadata, ObjectDocumentation>],
+    pub lwc: &'a [RenderContext<LwcMetadata, LwcDocumentation>],
+    pub flexipages: &'a [RenderContext<FlexiPageMetadata, FlexiPageDocumentation>],
     pub custom_metadata: &'a [CustomMetadataRenderContext],
-    pub aura: &'a [AuraRenderContext],
+    pub aura: &'a [RenderContext<AuraMetadata, AuraDocumentation>],
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +87,7 @@ fn cross_link_md(name: &str, all_names: &AllNames, from_type: &str) -> String {
     }
 }
 
-pub fn render_class_page(ctx: &RenderContext) -> String {
+pub fn render_class_page(ctx: &RenderContext<ClassMetadata, ClassDocumentation>) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let known = ctx.all_names.all_known_names();
@@ -294,7 +245,7 @@ pub fn render_class_page(ctx: &RenderContext) -> String {
     out
 }
 
-pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
+pub fn render_trigger_page(ctx: &RenderContext<TriggerMetadata, TriggerDocumentation>) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let known = ctx.all_names.all_known_names();
@@ -393,7 +344,7 @@ pub fn render_trigger_page(ctx: &TriggerRenderContext) -> String {
     out
 }
 
-pub fn render_flow_page(ctx: &FlowRenderContext) -> String {
+pub fn render_flow_page(ctx: &RenderContext<FlowMetadata, FlowDocumentation>) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let known = ctx.all_names.all_known_names();
@@ -545,7 +496,9 @@ pub fn render_flow_page(ctx: &FlowRenderContext) -> String {
     out
 }
 
-pub fn render_validation_rule_page(ctx: &ValidationRuleRenderContext) -> String {
+pub fn render_validation_rule_page(
+    ctx: &RenderContext<ValidationRuleMetadata, ValidationRuleDocumentation>,
+) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let known = ctx.all_names.all_known_names();
@@ -642,7 +595,7 @@ pub fn render_validation_rule_page(ctx: &ValidationRuleRenderContext) -> String 
     out
 }
 
-pub fn render_object_page(ctx: &ObjectRenderContext) -> String {
+pub fn render_object_page(ctx: &RenderContext<ObjectMetadata, ObjectDocumentation>) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let known = ctx.all_names.all_known_names();
@@ -742,7 +695,7 @@ pub fn render_object_page(ctx: &ObjectRenderContext) -> String {
     out
 }
 
-pub fn render_lwc_page(ctx: &LwcRenderContext) -> String {
+pub fn render_lwc_page(ctx: &RenderContext<LwcMetadata, LwcDocumentation>) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let known = ctx.all_names.all_known_names();
@@ -873,7 +826,10 @@ pub fn render_index(bundle: &DocumentationBundle) -> String {
         class_contexts.iter().partition(|c| c.metadata.is_interface);
 
     // Group regular classes by folder, sorted alphabetically within each group.
-    let mut class_by_folder: BTreeMap<&str, Vec<&RenderContext>> = BTreeMap::new();
+    let mut class_by_folder: BTreeMap<
+        &str,
+        Vec<&RenderContext<ClassMetadata, ClassDocumentation>>,
+    > = BTreeMap::new();
     for ctx in &regular_class_contexts {
         class_by_folder
             .entry(ctx.folder.as_str())
@@ -908,7 +864,8 @@ pub fn render_index(bundle: &DocumentationBundle) -> String {
 
     // Interfaces section
     if !interface_contexts.is_empty() {
-        let mut iface_sorted: Vec<&&RenderContext> = interface_contexts.iter().collect();
+        let mut iface_sorted: Vec<&&RenderContext<ClassMetadata, ClassDocumentation>> =
+            interface_contexts.iter().collect();
         iface_sorted.sort_by(|a, b| a.documentation.class_name.cmp(&b.documentation.class_name));
         out.push_str("## Interfaces\n\n");
         out.push_str("| Interface | Summary |\n");
@@ -926,7 +883,10 @@ pub fn render_index(bundle: &DocumentationBundle) -> String {
 
     if !trigger_contexts.is_empty() {
         // Group triggers by folder, sorted within each group.
-        let mut trigger_by_folder: BTreeMap<&str, Vec<&TriggerRenderContext>> = BTreeMap::new();
+        let mut trigger_by_folder: BTreeMap<
+            &str,
+            Vec<&RenderContext<TriggerMetadata, TriggerDocumentation>>,
+        > = BTreeMap::new();
         for ctx in trigger_contexts {
             trigger_by_folder
                 .entry(ctx.folder.as_str())
@@ -965,7 +925,10 @@ pub fn render_index(bundle: &DocumentationBundle) -> String {
 
     if !flow_contexts.is_empty() {
         // Group flows by folder, sorted within each group.
-        let mut flow_by_folder: BTreeMap<&str, Vec<&FlowRenderContext>> = BTreeMap::new();
+        let mut flow_by_folder: BTreeMap<
+            &str,
+            Vec<&RenderContext<FlowMetadata, FlowDocumentation>>,
+        > = BTreeMap::new();
         for ctx in flow_contexts {
             flow_by_folder
                 .entry(ctx.folder.as_str())
@@ -1000,7 +963,10 @@ pub fn render_index(bundle: &DocumentationBundle) -> String {
 
     if !validation_rule_contexts.is_empty() {
         // Group validation rules by object_name (stored in folder), sorted within each group.
-        let mut vr_by_folder: BTreeMap<&str, Vec<&ValidationRuleRenderContext>> = BTreeMap::new();
+        let mut vr_by_folder: BTreeMap<
+            &str,
+            Vec<&RenderContext<ValidationRuleMetadata, ValidationRuleDocumentation>>,
+        > = BTreeMap::new();
         for ctx in validation_rule_contexts {
             vr_by_folder
                 .entry(ctx.folder.as_str())
@@ -1040,7 +1006,8 @@ pub fn render_index(bundle: &DocumentationBundle) -> String {
     }
 
     if !object_contexts.is_empty() {
-        let mut obj_sorted: Vec<&ObjectRenderContext> = object_contexts.iter().collect();
+        let mut obj_sorted: Vec<&RenderContext<ObjectMetadata, ObjectDocumentation>> =
+            object_contexts.iter().collect();
         obj_sorted.sort_by(|a, b| a.metadata.object_name.cmp(&b.metadata.object_name));
 
         out.push_str("## Objects\n\n");
@@ -1065,7 +1032,8 @@ pub fn render_index(bundle: &DocumentationBundle) -> String {
     }
 
     if !lwc_contexts.is_empty() {
-        let mut lwc_by_folder: BTreeMap<&str, Vec<&LwcRenderContext>> = BTreeMap::new();
+        let mut lwc_by_folder: BTreeMap<&str, Vec<&RenderContext<LwcMetadata, LwcDocumentation>>> =
+            BTreeMap::new();
         for ctx in lwc_contexts {
             lwc_by_folder
                 .entry(ctx.folder.as_str())
@@ -1100,7 +1068,8 @@ pub fn render_index(bundle: &DocumentationBundle) -> String {
 
     // FlexiPages section
     if !flexipage_contexts.is_empty() {
-        let mut fp_sorted: Vec<&FlexiPageRenderContext> = flexipage_contexts.iter().collect();
+        let mut fp_sorted: Vec<&RenderContext<FlexiPageMetadata, FlexiPageDocumentation>> =
+            flexipage_contexts.iter().collect();
         fp_sorted.sort_by(|a, b| a.metadata.api_name.cmp(&b.metadata.api_name));
         out.push_str("## Lightning Pages\n\n");
         out.push_str("| Page | Type | Summary |\n");
@@ -1143,7 +1112,8 @@ pub fn render_index(bundle: &DocumentationBundle) -> String {
 
     // Aura Components section
     if !aura_contexts.is_empty() {
-        let mut aura_sorted: Vec<&AuraRenderContext> = aura_contexts.iter().collect();
+        let mut aura_sorted: Vec<&RenderContext<AuraMetadata, AuraDocumentation>> =
+            aura_contexts.iter().collect();
         aura_sorted.sort_by(|a, b| a.metadata.component_name.cmp(&b.metadata.component_name));
         out.push_str("## Aura Components\n\n");
         out.push_str("| Component | Attributes | Summary |\n");
@@ -1163,7 +1133,9 @@ pub fn render_index(bundle: &DocumentationBundle) -> String {
     out
 }
 
-pub fn render_flexipage_page(ctx: &FlexiPageRenderContext) -> String {
+pub fn render_flexipage_page(
+    ctx: &RenderContext<FlexiPageMetadata, FlexiPageDocumentation>,
+) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let known = ctx.all_names.all_known_names();
@@ -1310,7 +1282,7 @@ pub fn render_custom_metadata_page(ctx: &CustomMetadataRenderContext) -> String 
     out
 }
 
-pub fn render_aura_page(ctx: &AuraRenderContext) -> String {
+pub fn render_aura_page(ctx: &RenderContext<AuraMetadata, AuraDocumentation>) -> String {
     let doc = &ctx.documentation;
     let meta = &ctx.metadata;
     let known = ctx.all_names.all_known_names();
@@ -1613,7 +1585,7 @@ mod tests {
     use std::collections::HashSet;
     use std::sync::Arc;
 
-    fn sample_context() -> RenderContext {
+    fn sample_context() -> RenderContext<ClassMetadata, ClassDocumentation> {
         RenderContext {
             metadata: ClassMetadata {
                 class_name: "AccountService".to_string(),
