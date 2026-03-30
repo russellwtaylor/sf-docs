@@ -13,6 +13,9 @@ target
 # Contains mutation testing data
 **/mutants.out*/
 
+# sfdoc cache temp file (atomic writes)
+.sfdoc-cache.json.tmp
+
 # macOS
 .DS_Store
 

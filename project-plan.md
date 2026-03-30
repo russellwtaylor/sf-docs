@@ -90,7 +90,7 @@ todos:
     # --- Tier 1: CI/CD Trust (reliability for unattended runs) ---
     - id: atomic-cache
       content: "Phase 29: Atomic cache writes — write to temp file + rename to prevent corruption from crashes or concurrent runs"
-      status: todo
+      status: done
     - id: graceful-shutdown
       content: "Phase 30: Graceful shutdown — handle SIGINT/SIGTERM to save cache and in-flight progress before exiting"
       status: todo
