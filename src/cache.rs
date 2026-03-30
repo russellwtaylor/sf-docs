@@ -12,6 +12,7 @@ use crate::types::{
 };
 
 const CACHE_FILE: &str = ".sfdoc-cache.json";
+const CACHE_TMP_FILE: &str = ".sfdoc-cache.json.tmp";
 
 /// Bump this when the cache schema changes to force a full rebuild.
 const CACHE_VERSION: u32 = 1;
@@ -149,11 +150,18 @@ impl Cache {
         }
     }
 
-    /// Persist the cache to the output directory.
+    /// Persist the cache to the output directory via atomic write.
+    ///
+    /// Writes to a temporary file first, then renames it into place. This
+    /// guarantees the cache file is always either the old or new version —
+    /// never a partial write — even if the process crashes mid-save.
     pub fn save(&self, output_dir: &Path) -> Result<()> {
         std::fs::create_dir_all(output_dir)?;
         let data = serde_json::to_string_pretty(self)?;
-        std::fs::write(output_dir.join(CACHE_FILE), data)?;
+        let final_path = output_dir.join(CACHE_FILE);
+        let tmp_path = output_dir.join(CACHE_TMP_FILE);
+        std::fs::write(&tmp_path, &data)?;
+        std::fs::rename(&tmp_path, &final_path)?;
         Ok(())
     }
 
@@ -613,5 +621,27 @@ mod tests {
                 .summary,
             "Version 2"
         );
+    }
+
+    #[test]
+    fn save_is_atomic_no_tmp_file_left() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let mut cache = Cache::default();
+        let doc = ClassDocumentation {
+            class_name: "Foo".to_string(),
+            summary: "".to_string(),
+            description: "".to_string(),
+            methods: vec![],
+            properties: vec![],
+            usage_examples: vec![],
+            relationships: vec![],
+        };
+        cache.update("Foo.cls".to_string(), "h1".to_string(), "m1", doc);
+        cache.save(tmp.path()).unwrap();
+
+        // The final cache file exists
+        assert!(tmp.path().join(CACHE_FILE).exists());
+        // The temp file was renamed away — it should not exist
+        assert!(!tmp.path().join(CACHE_TMP_FILE).exists());
     }
 }
