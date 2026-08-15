@@ -137,7 +137,8 @@ impl TriggerEvent {
 }
 
 /// AI-generated documentation for an Apex trigger.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct TriggerDocumentation {
     pub trigger_name: String,
     pub sobject: String,
@@ -149,7 +150,8 @@ pub struct TriggerDocumentation {
     pub relationships: Vec<String>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct TriggerEventDocumentation {
     pub event: String,
     pub description: String,
@@ -158,7 +160,8 @@ pub struct TriggerEventDocumentation {
 // ---------------------------------------------------------------------------
 
 /// AI-generated documentation for a class, parsed from the AI response.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct ClassDocumentation {
     pub class_name: String,
     pub summary: String,
@@ -169,7 +172,8 @@ pub struct ClassDocumentation {
     pub relationships: Vec<String>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct MethodDocumentation {
     pub name: String,
     pub description: String,
@@ -178,13 +182,15 @@ pub struct MethodDocumentation {
     pub throws: Vec<String>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct ParamDocumentation {
     pub name: String,
     pub description: String,
 }
 
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct PropertyDocumentation {
     pub name: String,
     pub description: String,
@@ -232,7 +238,8 @@ pub struct FlowActionCall {
 }
 
 /// AI-generated documentation for a Salesforce Flow.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct FlowDocumentation {
     pub api_name: String,
     pub label: String,
@@ -288,7 +295,8 @@ pub struct ObjectMetadata {
 }
 
 /// AI-generated documentation for a Salesforce Custom Object.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct ObjectDocumentation {
     pub object_name: String,
     pub label: String,
@@ -301,7 +309,8 @@ pub struct ObjectDocumentation {
 }
 
 /// AI-generated documentation for a Salesforce Validation Rule.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct ValidationRuleDocumentation {
     pub rule_name: String,
     pub object_name: String,
@@ -338,14 +347,16 @@ pub struct LwcMetadata {
 }
 
 /// AI-generated documentation for a Lightning Web Component property or method.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct LwcPropDocumentation {
     pub name: String,
     pub description: String,
 }
 
 /// AI-generated documentation for a Lightning Web Component.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct LwcDocumentation {
     pub component_name: String,
     pub summary: String,
@@ -375,7 +386,8 @@ pub struct FlexiPageMetadata {
 }
 
 /// AI-generated documentation for a Salesforce FlexiPage.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct FlexiPageDocumentation {
     pub api_name: String,
     pub label: String,
@@ -424,14 +436,16 @@ pub struct AuraMetadata {
 }
 
 /// AI-generated documentation for a single Aura attribute.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct AuraAttributeDocumentation {
     pub name: String,
     pub description: String,
 }
 
 /// AI-generated documentation for an Aura component.
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
+#[serde(default)]
 pub struct AuraDocumentation {
     pub component_name: String,
     pub summary: String,

@@ -52,7 +52,7 @@ where
     }
     let mut kept_files = Vec::new();
     let mut kept_meta = Vec::new();
-    for (f, m) in files.into_iter().zip(meta.into_iter()) {
+    for (f, m) in files.into_iter().zip(meta) {
         if args.tag_matches(get_tags(&m)) {
             kept_files.push(f);
             kept_meta.push(m);
@@ -161,6 +161,15 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
     let flexipage_files = name_filter(flexipage_files);
     let custom_metadata_files = name_filter(custom_metadata_files);
     let aura_files = name_filter(aura_files);
+
+    let files = if args.include_tests {
+        files
+    } else {
+        files
+            .into_iter()
+            .filter(|f| !cli::is_apex_test_filename(&f.filename))
+            .collect()
+    };
 
     // Require at least one file of any enabled type.
     if files.is_empty()
@@ -399,36 +408,11 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
         .collect();
     let object_hashes: Vec<String> = object_files
         .par_iter()
-        .map(|f| {
-            let mut combined = f.raw_source.clone();
-            if let Some(fields_dir) = f.path.parent().map(|p| p.join("fields")) {
-                if let Ok(entries) = std::fs::read_dir(&fields_dir) {
-                    let mut field_contents: Vec<(String, String)> = entries
-                        .filter_map(|e| e.ok())
-                        .filter(|e| {
-                            e.file_name()
-                                .to_str()
-                                .is_some_and(|n| n.ends_with(".field-meta.xml"))
-                        })
-                        .filter_map(|e| {
-                            let path = e.path();
-                            let name = path.file_name()?.to_str()?.to_string();
-                            let content = std::fs::read_to_string(&path).ok()?;
-                            Some((name, content))
-                        })
-                        .collect();
-                    field_contents.sort_by(|a, b| a.0.cmp(&b.0));
-                    for (_, content) in field_contents {
-                        combined.push_str(&content);
-                    }
-                }
-            }
-            cache::hash_source(&combined)
-        })
+        .map(|f| cache::hash_object_source(&f.path, &f.raw_source))
         .collect();
     let lwc_hashes: Vec<String> = lwc_files
         .par_iter()
-        .map(|f| cache::hash_source(&f.raw_source))
+        .map(|f| cache::hash_lwc_source(&f.path, &f.raw_source))
         .collect();
     let flexipage_hashes: Vec<String> = flexipage_files
         .par_iter()
@@ -436,14 +420,15 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
         .collect();
     let aura_hashes: Vec<String> = aura_files
         .par_iter()
-        .map(|f| cache::hash_source(&f.raw_source))
+        .map(|f| cache::hash_aura_source(&f.path, &f.raw_source))
         .collect();
 
     // Partition into cached vs. needs-API
     let mut class_work: Vec<usize> = Vec::new();
     let mut class_docs: Vec<Option<ClassDocumentation>> = vec![None; files.len()];
     for (i, (f, h)) in files.iter().zip(class_hashes.iter()).enumerate() {
-        if let Some(e) = cache.get_if_fresh(&f.path.to_string_lossy(), h, &model) {
+        if let Some(e) = cache.get_if_fresh(&cache::cache_key(&f.path, &args.source_dir), h, &model)
+        {
             class_docs[i] = Some(e.documentation.clone());
         } else {
             class_work.push(i);
@@ -453,7 +438,9 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
     let mut trigger_work: Vec<usize> = Vec::new();
     let mut trigger_docs: Vec<Option<TriggerDocumentation>> = vec![None; trigger_files.len()];
     for (i, (f, h)) in trigger_files.iter().zip(trigger_hashes.iter()).enumerate() {
-        if let Some(e) = cache.get_trigger_if_fresh(&f.path.to_string_lossy(), h, &model) {
+        if let Some(e) =
+            cache.get_trigger_if_fresh(&cache::cache_key(&f.path, &args.source_dir), h, &model)
+        {
             trigger_docs[i] = Some(e.documentation.clone());
         } else {
             trigger_work.push(i);
@@ -463,7 +450,9 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
     let mut flow_work: Vec<usize> = Vec::new();
     let mut flow_docs: Vec<Option<FlowDocumentation>> = vec![None; flow_files.len()];
     for (i, (f, h)) in flow_files.iter().zip(flow_hashes.iter()).enumerate() {
-        if let Some(e) = cache.get_flow_if_fresh(&f.path.to_string_lossy(), h, &model) {
+        if let Some(e) =
+            cache.get_flow_if_fresh(&cache::cache_key(&f.path, &args.source_dir), h, &model)
+        {
             flow_docs[i] = Some(e.documentation.clone());
         } else {
             flow_work.push(i);
@@ -473,7 +462,11 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
     let mut vr_work: Vec<usize> = Vec::new();
     let mut vr_docs: Vec<Option<ValidationRuleDocumentation>> = vec![None; vr_files.len()];
     for (i, (f, h)) in vr_files.iter().zip(vr_hashes.iter()).enumerate() {
-        if let Some(e) = cache.get_validation_rule_if_fresh(&f.path.to_string_lossy(), h, &model) {
+        if let Some(e) = cache.get_validation_rule_if_fresh(
+            &cache::cache_key(&f.path, &args.source_dir),
+            h,
+            &model,
+        ) {
             vr_docs[i] = Some(e.documentation.clone());
         } else {
             vr_work.push(i);
@@ -483,7 +476,9 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
     let mut object_work: Vec<usize> = Vec::new();
     let mut object_docs: Vec<Option<ObjectDocumentation>> = vec![None; object_files.len()];
     for (i, (f, h)) in object_files.iter().zip(object_hashes.iter()).enumerate() {
-        if let Some(e) = cache.get_object_if_fresh(&f.path.to_string_lossy(), h, &model) {
+        if let Some(e) =
+            cache.get_object_if_fresh(&cache::cache_key(&f.path, &args.source_dir), h, &model)
+        {
             object_docs[i] = Some(e.documentation.clone());
         } else {
             object_work.push(i);
@@ -493,7 +488,9 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
     let mut lwc_work: Vec<usize> = Vec::new();
     let mut lwc_docs: Vec<Option<LwcDocumentation>> = vec![None; lwc_files.len()];
     for (i, (f, h)) in lwc_files.iter().zip(lwc_hashes.iter()).enumerate() {
-        if let Some(e) = cache.get_lwc_if_fresh(&f.path.to_string_lossy(), h, &model) {
+        if let Some(e) =
+            cache.get_lwc_if_fresh(&cache::cache_key(&f.path, &args.source_dir), h, &model)
+        {
             lwc_docs[i] = Some(e.documentation.clone());
         } else {
             lwc_work.push(i);
@@ -507,7 +504,9 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
         .zip(flexipage_hashes.iter())
         .enumerate()
     {
-        if let Some(e) = cache.get_flexipage_if_fresh(&f.path.to_string_lossy(), h, &model) {
+        if let Some(e) =
+            cache.get_flexipage_if_fresh(&cache::cache_key(&f.path, &args.source_dir), h, &model)
+        {
             flexipage_docs[i] = Some(e.documentation.clone());
         } else {
             flexipage_work.push(i);
@@ -517,7 +516,9 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
     let mut aura_work: Vec<usize> = Vec::new();
     let mut aura_docs: Vec<Option<AuraDocumentation>> = vec![None; aura_files.len()];
     for (i, (f, h)) in aura_files.iter().zip(aura_hashes.iter()).enumerate() {
-        if let Some(e) = cache.get_aura_if_fresh(&f.path.to_string_lossy(), h, &model) {
+        if let Some(e) =
+            cache.get_aura_if_fresh(&cache::cache_key(&f.path, &args.source_dir), h, &model)
+        {
             aura_docs[i] = Some(e.documentation.clone());
         } else {
             aura_work.push(i);
@@ -535,6 +536,8 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
     if skipped > 0 {
         println!("{skipped} file(s) up-to-date — skipping API calls");
     }
+
+    let mut failures: Vec<String> = Vec::new();
 
     if !class_work.is_empty()
         || !trigger_work.is_empty()
@@ -594,7 +597,6 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
         }
 
         let mut tasks: JoinSet<Result<WorkResult>> = JoinSet::new();
-        let mut failures: Vec<String> = Vec::new();
 
         for &idx in &class_work {
             let client = Arc::clone(&client);
@@ -752,22 +754,22 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
                 }
                 Ok(Ok(work_result)) => match work_result {
                     WorkResult::Class(idx, doc) => {
-                        let key = files[idx].path.to_string_lossy().into_owned();
+                        let key = cache::cache_key(&files[idx].path, &args.source_dir);
                         cache.update(key, class_hashes[idx].clone(), &model, doc.clone());
                         class_docs[idx] = Some(doc);
                     }
                     WorkResult::Trigger(idx, doc) => {
-                        let key = trigger_files[idx].path.to_string_lossy().into_owned();
+                        let key = cache::cache_key(&trigger_files[idx].path, &args.source_dir);
                         cache.update_trigger(key, trigger_hashes[idx].clone(), &model, doc.clone());
                         trigger_docs[idx] = Some(doc);
                     }
                     WorkResult::Flow(idx, doc) => {
-                        let key = flow_files[idx].path.to_string_lossy().into_owned();
+                        let key = cache::cache_key(&flow_files[idx].path, &args.source_dir);
                         cache.update_flow(key, flow_hashes[idx].clone(), &model, doc.clone());
                         flow_docs[idx] = Some(doc);
                     }
                     WorkResult::ValidationRule(idx, doc) => {
-                        let key = vr_files[idx].path.to_string_lossy().into_owned();
+                        let key = cache::cache_key(&vr_files[idx].path, &args.source_dir);
                         cache.update_validation_rule(
                             key,
                             vr_hashes[idx].clone(),
@@ -777,17 +779,17 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
                         vr_docs[idx] = Some(doc);
                     }
                     WorkResult::Object(idx, doc) => {
-                        let key = object_files[idx].path.to_string_lossy().into_owned();
+                        let key = cache::cache_key(&object_files[idx].path, &args.source_dir);
                         cache.update_object(key, object_hashes[idx].clone(), &model, doc.clone());
                         object_docs[idx] = Some(doc);
                     }
                     WorkResult::Lwc(idx, doc) => {
-                        let key = lwc_files[idx].path.to_string_lossy().into_owned();
+                        let key = cache::cache_key(&lwc_files[idx].path, &args.source_dir);
                         cache.update_lwc(key, lwc_hashes[idx].clone(), &model, doc.clone());
                         lwc_docs[idx] = Some(doc);
                     }
                     WorkResult::FlexiPage(idx, doc) => {
-                        let key = flexipage_files[idx].path.to_string_lossy().into_owned();
+                        let key = cache::cache_key(&flexipage_files[idx].path, &args.source_dir);
                         cache.update_flexipage(
                             key,
                             flexipage_hashes[idx].clone(),
@@ -797,7 +799,7 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
                         flexipage_docs[idx] = Some(doc);
                     }
                     WorkResult::Aura(idx, doc) => {
-                        let key = aura_files[idx].path.to_string_lossy().into_owned();
+                        let key = cache::cache_key(&aura_files[idx].path, &args.source_dir);
                         cache.update_aura(key, aura_hashes[idx].clone(), &model, doc.clone());
                         aura_docs[idx] = Some(doc);
                     }
@@ -815,9 +817,6 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
             for f in &failures {
                 eprintln!("  - {f}");
             }
-            // Save progress so the next run can skip successful files
-            cache.save(&output_dir)?;
-            anyhow::bail!("{} file(s) failed; partial cache saved", failures.len());
         }
     }
 
@@ -840,6 +839,40 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
     let flexipage_meta = Arc::try_unwrap(flexipage_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
     let aura_files = Arc::try_unwrap(aura_files).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
     let aura_meta = Arc::try_unwrap(aura_meta).map_err(|_| anyhow::anyhow!(ARC_ERR))?;
+
+    use std::collections::HashSet;
+    let class_keys: HashSet<String> = files
+        .iter()
+        .map(|f| cache::cache_key(&f.path, &args.source_dir))
+        .collect();
+    let trigger_keys: HashSet<String> = trigger_files
+        .iter()
+        .map(|f| cache::cache_key(&f.path, &args.source_dir))
+        .collect();
+    let flow_keys: HashSet<String> = flow_files
+        .iter()
+        .map(|f| cache::cache_key(&f.path, &args.source_dir))
+        .collect();
+    let vr_keys: HashSet<String> = vr_files
+        .iter()
+        .map(|f| cache::cache_key(&f.path, &args.source_dir))
+        .collect();
+    let object_keys: HashSet<String> = object_files
+        .iter()
+        .map(|f| cache::cache_key(&f.path, &args.source_dir))
+        .collect();
+    let lwc_keys: HashSet<String> = lwc_files
+        .iter()
+        .map(|f| cache::cache_key(&f.path, &args.source_dir))
+        .collect();
+    let flexipage_keys: HashSet<String> = flexipage_files
+        .iter()
+        .map(|f| cache::cache_key(&f.path, &args.source_dir))
+        .collect();
+    let aura_keys: HashSet<String> = aura_files
+        .iter()
+        .map(|f| cache::cache_key(&f.path, &args.source_dir))
+        .collect();
 
     let class_contexts: Vec<renderer::RenderContext<ClassMetadata, ClassDocumentation>> = files
         .into_iter()
@@ -967,23 +1000,184 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
         })
         .collect();
 
-    // Render and write output
-    let bundle = renderer::DocumentationBundle {
-        classes: &class_contexts,
-        triggers: &trigger_contexts,
-        flows: &flow_contexts,
-        validation_rules: &vr_contexts,
-        objects: &object_contexts,
-        lwc: &lwc_contexts,
-        flexipages: &flexipage_contexts,
-        custom_metadata: &custom_metadata_contexts,
-        aura: &aura_contexts,
-    };
-    renderer::write_output(&output_dir, &bundle)?;
+    // Render pages for this run, then rebuild the index (merging cache on
+    // partial generates so --type/--tag/--name-filter do not wipe other types).
+    {
+        let page_bundle = renderer::DocumentationBundle {
+            classes: &class_contexts,
+            triggers: &trigger_contexts,
+            flows: &flow_contexts,
+            validation_rules: &vr_contexts,
+            objects: &object_contexts,
+            lwc: &lwc_contexts,
+            flexipages: &flexipage_contexts,
+            custom_metadata: &custom_metadata_contexts,
+            aura: &aura_contexts,
+        };
+        renderer::write_pages(&output_dir, &page_bundle)?;
+        if !args.is_partial() {
+            renderer::write_index_file(&output_dir, &page_bundle)?;
+        }
+    }
+
+    if args.should_prune() {
+        if args.type_enabled(cli::MetadataType::Apex) {
+            prune_type(
+                &mut cache,
+                cli::MetadataType::Apex,
+                &class_keys,
+                &output_dir.join("classes"),
+                class_contexts
+                    .iter()
+                    .map(|c| renderer::sanitize_filename(&c.metadata.class_name))
+                    .collect(),
+            )?;
+        }
+        if args.type_enabled(cli::MetadataType::Triggers) {
+            prune_type(
+                &mut cache,
+                cli::MetadataType::Triggers,
+                &trigger_keys,
+                &output_dir.join("triggers"),
+                trigger_contexts
+                    .iter()
+                    .map(|c| renderer::sanitize_filename(&c.metadata.trigger_name))
+                    .collect(),
+            )?;
+        }
+        if args.type_enabled(cli::MetadataType::Flows) {
+            prune_type(
+                &mut cache,
+                cli::MetadataType::Flows,
+                &flow_keys,
+                &output_dir.join("flows"),
+                flow_contexts
+                    .iter()
+                    .map(|c| renderer::sanitize_filename(&c.metadata.api_name))
+                    .collect(),
+            )?;
+        }
+        if args.type_enabled(cli::MetadataType::ValidationRules) {
+            prune_type(
+                &mut cache,
+                cli::MetadataType::ValidationRules,
+                &vr_keys,
+                &output_dir.join("validation-rules"),
+                vr_contexts
+                    .iter()
+                    .map(|c| renderer::sanitize_filename(&c.metadata.rule_name))
+                    .collect(),
+            )?;
+        }
+        if args.type_enabled(cli::MetadataType::Objects) {
+            prune_type(
+                &mut cache,
+                cli::MetadataType::Objects,
+                &object_keys,
+                &output_dir.join("objects"),
+                object_contexts
+                    .iter()
+                    .map(|c| renderer::sanitize_filename(&c.metadata.object_name))
+                    .collect(),
+            )?;
+        }
+        if args.type_enabled(cli::MetadataType::Lwc) {
+            prune_type(
+                &mut cache,
+                cli::MetadataType::Lwc,
+                &lwc_keys,
+                &output_dir.join("lwc"),
+                lwc_contexts
+                    .iter()
+                    .map(|c| renderer::sanitize_filename(&c.metadata.component_name))
+                    .collect(),
+            )?;
+        }
+        if args.type_enabled(cli::MetadataType::Flexipages) {
+            prune_type(
+                &mut cache,
+                cli::MetadataType::Flexipages,
+                &flexipage_keys,
+                &output_dir.join("flexipages"),
+                flexipage_contexts
+                    .iter()
+                    .map(|c| renderer::sanitize_filename(&c.metadata.api_name))
+                    .collect(),
+            )?;
+        }
+        if args.type_enabled(cli::MetadataType::CustomMetadata) {
+            let stems = custom_metadata_contexts
+                .iter()
+                .map(|c| renderer::sanitize_filename(&c.type_name))
+                .collect();
+            renderer::prune_markdown_dir(&output_dir.join("custom-metadata"), &stems)?;
+        }
+        if args.type_enabled(cli::MetadataType::Aura) {
+            prune_type(
+                &mut cache,
+                cli::MetadataType::Aura,
+                &aura_keys,
+                &output_dir.join("aura"),
+                aura_contexts
+                    .iter()
+                    .map(|c| renderer::sanitize_filename(&c.metadata.component_name))
+                    .collect(),
+            )?;
+        }
+    }
+
+    if args.is_partial() {
+        let mut owned = renderer::OwnedBundle::from_cache(&cache);
+        if args.type_enabled(cli::MetadataType::Apex) {
+            owned.overlay_classes(class_contexts);
+        }
+        if args.type_enabled(cli::MetadataType::Triggers) {
+            owned.overlay_triggers(trigger_contexts);
+        }
+        if args.type_enabled(cli::MetadataType::Flows) {
+            owned.overlay_flows(flow_contexts);
+        }
+        if args.type_enabled(cli::MetadataType::ValidationRules) {
+            owned.overlay_validation_rules(vr_contexts);
+        }
+        if args.type_enabled(cli::MetadataType::Objects) {
+            owned.overlay_objects(object_contexts);
+        }
+        if args.type_enabled(cli::MetadataType::Lwc) {
+            owned.overlay_lwc(lwc_contexts);
+        }
+        if args.type_enabled(cli::MetadataType::Flexipages) {
+            owned.overlay_flexipages(flexipage_contexts);
+        }
+        if args.type_enabled(cli::MetadataType::CustomMetadata) {
+            owned.overlay_custom_metadata(custom_metadata_contexts);
+        }
+        if args.type_enabled(cli::MetadataType::Aura) {
+            owned.overlay_aura(aura_contexts);
+        }
+        renderer::write_index_file(&output_dir, &owned.as_bundle())?;
+    }
     println!("Documentation written to {}", output_dir.display());
 
-    // Persist the updated cache — only reached if all API calls succeeded
     cache.save(&output_dir)?;
 
+    if !failures.is_empty() {
+        anyhow::bail!(
+            "{} file(s) failed; successful pages and cache were saved",
+            failures.len()
+        );
+    }
+
     Ok(())
+}
+
+fn prune_type(
+    cache: &mut cache::Cache,
+    mt: cli::MetadataType,
+    keys: &std::collections::HashSet<String>,
+    dir: &std::path::Path,
+    stems: std::collections::HashSet<String>,
+) -> Result<()> {
+    cache.retain_type(mt, keys);
+    renderer::prune_markdown_dir(dir, &stems)
 }

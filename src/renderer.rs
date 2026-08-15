@@ -1,5 +1,5 @@
 use anyhow::Result;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -39,6 +39,264 @@ pub struct DocumentationBundle<'a> {
     pub aura: &'a [RenderContext<AuraMetadata, AuraDocumentation>],
 }
 
+/// Owned counterpart of [`DocumentationBundle`], used to merge cache stubs into
+/// the index without rewriting per-type pages from incomplete metadata.
+pub struct OwnedBundle {
+    pub classes: Vec<RenderContext<ClassMetadata, ClassDocumentation>>,
+    pub triggers: Vec<RenderContext<TriggerMetadata, TriggerDocumentation>>,
+    pub flows: Vec<RenderContext<FlowMetadata, FlowDocumentation>>,
+    pub validation_rules: Vec<RenderContext<ValidationRuleMetadata, ValidationRuleDocumentation>>,
+    pub objects: Vec<RenderContext<ObjectMetadata, ObjectDocumentation>>,
+    pub lwc: Vec<RenderContext<LwcMetadata, LwcDocumentation>>,
+    pub flexipages: Vec<RenderContext<FlexiPageMetadata, FlexiPageDocumentation>>,
+    pub custom_metadata: Vec<CustomMetadataRenderContext>,
+    pub aura: Vec<RenderContext<AuraMetadata, AuraDocumentation>>,
+}
+
+impl OwnedBundle {
+    pub fn from_cache(cache: &crate::cache::Cache) -> Self {
+        let all_names = Arc::new(all_names_from_cache(cache));
+        Self {
+            classes: cache
+                .class_entries()
+                .map(|(_, e)| RenderContext {
+                    metadata: ClassMetadata {
+                        class_name: e.documentation.class_name.clone(),
+                        ..Default::default()
+                    },
+                    documentation: e.documentation.clone(),
+                    all_names: Arc::clone(&all_names),
+                    folder: String::new(),
+                })
+                .collect(),
+            triggers: cache
+                .trigger_entries()
+                .map(|(_, e)| RenderContext {
+                    metadata: TriggerMetadata {
+                        trigger_name: e.documentation.trigger_name.clone(),
+                        sobject: e.documentation.sobject.clone(),
+                        ..Default::default()
+                    },
+                    documentation: e.documentation.clone(),
+                    all_names: Arc::clone(&all_names),
+                    folder: String::new(),
+                })
+                .collect(),
+            flows: cache
+                .flow_entries()
+                .map(|(_, e)| RenderContext {
+                    metadata: FlowMetadata {
+                        api_name: e.documentation.api_name.clone(),
+                        label: e.documentation.label.clone(),
+                        ..Default::default()
+                    },
+                    documentation: e.documentation.clone(),
+                    all_names: Arc::clone(&all_names),
+                    folder: String::new(),
+                })
+                .collect(),
+            validation_rules: cache
+                .validation_rule_entries()
+                .map(|(_, e)| RenderContext {
+                    folder: e.documentation.object_name.clone(),
+                    metadata: ValidationRuleMetadata {
+                        rule_name: e.documentation.rule_name.clone(),
+                        object_name: e.documentation.object_name.clone(),
+                        ..Default::default()
+                    },
+                    documentation: e.documentation.clone(),
+                    all_names: Arc::clone(&all_names),
+                })
+                .collect(),
+            objects: cache
+                .object_entries()
+                .map(|(_, e)| RenderContext {
+                    metadata: ObjectMetadata {
+                        object_name: e.documentation.object_name.clone(),
+                        label: e.documentation.label.clone(),
+                        ..Default::default()
+                    },
+                    documentation: e.documentation.clone(),
+                    all_names: Arc::clone(&all_names),
+                    folder: String::new(),
+                })
+                .collect(),
+            lwc: cache
+                .lwc_entries()
+                .map(|(_, e)| RenderContext {
+                    metadata: LwcMetadata {
+                        component_name: e.documentation.component_name.clone(),
+                        ..Default::default()
+                    },
+                    documentation: e.documentation.clone(),
+                    all_names: Arc::clone(&all_names),
+                    folder: String::new(),
+                })
+                .collect(),
+            flexipages: cache
+                .flexipage_entries()
+                .map(|(_, e)| RenderContext {
+                    metadata: FlexiPageMetadata {
+                        api_name: e.documentation.api_name.clone(),
+                        ..Default::default()
+                    },
+                    documentation: e.documentation.clone(),
+                    all_names: Arc::clone(&all_names),
+                    folder: String::new(),
+                })
+                .collect(),
+            custom_metadata: Vec::new(),
+            aura: cache
+                .aura_entries()
+                .map(|(_, e)| RenderContext {
+                    metadata: AuraMetadata {
+                        component_name: e.documentation.component_name.clone(),
+                        ..Default::default()
+                    },
+                    documentation: e.documentation.clone(),
+                    all_names: Arc::clone(&all_names),
+                    folder: String::new(),
+                })
+                .collect(),
+        }
+    }
+
+    pub fn as_bundle(&self) -> DocumentationBundle<'_> {
+        DocumentationBundle {
+            classes: &self.classes,
+            triggers: &self.triggers,
+            flows: &self.flows,
+            validation_rules: &self.validation_rules,
+            objects: &self.objects,
+            lwc: &self.lwc,
+            flexipages: &self.flexipages,
+            custom_metadata: &self.custom_metadata,
+            aura: &self.aura,
+        }
+    }
+
+    pub fn overlay_classes(
+        &mut self,
+        current: Vec<RenderContext<ClassMetadata, ClassDocumentation>>,
+    ) {
+        overlay_by_name(&mut self.classes, current, |c| {
+            c.documentation.class_name.as_str()
+        });
+    }
+
+    pub fn overlay_triggers(
+        &mut self,
+        current: Vec<RenderContext<TriggerMetadata, TriggerDocumentation>>,
+    ) {
+        overlay_by_name(&mut self.triggers, current, |c| {
+            c.documentation.trigger_name.as_str()
+        });
+    }
+
+    pub fn overlay_flows(&mut self, current: Vec<RenderContext<FlowMetadata, FlowDocumentation>>) {
+        overlay_by_name(&mut self.flows, current, |c| {
+            c.documentation.api_name.as_str()
+        });
+    }
+
+    pub fn overlay_validation_rules(
+        &mut self,
+        current: Vec<RenderContext<ValidationRuleMetadata, ValidationRuleDocumentation>>,
+    ) {
+        overlay_by_name(&mut self.validation_rules, current, |c| {
+            c.documentation.rule_name.as_str()
+        });
+    }
+
+    pub fn overlay_objects(
+        &mut self,
+        current: Vec<RenderContext<ObjectMetadata, ObjectDocumentation>>,
+    ) {
+        overlay_by_name(&mut self.objects, current, |c| {
+            c.documentation.object_name.as_str()
+        });
+    }
+
+    pub fn overlay_lwc(&mut self, current: Vec<RenderContext<LwcMetadata, LwcDocumentation>>) {
+        overlay_by_name(&mut self.lwc, current, |c| {
+            c.documentation.component_name.as_str()
+        });
+    }
+
+    pub fn overlay_flexipages(
+        &mut self,
+        current: Vec<RenderContext<FlexiPageMetadata, FlexiPageDocumentation>>,
+    ) {
+        overlay_by_name(&mut self.flexipages, current, |c| {
+            c.documentation.api_name.as_str()
+        });
+    }
+
+    pub fn overlay_aura(&mut self, current: Vec<RenderContext<AuraMetadata, AuraDocumentation>>) {
+        overlay_by_name(&mut self.aura, current, |c| {
+            c.documentation.component_name.as_str()
+        });
+    }
+
+    pub fn overlay_custom_metadata(&mut self, current: Vec<CustomMetadataRenderContext>) {
+        let names: HashSet<String> = current.iter().map(|c| c.type_name.clone()).collect();
+        self.custom_metadata
+            .retain(|c| !names.contains(&c.type_name));
+        self.custom_metadata.extend(current);
+    }
+}
+
+fn overlay_by_name<M, D, F>(
+    cached: &mut Vec<RenderContext<M, D>>,
+    current: Vec<RenderContext<M, D>>,
+    name: F,
+) where
+    F: Fn(&RenderContext<M, D>) -> &str,
+{
+    let names: HashSet<String> = current.iter().map(|c| name(c).to_string()).collect();
+    cached.retain(|c| !names.contains(name(c)));
+    cached.extend(current);
+}
+
+fn all_names_from_cache(cache: &crate::cache::Cache) -> AllNames {
+    AllNames {
+        class_names: cache
+            .class_entries()
+            .map(|(_, e)| e.documentation.class_name.clone())
+            .collect(),
+        trigger_names: cache
+            .trigger_entries()
+            .map(|(_, e)| e.documentation.trigger_name.clone())
+            .collect(),
+        flow_names: cache
+            .flow_entries()
+            .map(|(_, e)| e.documentation.api_name.clone())
+            .collect(),
+        validation_rule_names: cache
+            .validation_rule_entries()
+            .map(|(_, e)| e.documentation.rule_name.clone())
+            .collect(),
+        object_names: cache
+            .object_entries()
+            .map(|(_, e)| e.documentation.object_name.clone())
+            .collect(),
+        lwc_names: cache
+            .lwc_entries()
+            .map(|(_, e)| e.documentation.component_name.clone())
+            .collect(),
+        flexipage_names: cache
+            .flexipage_entries()
+            .map(|(_, e)| e.documentation.api_name.clone())
+            .collect(),
+        aura_names: cache
+            .aura_entries()
+            .map(|(_, e)| e.documentation.component_name.clone())
+            .collect(),
+        custom_metadata_type_names: std::collections::HashSet::new(),
+        interface_implementors: std::collections::HashMap::new(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -46,28 +304,11 @@ pub struct DocumentationBundle<'a> {
 /// Returns the relative markdown link path from a page of `from_type` to a page named `name`.
 ///
 /// `from_type` is one of `"class"`, `"trigger"`, `"flow"`, or `"validation_rule"`.
-/// The function inspects `all_names` to determine which type `name` belongs to.
+/// When a name exists in more than one metadata type (e.g. an Apex class and an
+/// sObject both called `Account`), objects win over classes so sObject links
+/// are not stolen. Same-type matches still win for non-class `from_type`.
 fn cross_link_md(name: &str, all_names: &AllNames, from_type: &str) -> String {
-    let to_type = if all_names.class_names.contains(name) {
-        "class"
-    } else if all_names.trigger_names.contains(name) {
-        "trigger"
-    } else if all_names.flow_names.contains(name) {
-        "flow"
-    } else if all_names.validation_rule_names.contains(name) {
-        "validation_rule"
-    } else if all_names.object_names.contains(name) {
-        "object"
-    } else if all_names.lwc_names.contains(name) {
-        "lwc"
-    } else if all_names.flexipage_names.contains(name) {
-        "flexipage"
-    } else if all_names.aura_names.contains(name) {
-        "aura"
-    } else {
-        // Unknown name — no link generated (caller filters via `known` set).
-        return format!("{name}.md");
-    };
+    let to_type = resolve_name_kind(name, all_names, from_type);
 
     let type_dir = match to_type {
         "class" => "classes",
@@ -85,6 +326,57 @@ fn cross_link_md(name: &str, all_names: &AllNames, from_type: &str) -> String {
     } else {
         format!("../{type_dir}/{name}.md")
     }
+}
+
+const TYPE_PRIORITY: &[&str] = &[
+    "object",
+    "trigger",
+    "flow",
+    "lwc",
+    "aura",
+    "flexipage",
+    "validation_rule",
+    "class",
+];
+
+fn type_contains(all_names: &AllNames, kind: &str, name: &str) -> bool {
+    match kind {
+        "class" => all_names.class_names.contains(name),
+        "trigger" => all_names.trigger_names.contains(name),
+        "flow" => all_names.flow_names.contains(name),
+        "validation_rule" => all_names.validation_rule_names.contains(name),
+        "object" => all_names.object_names.contains(name),
+        "lwc" => all_names.lwc_names.contains(name),
+        "flexipage" => all_names.flexipage_names.contains(name),
+        "aura" => all_names.aura_names.contains(name),
+        _ => false,
+    }
+}
+
+fn resolve_name_kind<'a>(name: &str, all_names: &AllNames, from_type: &'a str) -> &'a str {
+    let hits: Vec<&str> = TYPE_PRIORITY
+        .iter()
+        .copied()
+        .filter(|k| type_contains(all_names, k, name))
+        .collect();
+    if hits.is_empty() {
+        return from_type;
+    }
+    if hits.len() == 1 {
+        return hits[0];
+    }
+    if from_type != "class" && hits.contains(&from_type) {
+        return from_type;
+    }
+    hits[0]
+}
+
+fn best_related_name<'a>(rel: &str, known: &HashSet<&'a str>) -> Option<&'a str> {
+    known
+        .iter()
+        .copied()
+        .filter(|name| rel.contains(name))
+        .max_by_key(|name| name.len())
 }
 
 pub fn render_class_page(ctx: &RenderContext<ClassMetadata, ClassDocumentation>) -> String {
@@ -227,7 +519,7 @@ pub fn render_class_page(ctx: &RenderContext<ClassMetadata, ClassDocumentation>)
         .iter()
         .filter_map(|rel| {
             // Try to find a known class name in the relationship string
-            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+            best_related_name(rel, &known).map(|name| {
                 let link = cross_link_md(name, &ctx.all_names, "class");
                 format!("[{}]({}) — {}", name, link, rel)
             })
@@ -326,7 +618,7 @@ pub fn render_trigger_page(ctx: &RenderContext<TriggerMetadata, TriggerDocumenta
         .relationships
         .iter()
         .filter_map(|rel| {
-            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+            best_related_name(rel, &known).map(|name| {
                 let link = cross_link_md(name, &ctx.all_names, "trigger");
                 format!("[{name}]({link}) — {rel}")
             })
@@ -478,7 +770,7 @@ pub fn render_flow_page(ctx: &RenderContext<FlowMetadata, FlowDocumentation>) ->
         .relationships
         .iter()
         .filter_map(|rel| {
-            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+            best_related_name(rel, &known).map(|name| {
                 let link = cross_link_md(name, &ctx.all_names, "flow");
                 format!("[{name}]({link}) — {rel}")
             })
@@ -577,7 +869,7 @@ pub fn render_validation_rule_page(
         .relationships
         .iter()
         .filter_map(|rel| {
-            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+            best_related_name(rel, &known).map(|name| {
                 let link = cross_link_md(name, &ctx.all_names, "validation_rule");
                 format!("[{name}]({link}) — {rel}")
             })
@@ -677,7 +969,7 @@ pub fn render_object_page(ctx: &RenderContext<ObjectMetadata, ObjectDocumentatio
         .relationships
         .iter()
         .filter_map(|rel| {
-            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+            best_related_name(rel, &known).map(|name| {
                 let link = cross_link_md(name, &ctx.all_names, "object");
                 format!("[{name}]({link}) — {rel}")
             })
@@ -778,7 +1070,7 @@ pub fn render_lwc_page(ctx: &RenderContext<LwcMetadata, LwcDocumentation>) -> St
         .relationships
         .iter()
         .filter_map(|rel| {
-            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+            best_related_name(rel, &known).map(|name| {
                 let link = cross_link_md(name, &ctx.all_names, "lwc");
                 format!("[{name}]({link}) — {rel}")
             })
@@ -1201,7 +1493,7 @@ pub fn render_flexipage_page(
         .relationships
         .iter()
         .filter_map(|rel| {
-            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+            best_related_name(rel, &known).map(|name| {
                 let link = cross_link_md(name, &ctx.all_names, "flexipage");
                 format!("[{name}]({link}) — {rel}")
             })
@@ -1359,7 +1651,7 @@ pub fn render_aura_page(ctx: &RenderContext<AuraMetadata, AuraDocumentation>) ->
         .relationships
         .iter()
         .filter_map(|rel| {
-            known.iter().find(|&&name| rel.contains(name)).map(|&name| {
+            best_related_name(rel, &known).map(|name| {
                 let link = cross_link_md(name, &ctx.all_names, "aura");
                 format!("[{name}]({link}) — {rel}")
             })
@@ -1377,7 +1669,7 @@ pub fn render_aura_page(ctx: &RenderContext<AuraMetadata, AuraDocumentation>) ->
     out
 }
 
-pub fn write_output(output_dir: &Path, bundle: &DocumentationBundle) -> Result<()> {
+pub fn write_pages(output_dir: &Path, bundle: &DocumentationBundle) -> Result<()> {
     let class_contexts = bundle.classes;
     let trigger_contexts = bundle.triggers;
     let flow_contexts = bundle.flows;
@@ -1514,9 +1806,41 @@ pub fn write_output(output_dir: &Path, bundle: &DocumentationBundle) -> Result<(
         )?;
     }
 
+    Ok(())
+}
+
+pub fn write_output(output_dir: &Path, bundle: &DocumentationBundle) -> Result<()> {
+    write_pages(output_dir, bundle)?;
+    write_index_file(output_dir, bundle)?;
+    Ok(())
+}
+
+/// Write `index.md` only, leaving existing per-type pages untouched.
+pub fn write_index_file(output_dir: &Path, bundle: &DocumentationBundle) -> Result<()> {
+    std::fs::create_dir_all(output_dir)?;
     let index = render_index(bundle);
     std::fs::write(output_dir.join("index.md"), index)?;
+    Ok(())
+}
 
+/// Delete `*.md` files in `dir` whose stem is not in `keep_stems`.
+pub fn prune_markdown_dir(dir: &Path, keep_stems: &HashSet<String>) -> Result<()> {
+    if !dir.exists() {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        if !keep_stems.contains(stem) {
+            std::fs::remove_file(&path)?;
+        }
+    }
     Ok(())
 }
 
@@ -1830,5 +2154,73 @@ mod tests {
     #[test]
     fn sanitize_filename_preserves_underscores_and_hyphens() {
         assert_eq!(sanitize_filename("my-file_name"), "my-file_name");
+    }
+
+    #[test]
+    fn prune_markdown_dir_deletes_orphans() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let classes = tmp.path().join("classes");
+        std::fs::create_dir_all(&classes).unwrap();
+        std::fs::write(classes.join("Keep.md"), "keep").unwrap();
+        std::fs::write(classes.join("Gone.md"), "gone").unwrap();
+        let mut keep = std::collections::HashSet::new();
+        keep.insert("Keep".to_string());
+        prune_markdown_dir(&classes, &keep).unwrap();
+        assert!(classes.join("Keep.md").exists());
+        assert!(!classes.join("Gone.md").exists());
+    }
+
+    #[test]
+    fn cross_link_prefers_object_when_class_shares_the_name() {
+        let mut ctx = sample_context();
+        ctx.all_names = std::sync::Arc::new(crate::types::AllNames {
+            class_names: ["Account".to_string(), "AccountService".to_string()]
+                .into_iter()
+                .collect(),
+            object_names: ["Account".to_string()].into_iter().collect(),
+            trigger_names: Default::default(),
+            flow_names: Default::default(),
+            validation_rule_names: Default::default(),
+            lwc_names: Default::default(),
+            flexipage_names: Default::default(),
+            aura_names: Default::default(),
+            custom_metadata_type_names: Default::default(),
+            interface_implementors: Default::default(),
+        });
+        ctx.documentation.relationships = vec!["Queries the Account sObject".to_string()];
+        let page = render_class_page(&ctx);
+        assert!(
+            page.contains("../objects/Account.md"),
+            "Account should link to the object page when the name collides; got:\n{page}"
+        );
+        assert!(
+            !page.contains("](Account.md)"),
+            "should not link to the class page for a colliding sObject name"
+        );
+    }
+
+    #[test]
+    fn cross_link_picks_longest_name_in_relationship() {
+        let mut ctx = sample_context();
+        ctx.all_names = std::sync::Arc::new(crate::types::AllNames {
+            class_names: ["Account".to_string(), "AccountService".to_string()]
+                .into_iter()
+                .collect(),
+            object_names: Default::default(),
+            trigger_names: Default::default(),
+            flow_names: Default::default(),
+            validation_rule_names: Default::default(),
+            lwc_names: Default::default(),
+            flexipage_names: Default::default(),
+            aura_names: Default::default(),
+            custom_metadata_type_names: Default::default(),
+            interface_implementors: Default::default(),
+        });
+        ctx.documentation.relationships = vec!["Delegates to AccountService".to_string()];
+        let page = render_class_page(&ctx);
+        assert!(
+            page.contains("[AccountService](AccountService.md)"),
+            "should prefer the longer class name; got:\n{page}"
+        );
     }
 }

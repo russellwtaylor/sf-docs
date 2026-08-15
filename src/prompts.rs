@@ -625,19 +625,41 @@ pub fn build_aura_prompt(file: &SourceFile, metadata: &AuraMetadata) -> String {
         prompt.push('\n');
     }
 
-    // Include JS/CMP source if available
+    // Include CMP markup (raw_source is always the .cmp after scan)
     if !file.raw_source.is_empty() {
-        prompt.push_str("## Source\n\n");
-        prompt.push_str("```javascript\n");
+        prompt.push_str("## Markup\n\n");
+        prompt.push_str("```xml\n");
         const MAX_SOURCE_CHARS: usize = 6_000;
         if file.raw_source.chars().count() > MAX_SOURCE_CHARS {
             let truncated: String = file.raw_source.chars().take(MAX_SOURCE_CHARS).collect();
             prompt.push_str(&truncated);
-            prompt.push_str("\n// ... (truncated)\n");
+            prompt.push_str("\n<!-- ... (truncated) -->\n");
         } else {
             prompt.push_str(&file.raw_source);
         }
         prompt.push_str("\n```\n\n");
+    }
+
+    if let Some(parent) = file.path.parent() {
+        let stem = file.path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        for name in [
+            format!("{stem}.js"),
+            format!("{stem}Controller.js"),
+            format!("{stem}Helper.js"),
+        ] {
+            if let Ok(js) = std::fs::read_to_string(parent.join(&name)) {
+                prompt.push_str(&format!("## {name}\n\n```javascript\n"));
+                const MAX_JS: usize = 4_000;
+                if js.chars().count() > MAX_JS {
+                    let truncated: String = js.chars().take(MAX_JS).collect();
+                    prompt.push_str(&truncated);
+                    prompt.push_str("\n// ... (truncated)\n");
+                } else {
+                    prompt.push_str(&js);
+                }
+                prompt.push_str("\n```\n\n");
+            }
+        }
     }
 
     prompt.push_str("Generate documentation JSON for this Aura component.");

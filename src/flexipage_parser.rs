@@ -68,10 +68,8 @@ pub fn parse_flexipage(api_name: &str, source: &str) -> Result<FlexiPageMetadata
                             meta.component_names.push(name);
                         }
                     }
-                    "actionName" => {
-                        if !meta.flow_names.contains(&text) {
-                            meta.flow_names.push(text);
-                        }
+                    "actionName" if !meta.flow_names.contains(&text) => {
+                        meta.flow_names.push(text);
                     }
                     _ => {}
                 }

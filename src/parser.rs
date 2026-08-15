@@ -70,12 +70,14 @@ pub fn parse_apex_class(source: &str) -> Result<ClassMetadata> {
     meta.existing_comments = apexdoc_comments;
     meta.tags = extract_tags(&meta.existing_comments);
 
-    // Strip all comments for structural parsing
-    let stripped = strip_comments(source);
+    // Strip all comments for structural parsing, then Apex annotations so
+    // `@AuraEnabled public static String foo()` is not parsed as access=@AuraEnabled.
+    let stripped = strip_annotations(&strip_comments(source));
 
     parse_class_declaration(&stripped, &mut meta);
-    parse_methods(&stripped, &mut meta);
-    parse_properties(&stripped, &mut meta);
+    let members = strip_inner_types(&stripped);
+    parse_methods(&members, &mut meta);
+    parse_properties(&members, &mut meta);
     parse_references(source, &mut meta);
 
     Ok(meta)
@@ -105,6 +107,58 @@ fn re_strip_line() -> &'static Regex {
 fn strip_comments(source: &str) -> String {
     let no_block = re_strip_block().replace_all(source, " ");
     re_strip_line().replace_all(&no_block, "").to_string()
+}
+
+fn re_annotation() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"(?i)@\w+(?:\s*\([^)]*\))?").unwrap())
+}
+
+fn strip_annotations(source: &str) -> String {
+    re_annotation().replace_all(source, " ").into_owned()
+}
+
+fn matching_brace(source: &str, open_idx: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    if open_idx >= bytes.len() || bytes[open_idx] != b'{' {
+        return None;
+    }
+    let mut depth = 0i32;
+    for (i, ch) in source[open_idx..].char_indices() {
+        match ch {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(open_idx + i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Replace nested `class` / `interface` declarations with spaces so their
+/// members are not attributed to the outer type.
+fn strip_inner_types(source: &str) -> String {
+    let matches: Vec<_> = re_class().find_iter(source).collect();
+    if matches.len() <= 1 {
+        return source.to_string();
+    }
+    let mut out = source.to_string();
+    for m in matches.iter().skip(1).rev() {
+        let start = m.start();
+        let Some(rel) = m.as_str().rfind('{') else {
+            continue;
+        };
+        let brace = start + rel;
+        if let Some(end) = matching_brace(source, brace) {
+            let len = end - start + 1;
+            out.replace_range(start..=end, &" ".repeat(len));
+        }
+    }
+    out
 }
 
 fn parse_class_declaration(source: &str, meta: &mut ClassMetadata) {
@@ -717,5 +771,62 @@ public class OverloadService {
 }"#;
         let meta = parse_apex_class(src).unwrap();
         assert!(!meta.references.contains(&"AccountService".to_string()));
+    }
+
+    #[test]
+    fn annotated_method_keeps_real_access_and_return_type() {
+        let src = r#"
+public class AccountController {
+    @AuraEnabled
+    public static String getName(Id recordId) {
+        return 'x';
+    }
+
+    @AuraEnabled(cacheable=true)
+    public static Account getAccount(Id recordId) {
+        return null;
+    }
+}
+"#;
+        let meta = parse_apex_class(src).unwrap();
+        let get_name = meta
+            .methods
+            .iter()
+            .find(|m| m.name == "getName")
+            .expect("getName should be parsed");
+        assert_eq!(get_name.access_modifier, "public");
+        assert_eq!(get_name.return_type, "String");
+        assert!(get_name.is_static);
+
+        let get_account = meta
+            .methods
+            .iter()
+            .find(|m| m.name == "getAccount")
+            .expect("getAccount should be parsed");
+        assert_eq!(get_account.access_modifier, "public");
+        assert_eq!(get_account.return_type, "Account");
+    }
+
+    #[test]
+    fn inner_class_methods_are_not_attributed_to_outer() {
+        let src = r#"
+public class Outer {
+    public void outerMethod() {}
+    public class Inner {
+        public void innerMethod() {}
+    }
+}
+"#;
+        let meta = parse_apex_class(src).unwrap();
+        assert_eq!(meta.class_name, "Outer");
+        let names: Vec<&str> = meta.methods.iter().map(|m| m.name.as_str()).collect();
+        assert!(
+            names.contains(&"outerMethod"),
+            "missing outerMethod: {names:?}"
+        );
+        assert!(
+            !names.contains(&"innerMethod"),
+            "inner class method leaked into outer: {names:?}"
+        );
     }
 }

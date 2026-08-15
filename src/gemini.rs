@@ -45,12 +45,13 @@ struct GenerationConfig {
 
 #[derive(Deserialize)]
 struct GenerateResponse {
+    #[serde(default)]
     candidates: Vec<Candidate>,
 }
 
 #[derive(Deserialize)]
 struct Candidate {
-    content: ResponseContent,
+    content: Option<ResponseContent>,
 }
 
 #[derive(Deserialize)]
@@ -71,12 +72,23 @@ pub struct GeminiClient {
     client: Client,
     api_key: String,
     model: String,
+    endpoint: String,
     semaphore: Arc<Semaphore>,
     rate_limiter: Option<Arc<RpmLimiter>>,
 }
 
 impl GeminiClient {
     pub fn new(api_key: String, model: &str, concurrency: usize, rpm: u32) -> Result<Self> {
+        Self::new_with_endpoint(api_key, model, concurrency, rpm, GEMINI_BASE_URL)
+    }
+
+    pub fn new_with_endpoint(
+        api_key: String,
+        model: &str,
+        concurrency: usize,
+        rpm: u32,
+        endpoint: &str,
+    ) -> Result<Self> {
         let client = Client::builder()
             .connect_timeout(Duration::from_secs(30))
             .timeout(Duration::from_secs(120))
@@ -87,6 +99,7 @@ impl GeminiClient {
             client,
             api_key,
             model: model.to_string(),
+            endpoint: endpoint.trim_end_matches('/').to_string(),
             semaphore: Arc::new(Semaphore::new(concurrency)),
             rate_limiter,
         })
@@ -114,7 +127,7 @@ impl GeminiClient {
             },
         };
 
-        let url = format!("{}/{}:generateContent", GEMINI_BASE_URL, self.model);
+        let url = format!("{}/{}:generateContent", self.endpoint, self.model);
 
         // Acquire a rate-limit token before starting (counts one logical call, not retries).
         if let Some(limiter) = &self.rate_limiter {
@@ -155,7 +168,8 @@ impl GeminiClient {
                     .candidates
                     .into_iter()
                     .next()
-                    .and_then(|c| c.content.parts.into_iter().next())
+                    .and_then(|c| c.content)
+                    .and_then(|c| c.parts.into_iter().next())
                     .map(|p| p.text)
                     .context("Gemini returned an empty response");
             }
