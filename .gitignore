@@ -19,11 +19,12 @@ target
 # macOS
 .DS_Store
 
-# Cursor
+# Salesforce DX local cache (not part of this crate)
+.sfdx/
+
+# Editor / agent local state
 .cursor/
-
-# Claude
 .claude/
-
-# Superpowers
 .superpowers/
+.aider/
+.codex/

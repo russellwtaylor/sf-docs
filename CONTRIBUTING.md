@@ -60,14 +60,15 @@ Module overview:
 
 | Module        | Role |
 |---------------|------|
-| `src/main.rs` | Entry point, pipeline orchestration |
+| `src/main.rs` | Entry point |
 | `src/cli.rs`  | CLI definitions (clap) |
+| `src/generate.rs`, `src/update.rs` | `generate` and `update` commands |
 | `src/parser.rs`, `src/trigger_parser.rs` | Structural parsing (regex-based) |
 | `src/gemini.rs`, `src/openai_compat.rs` | AI provider clients |
-| `src/renderer.rs`, `src/html_renderer.rs` | Output generation |
+| `src/renderer.rs` | Markdown output |
 | `src/types.rs` | Shared data structures |
 
-To add a new metadata type (e.g. another file kind): implement `FileScanner` in `scanner.rs`, add a parser and prompt module, extend `types.rs`, and wire it up in `main.rs`.
+To add a new metadata type (e.g. another file kind): implement `FileScanner` in `scanner.rs`, add a parser, extend `types.rs`, and wire it up in `generate.rs`.
 
 ## Questions
 
