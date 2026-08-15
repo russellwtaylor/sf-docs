@@ -836,4 +836,19 @@ mod tests {
         assert!(cache.get_if_fresh("classes/Foo.cls", "h1", "m").is_some());
         assert!(cache.get_if_fresh("classes/Bar.cls", "h1", "m").is_none());
     }
+
+    #[test]
+    fn load_discards_mismatched_cache_version() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            tmp.path().join(CACHE_FILE),
+            r#"{"cache_version":1,"entries":{"Foo.cls":{"hash":"x","model":"m","documentation":{"class_name":"Foo","summary":"old","description":"d"}}}}"#,
+        )
+        .unwrap();
+        let cache = Cache::load(tmp.path());
+        assert!(
+            cache.get_if_fresh("Foo.cls", "x", "m").is_none(),
+            "v1 cache must be discarded when CACHE_VERSION is 2"
+        );
+    }
 }

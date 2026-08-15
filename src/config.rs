@@ -72,3 +72,59 @@ pub fn resolve_api_key(provider: &Provider) -> Result<String> {
 pub fn has_stored_key(provider: &Provider) -> bool {
     load_api_key(provider).ok().flatten().is_some()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn set(key: &'static str, value: &str) -> Self {
+            let prev = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(v) => std::env::set_var(self.key, v),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
+
+    #[test]
+    fn ollama_resolve_api_key_is_empty() {
+        let key = resolve_api_key(&Provider::Ollama).unwrap();
+        assert!(key.is_empty());
+    }
+
+    #[test]
+    fn resolve_api_key_prefers_env_var() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvGuard::set("OPENAI_API_KEY", "from-env");
+        let key = resolve_api_key(&Provider::OpenAi).unwrap();
+        assert_eq!(key, "from-env");
+    }
+
+    #[test]
+    fn resolve_api_key_skips_empty_env_var() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvGuard::set("OPENAI_API_KEY", "");
+        let result = resolve_api_key(&Provider::OpenAi);
+        // Empty env falls through to keychain; CI machines typically have no key.
+        assert!(
+            result.is_err() || result.as_ref().is_ok_and(|k| !k.is_empty()),
+            "empty env var must not be treated as a configured key: {result:?}"
+        );
+    }
+}

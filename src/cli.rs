@@ -115,6 +115,10 @@ pub struct GenerateArgs {
     /// Enable verbose logging
     #[arg(long, short)]
     pub verbose: bool,
+
+    /// Override the AI provider base URL. Hidden; used by tests to point at httpmock.
+    #[arg(long, hide = true)]
+    pub api_base_url: Option<String>,
 }
 
 impl GenerateArgs {
@@ -124,16 +128,16 @@ impl GenerateArgs {
         self.types.is_empty() || self.types.contains(&t)
     }
 
-    /// Returns `true` if the given filename stem matches the `--name-filter` glob,
-    /// or if no filter was specified.
-    pub fn name_matches(&self, filename_stem: &str) -> bool {
+    /// Returns `true` if the given filename (with or without a metadata suffix)
+    /// matches the `--name-filter` glob, or if no filter was specified.
+    pub fn name_matches(&self, filename: &str) -> bool {
         match &self.name_filter {
             None => true,
             Some(pattern) => {
                 // Pattern is pre-validated by parse_glob_pattern at CLI parse time.
                 let glob =
                     globset::Glob::new(pattern).expect("pattern was validated at parse time");
-                glob.compile_matcher().is_match(filename_stem)
+                glob.compile_matcher().is_match(logical_name(filename))
             }
         }
     }
@@ -168,6 +172,31 @@ pub fn is_apex_test_filename(filename: &str) -> bool {
     let stem = filename.strip_suffix(".cls").unwrap_or(filename);
     let lower = stem.to_ascii_lowercase();
     lower.ends_with("test") || lower.ends_with("tests")
+}
+
+/// Filename without the Salesforce metadata suffix, used by `--name-filter`.
+///
+/// `OrderService.cls` and `OrderService` both become `OrderService`, so globs
+/// like `*Service` match scanned files rather than only bare stems.
+pub fn logical_name(filename: &str) -> &str {
+    const SUFFIXES: &[&str] = &[
+        ".validationRule-meta.xml",
+        ".flexipage-meta.xml",
+        ".object-meta.xml",
+        ".flow-meta.xml",
+        ".js-meta.xml",
+        ".md-meta.xml",
+        ".trigger",
+        ".cls",
+        ".cmp",
+        ".js",
+    ];
+    for suffix in SUFFIXES {
+        if let Some(stem) = filename.strip_suffix(suffix) {
+            return stem;
+        }
+    }
+    filename
 }
 
 fn parse_glob_pattern(s: &str) -> Result<String, String> {
@@ -308,6 +337,26 @@ mod tests {
     }
 
     #[test]
+    fn name_filter_matches_filename_with_metadata_suffix() {
+        let args = parse_generate(&["--name-filter", "*Service"]);
+        assert!(args.name_matches("OrderService.cls"));
+        assert!(args.name_matches("OrderService"));
+        assert!(!args.name_matches("OrderHelper.cls"));
+        assert!(parse_generate(&["--name-filter", "Account_Onboarding"])
+            .name_matches("Account_Onboarding.flow-meta.xml"));
+        assert!(parse_generate(&["--name-filter", "myButton"]).name_matches("myButton.js"));
+        assert!(parse_generate(&["--name-filter", "myAuraComp"]).name_matches("myAuraComp.cmp"));
+    }
+
+    #[test]
+    fn logical_name_strips_known_suffixes() {
+        assert_eq!(logical_name("OrderService.cls"), "OrderService");
+        assert_eq!(logical_name("AccountTrigger.trigger"), "AccountTrigger");
+        assert_eq!(logical_name("My_Flow.flow-meta.xml"), "My_Flow");
+        assert_eq!(logical_name("bare"), "bare");
+    }
+
+    #[test]
     fn name_filter_contains_glob() {
         let args = parse_generate(&["--name-filter", "*Order*"]);
         assert!(args.name_matches("OrderService"));
@@ -416,5 +465,14 @@ mod tests {
         assert!(parse_generate(&["--type", "apex"]).is_partial());
         assert!(parse_generate(&["--name-filter", "Order*"]).is_partial());
         assert!(parse_generate(&["--tag", "billing"]).is_partial());
+    }
+
+    #[test]
+    fn should_prune_full_and_type_only_runs() {
+        assert!(parse_generate(&[]).should_prune());
+        assert!(parse_generate(&["--type", "apex"]).should_prune());
+        assert!(!parse_generate(&["--name-filter", "Order*"]).should_prune());
+        assert!(!parse_generate(&["--tag", "billing"]).should_prune());
+        assert!(!parse_generate(&["--type", "apex", "--name-filter", "Order*"]).should_prune());
     }
 }
