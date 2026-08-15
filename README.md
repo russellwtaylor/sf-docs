@@ -249,6 +249,7 @@ Options:
                          (e.g. 'Order*', '*Service')
   --tag <LABELS>         Only document items tagged with at least one of these labels
                          (comma-separated; matches @tag annotations in ApexDoc)
+  --include-tests        Include Apex test classes (*Test.cls / *Tests.cls) in generate
   --verbose              Enable verbose logging
   -h, --help             Print help
   -V, --version          Print version

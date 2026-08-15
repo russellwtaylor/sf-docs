@@ -367,136 +367,8 @@ fn write_single_page(output_dir: &Path, ctx: SinglePageContext) -> Result<()> {
 
 /// Rebuild the full index from cached documentation.
 fn rebuild_index_from_cache(cache: &Cache, output_dir: &Path) -> Result<()> {
-    let all_names = Arc::new(build_all_names_from_cache(cache));
-
-    let class_contexts: Vec<renderer::RenderContext<ClassMetadata, ClassDocumentation>> = cache
-        .class_entries()
-        .map(|(_, e)| renderer::RenderContext {
-            metadata: crate::types::ClassMetadata {
-                class_name: e.documentation.class_name.clone(),
-                ..Default::default()
-            },
-            documentation: e.documentation.clone(),
-            all_names: Arc::clone(&all_names),
-            folder: String::new(),
-        })
-        .collect();
-
-    let trigger_contexts: Vec<renderer::RenderContext<TriggerMetadata, TriggerDocumentation>> =
-        cache
-            .trigger_entries()
-            .map(|(_, e)| renderer::RenderContext {
-                metadata: crate::types::TriggerMetadata {
-                    trigger_name: e.documentation.trigger_name.clone(),
-                    sobject: e.documentation.sobject.clone(),
-                    ..Default::default()
-                },
-                documentation: e.documentation.clone(),
-                all_names: Arc::clone(&all_names),
-                folder: String::new(),
-            })
-            .collect();
-
-    let flow_contexts: Vec<renderer::RenderContext<FlowMetadata, FlowDocumentation>> = cache
-        .flow_entries()
-        .map(|(_, e)| renderer::RenderContext {
-            metadata: crate::types::FlowMetadata {
-                api_name: e.documentation.api_name.clone(),
-                label: e.documentation.label.clone(),
-                ..Default::default()
-            },
-            documentation: e.documentation.clone(),
-            all_names: Arc::clone(&all_names),
-            folder: String::new(),
-        })
-        .collect();
-
-    let vr_contexts: Vec<
-        renderer::RenderContext<ValidationRuleMetadata, ValidationRuleDocumentation>,
-    > = cache
-        .validation_rule_entries()
-        .map(|(_, e)| renderer::RenderContext {
-            folder: e.documentation.object_name.clone(),
-            metadata: crate::types::ValidationRuleMetadata {
-                rule_name: e.documentation.rule_name.clone(),
-                object_name: e.documentation.object_name.clone(),
-                ..Default::default()
-            },
-            documentation: e.documentation.clone(),
-            all_names: Arc::clone(&all_names),
-        })
-        .collect();
-
-    let object_contexts: Vec<renderer::RenderContext<ObjectMetadata, ObjectDocumentation>> = cache
-        .object_entries()
-        .map(|(_, e)| renderer::RenderContext {
-            metadata: crate::types::ObjectMetadata {
-                object_name: e.documentation.object_name.clone(),
-                label: e.documentation.label.clone(),
-                ..Default::default()
-            },
-            documentation: e.documentation.clone(),
-            all_names: Arc::clone(&all_names),
-            folder: String::new(),
-        })
-        .collect();
-
-    let lwc_contexts: Vec<renderer::RenderContext<LwcMetadata, LwcDocumentation>> = cache
-        .lwc_entries()
-        .map(|(_, e)| renderer::RenderContext {
-            metadata: crate::types::LwcMetadata {
-                component_name: e.documentation.component_name.clone(),
-                ..Default::default()
-            },
-            documentation: e.documentation.clone(),
-            all_names: Arc::clone(&all_names),
-            folder: String::new(),
-        })
-        .collect();
-
-    let flexipage_contexts: Vec<
-        renderer::RenderContext<FlexiPageMetadata, FlexiPageDocumentation>,
-    > = cache
-        .flexipage_entries()
-        .map(|(_, e)| renderer::RenderContext {
-            metadata: crate::types::FlexiPageMetadata {
-                api_name: e.documentation.api_name.clone(),
-                ..Default::default()
-            },
-            documentation: e.documentation.clone(),
-            all_names: Arc::clone(&all_names),
-            folder: String::new(),
-        })
-        .collect();
-
-    let aura_contexts: Vec<renderer::RenderContext<AuraMetadata, AuraDocumentation>> = cache
-        .aura_entries()
-        .map(|(_, e)| renderer::RenderContext {
-            metadata: crate::types::AuraMetadata {
-                component_name: e.documentation.component_name.clone(),
-                ..Default::default()
-            },
-            documentation: e.documentation.clone(),
-            all_names: Arc::clone(&all_names),
-            folder: String::new(),
-        })
-        .collect();
-
-    let bundle = renderer::DocumentationBundle {
-        classes: &class_contexts,
-        triggers: &trigger_contexts,
-        flows: &flow_contexts,
-        validation_rules: &vr_contexts,
-        objects: &object_contexts,
-        lwc: &lwc_contexts,
-        flexipages: &flexipage_contexts,
-        custom_metadata: &[],
-        aura: &aura_contexts,
-    };
-
-    let index = renderer::render_index(&bundle);
-    std::fs::write(output_dir.join("index.md"), index)?;
-
+    let owned = renderer::OwnedBundle::from_cache(cache);
+    renderer::write_index_file(output_dir, &owned.as_bundle())?;
     Ok(())
 }
 
@@ -554,7 +426,14 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
     }
 
     // Hash the source and check if it's unchanged
-    let hash = cache::hash_source(&source_file.raw_source);
+    let hash = match metadata_type {
+        MetadataType::Objects => {
+            cache::hash_object_source(&source_file.path, &source_file.raw_source)
+        }
+        MetadataType::Lwc => cache::hash_lwc_source(&source_file.path, &source_file.raw_source),
+        MetadataType::Aura => cache::hash_aura_source(&source_file.path, &source_file.raw_source),
+        _ => cache::hash_source(&source_file.raw_source),
+    };
     if args.verbose {
         eprintln!("Source hash:     {}", hash);
     }
@@ -575,8 +454,8 @@ pub async fn run_update(args: &UpdateArgs) -> Result<()> {
         )?),
     };
 
-    let cache_key = source_file.path.to_string_lossy().into_owned();
     let source_dir = &args.source_dir;
+    let cache_key = cache::cache_key(&source_file.path, source_dir);
 
     // Inform user if source hasn't changed since last build
     let is_unchanged = cache.is_fresh(metadata_type, &cache_key, &hash, &model);

@@ -677,6 +677,86 @@ async fn openai_compat_client_documents_class() {
 }
 
 #[tokio::test]
+async fn gemini_client_documents_class_against_mock() {
+    use sfdoc::gemini::GeminiClient;
+
+    let server = MockServer::start();
+    let expected_doc = stub_class_doc("AccountService");
+    let inner = serde_json::to_string(&expected_doc).unwrap();
+    let body = serde_json::json!({
+        "candidates": [{ "content": { "parts": [{ "text": inner }] } }]
+    })
+    .to_string();
+
+    let _mock = server.mock(|when, then| {
+        when.method(POST).path("/test-model:generateContent");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(body);
+    });
+
+    let client = GeminiClient::new_with_endpoint(
+        "test-key".to_string(),
+        "test-model",
+        1,
+        0,
+        &server.base_url(),
+    )
+    .unwrap();
+
+    let file = sfdoc::types::SourceFile {
+        path: PathBuf::from("AccountService.cls"),
+        filename: "AccountService.cls".to_string(),
+        raw_source: std::fs::read_to_string(class_fixtures_dir().join("AccountService.cls"))
+            .unwrap(),
+    };
+    let meta = parser::parse_apex_class(&file.raw_source).unwrap();
+    let doc: sfdoc::types::ClassDocumentation = sfdoc::doc_client::document(
+        &client,
+        sfdoc::prompts::CLASS_SYSTEM_PROMPT,
+        &sfdoc::prompts::build_class_prompt(&file, &meta),
+        &meta.class_name,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(doc.class_name, "AccountService");
+    assert_eq!(doc.summary, expected_doc.summary);
+}
+
+#[tokio::test]
+async fn gemini_client_empty_candidates_is_error() {
+    use sfdoc::gemini::GeminiClient;
+
+    let server = MockServer::start();
+    let _mock = server.mock(|when, then| {
+        when.method(POST).path("/test-model:generateContent");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(r#"{"candidates":[{"finishReason":"SAFETY"}]}"#);
+    });
+
+    let client = GeminiClient::new_with_endpoint(
+        "test-key".to_string(),
+        "test-model",
+        1,
+        0,
+        &server.base_url(),
+    )
+    .unwrap();
+
+    let err = sfdoc::doc_client::document::<sfdoc::types::ClassDocumentation>(
+        &client, "sys", "user", "Foo",
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("empty response"),
+        "unexpected error: {err:#}"
+    );
+}
+
+#[tokio::test]
 async fn openai_compat_client_documents_trigger() {
     use sfdoc::openai_compat::OpenAiCompatClient;
     use sfdoc::types::SourceFile;

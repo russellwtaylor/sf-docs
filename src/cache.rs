@@ -1,7 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::path::Path;
 
@@ -15,7 +15,7 @@ const CACHE_FILE: &str = ".sfdoc-cache.json";
 const CACHE_TMP_FILE: &str = ".sfdoc-cache.json.tmp";
 
 /// Bump this when the cache schema changes to force a full rebuild.
-const CACHE_VERSION: u32 = 1;
+const CACHE_VERSION: u32 = 2;
 
 // ---------------------------------------------------------------------------
 // Cache types
@@ -280,11 +280,109 @@ impl Cache {
     pub fn aura_entries(&self) -> impl Iterator<Item = (&String, &AuraCacheEntry)> {
         self.aura_entries.iter()
     }
+
+    /// Drop cache entries of `metadata_type` whose keys are not in `keep`.
+    /// Custom metadata is not cached, so this is a no-op for that type.
+    pub fn retain_type(&mut self, metadata_type: MetadataType, keep: &HashSet<String>) {
+        match metadata_type {
+            MetadataType::Apex => self.entries.retain(|k, _| keep.contains(k)),
+            MetadataType::Triggers => self.trigger_entries.retain(|k, _| keep.contains(k)),
+            MetadataType::Flows => self.flow_entries.retain(|k, _| keep.contains(k)),
+            MetadataType::ValidationRules => {
+                self.validation_rule_entries.retain(|k, _| keep.contains(k))
+            }
+            MetadataType::Objects => self.object_entries.retain(|k, _| keep.contains(k)),
+            MetadataType::Lwc => self.lwc_entries.retain(|k, _| keep.contains(k)),
+            MetadataType::Flexipages => self.flexipage_entries.retain(|k, _| keep.contains(k)),
+            MetadataType::Aura => self.aura_entries.retain(|k, _| keep.contains(k)),
+            MetadataType::CustomMetadata => {}
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Hashing
 // ---------------------------------------------------------------------------
+
+/// Stable cache key: path relative to `source_dir`, forward slashes.
+/// Falls back to the path as given when it is not under `source_dir`.
+pub fn cache_key(path: &Path, source_dir: &Path) -> String {
+    path.strip_prefix(source_dir)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn append_sibling(combined: &mut String, path: &Path, filename: &str) {
+    if let Some(parent) = path.parent() {
+        if let Ok(content) = std::fs::read_to_string(parent.join(filename)) {
+            combined.push('\0');
+            combined.push_str(&content);
+        }
+    }
+}
+
+/// Hash an LWC component: JS source plus sibling HTML and js-meta.xml.
+pub fn hash_lwc_source(meta_path: &Path, js_source: &str) -> String {
+    let mut combined = js_source.to_string();
+    let component_name = meta_path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    append_sibling(&mut combined, meta_path, &format!("{component_name}.html"));
+    if let Ok(meta_xml) = std::fs::read_to_string(meta_path) {
+        combined.push('\0');
+        combined.push_str(&meta_xml);
+    }
+    hash_source(&combined)
+}
+
+/// Hash an Aura component: .cmp markup plus sibling controller JS.
+pub fn hash_aura_source(cmp_path: &Path, cmp_source: &str) -> String {
+    let mut combined = cmp_source.to_string();
+    let component_name = cmp_path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
+    append_sibling(&mut combined, cmp_path, &format!("{component_name}.js"));
+    append_sibling(
+        &mut combined,
+        cmp_path,
+        &format!("{component_name}Controller.js"),
+    );
+    append_sibling(
+        &mut combined,
+        cmp_path,
+        &format!("{component_name}Helper.js"),
+    );
+    hash_source(&combined)
+}
+
+/// Hash a custom object: object XML plus sibling `fields/*.field-meta.xml`.
+pub fn hash_object_source(path: &Path, object_xml: &str) -> String {
+    let mut combined = object_xml.to_string();
+    if let Some(fields_dir) = path.parent().map(|p| p.join("fields")) {
+        if let Ok(entries) = std::fs::read_dir(&fields_dir) {
+            let mut field_contents: Vec<(String, String)> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.file_name()
+                        .to_str()
+                        .is_some_and(|n| n.ends_with(".field-meta.xml"))
+                })
+                .filter_map(|e| {
+                    let path = e.path();
+                    let name = path.file_name()?.to_str()?.to_string();
+                    let content = std::fs::read_to_string(&path).ok()?;
+                    Some((name, content))
+                })
+                .collect();
+            field_contents.sort_by(|a, b| a.0.cmp(&b.0));
+            for (_, content) in field_contents {
+                combined.push_str(&content);
+            }
+        }
+    }
+    hash_source(&combined)
+}
 
 /// Returns the SHA-256 hex digest of the given source string.
 pub fn hash_source(source: &str) -> String {
@@ -643,5 +741,99 @@ mod tests {
         assert!(tmp.path().join(CACHE_FILE).exists());
         // The temp file was renamed away — it should not exist
         assert!(!tmp.path().join(CACHE_TMP_FILE).exists());
+    }
+
+    #[test]
+    fn cache_key_is_relative_to_source_dir() {
+        let source = std::path::Path::new("/proj/force-app/main/default");
+        let file = source.join("classes/AccountService.cls");
+        assert_eq!(cache_key(&file, source), "classes/AccountService.cls");
+    }
+
+    #[test]
+    fn cache_key_falls_back_when_not_under_source_dir() {
+        let key = cache_key(
+            std::path::Path::new("/other/Foo.cls"),
+            std::path::Path::new("/proj"),
+        );
+        assert!(key.ends_with("Foo.cls"), "got {key}");
+        assert!(!key.contains('\\'));
+    }
+
+    #[test]
+    fn hash_lwc_changes_when_html_changes() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let comp = tmp.path().join("myButton");
+        std::fs::create_dir_all(&comp).unwrap();
+        let meta = comp.join("myButton.js-meta.xml");
+        std::fs::write(&meta, "<LightningComponentBundle/>").unwrap();
+        std::fs::write(comp.join("myButton.html"), "<template></template>").unwrap();
+        let js = "export default class MyButton {}";
+        let h1 = hash_lwc_source(&meta, js);
+        std::fs::write(
+            comp.join("myButton.html"),
+            "<template><slot></slot></template>",
+        )
+        .unwrap();
+        let h2 = hash_lwc_source(&meta, js);
+        assert_ne!(h1, h2, "HTML change must invalidate the LWC cache hash");
+    }
+
+    #[test]
+    fn hash_aura_changes_when_cmp_changes() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let comp = tmp.path().join("myComp");
+        std::fs::create_dir_all(&comp).unwrap();
+        let cmp = comp.join("myComp.cmp");
+        std::fs::write(&cmp, "<aura:component></aura:component>").unwrap();
+        std::fs::write(comp.join("myComp.js"), "({ helper: function() {} })").unwrap();
+        let h1 = hash_aura_source(&cmp, "<aura:component></aura:component>");
+        let h2 = hash_aura_source(
+            &cmp,
+            "<aura:component><aura:attribute name=\"x\" type=\"String\"/></aura:component>",
+        );
+        assert_ne!(h1, h2, "cmp change must invalidate the Aura cache hash");
+    }
+
+    #[test]
+    fn hash_object_includes_field_files() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let obj_dir = tmp.path().join("Invoice__c");
+        std::fs::create_dir_all(obj_dir.join("fields")).unwrap();
+        let obj = obj_dir.join("Invoice__c.object-meta.xml");
+        std::fs::write(&obj, "<CustomObject/>").unwrap();
+        let xml = "<CustomObject/>";
+        let h1 = hash_object_source(&obj, xml);
+        std::fs::write(
+            obj_dir.join("fields/Amount__c.field-meta.xml"),
+            "<CustomField><fullName>Amount__c</fullName></CustomField>",
+        )
+        .unwrap();
+        let h2 = hash_object_source(&obj, xml);
+        assert_ne!(
+            h1, h2,
+            "new field file must invalidate the object cache hash"
+        );
+    }
+
+    #[test]
+    fn retain_type_drops_missing_keys() {
+        let mut cache = Cache::default();
+        let doc = ClassDocumentation {
+            class_name: "Foo".to_string(),
+            summary: "".to_string(),
+            description: "".to_string(),
+            methods: vec![],
+            properties: vec![],
+            usage_examples: vec![],
+            relationships: vec![],
+        };
+        cache.update("classes/Foo.cls".into(), "h1".into(), "m", doc.clone());
+        cache.update("classes/Bar.cls".into(), "h1".into(), "m", doc);
+        let mut keep = std::collections::HashSet::new();
+        keep.insert("classes/Foo.cls".to_string());
+        cache.retain_type(crate::cli::MetadataType::Apex, &keep);
+        assert!(cache.get_if_fresh("classes/Foo.cls", "h1", "m").is_some());
+        assert!(cache.get_if_fresh("classes/Bar.cls", "h1", "m").is_none());
     }
 }

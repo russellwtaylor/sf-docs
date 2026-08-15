@@ -66,7 +66,13 @@ fn scan_by_extension(
         .follow_links(false)
         .into_iter()
         .filter_entry(should_visit)
-        .filter_map(|e| e.ok())
+        .filter_map(|e| match e {
+            Ok(entry) => Some(entry),
+            Err(err) => {
+                eprintln!("Warning: skipping unreadable path during scan: {err}");
+                None
+            }
+        })
     {
         let path = entry.path();
         if !path.is_file() {
@@ -196,7 +202,13 @@ fn scan_component(source_dir: &Path, suffix: &str, ancestor: &str) -> Result<Vec
         .follow_links(false)
         .into_iter()
         .filter_entry(should_visit)
-        .filter_map(|e| e.ok())
+        .filter_map(|e| match e {
+            Ok(entry) => Some(entry),
+            Err(err) => {
+                eprintln!("Warning: skipping unreadable path during scan: {err}");
+                None
+            }
+        })
     {
         let path = entry.path();
         if !path.is_file() {
@@ -249,7 +261,7 @@ impl FileScanner for LwcScanner {
 
 impl FileScanner for AuraScanner {
     fn scan(&self, source_dir: &Path) -> Result<Vec<SourceFile>> {
-        scan_component(source_dir, ".cmp", "aura")
+        scan_by_extension(source_dir, ".cmp", None, Some("aura"))
     }
 }
 
@@ -702,16 +714,25 @@ mod tests {
     }
 
     #[test]
-    fn aura_scanner_reads_sibling_js_as_source() {
+    fn aura_scanner_uses_cmp_even_when_js_exists() {
         let tmp = TempDir::new().unwrap();
         let comp_dir = tmp.path().join("aura").join("myComp");
         fs::create_dir_all(&comp_dir).unwrap();
-        write_file(&comp_dir, "myComp.cmp", "<aura:component/>");
+        write_file(
+            &comp_dir,
+            "myComp.cmp",
+            "<aura:component><aura:attribute name=\"title\" type=\"String\"/></aura:component>",
+        );
         write_file(&comp_dir, "myComp.js", "({ handleClick: function() {} })");
 
         let files = AuraScanner.scan(tmp.path()).unwrap();
         assert_eq!(files.len(), 1);
-        assert!(files[0].raw_source.contains("handleClick"));
+        assert!(
+            files[0].raw_source.contains("aura:attribute"),
+            "Aura raw_source must be the .cmp markup, not the controller JS; got {}",
+            files[0].raw_source
+        );
+        assert!(!files[0].raw_source.contains("handleClick"));
     }
 
     #[test]

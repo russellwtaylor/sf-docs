@@ -107,6 +107,11 @@ pub struct GenerateArgs {
     #[arg(long = "tag", value_delimiter = ',')]
     pub tags: Vec<String>,
 
+    /// Include Apex test classes (`*Test.cls`, `*Tests.cls`). Off by default to
+    /// avoid spending API quota on test fixtures.
+    #[arg(long)]
+    pub include_tests: bool,
+
     /// Enable verbose logging
     #[arg(long, short)]
     pub verbose: bool,
@@ -144,6 +149,25 @@ impl GenerateArgs {
             .iter()
             .any(|t| self.tags.iter().any(|f| f.eq_ignore_ascii_case(t)))
     }
+
+    /// True when this generate run is a subset of the wiki (so the index must
+    /// be merged with cached entries for types/files not processed this time).
+    pub fn is_partial(&self) -> bool {
+        !self.types.is_empty() || self.name_filter.is_some() || !self.tags.is_empty()
+    }
+
+    /// True when it is safe to delete docs/cache entries whose source is gone.
+    /// Name/tag filters process a subset, so they must not prune siblings.
+    pub fn should_prune(&self) -> bool {
+        self.name_filter.is_none() && self.tags.is_empty()
+    }
+}
+
+/// Returns true for Apex filenames that look like test classes (`FooTest.cls`).
+pub fn is_apex_test_filename(filename: &str) -> bool {
+    let stem = filename.strip_suffix(".cls").unwrap_or(filename);
+    let lower = stem.to_ascii_lowercase();
+    lower.ends_with("test") || lower.ends_with("tests")
 }
 
 fn parse_glob_pattern(s: &str) -> Result<String, String> {
@@ -368,5 +392,29 @@ mod tests {
         assert_eq!(args.source_dir, std::path::PathBuf::from("src"));
         assert_eq!(args.output, Some(std::path::PathBuf::from("out")));
         assert!(args.verbose);
+    }
+
+    #[test]
+    fn include_tests_defaults_off() {
+        let args = parse_generate(&[]);
+        assert!(!args.include_tests);
+        let args = parse_generate(&["--include-tests"]);
+        assert!(args.include_tests);
+    }
+
+    #[test]
+    fn apex_test_filename_detection() {
+        assert!(is_apex_test_filename("AccountServiceTest.cls"));
+        assert!(is_apex_test_filename("AccountServiceTests.cls"));
+        assert!(!is_apex_test_filename("AccountService.cls"));
+        assert!(!is_apex_test_filename("TestDataFactory.cls"));
+    }
+
+    #[test]
+    fn is_partial_when_type_or_filter_set() {
+        assert!(!parse_generate(&[]).is_partial());
+        assert!(parse_generate(&["--type", "apex"]).is_partial());
+        assert!(parse_generate(&["--name-filter", "Order*"]).is_partial());
+        assert!(parse_generate(&["--tag", "billing"]).is_partial());
     }
 }
