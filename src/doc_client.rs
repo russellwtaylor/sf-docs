@@ -83,4 +83,51 @@ mod tests {
         assert!(doc.methods.is_empty());
         assert!(doc.relationships.is_empty());
     }
+
+    #[test]
+    fn documentation_types_default_missing_vec_fields() {
+        let trigger: crate::types::TriggerDocumentation = serde_json::from_str(
+            r#"{"trigger_name":"T","sobject":"Account","summary":"s","description":"d"}"#,
+        )
+        .unwrap();
+        assert!(trigger.events.is_empty());
+        assert!(trigger.relationships.is_empty());
+
+        let flow: crate::types::FlowDocumentation =
+            serde_json::from_str(r#"{"api_name":"F","label":"L","summary":"s","description":"d"}"#)
+                .unwrap();
+        assert!(flow.key_decisions.is_empty());
+        assert!(flow.relationships.is_empty());
+
+        let object: crate::types::ObjectDocumentation = serde_json::from_str(
+            r#"{"object_name":"O","label":"L","summary":"s","description":"d"}"#,
+        )
+        .unwrap();
+        assert!(object.key_fields.is_empty());
+        assert!(object.relationships.is_empty());
+
+        let vr: crate::types::ValidationRuleDocumentation =
+            serde_json::from_str(r#"{"rule_name":"R","object_name":"Account","summary":"s"}"#)
+                .unwrap();
+        assert!(vr.edge_cases.is_empty());
+        assert!(vr.relationships.is_empty());
+
+        let lwc: crate::types::LwcDocumentation =
+            serde_json::from_str(r#"{"component_name":"c","summary":"s","description":"d"}"#)
+                .unwrap();
+        assert!(lwc.api_props.is_empty());
+        assert!(lwc.relationships.is_empty());
+
+        let page: crate::types::FlexiPageDocumentation =
+            serde_json::from_str(r#"{"api_name":"P","label":"L","summary":"s","description":"d"}"#)
+                .unwrap();
+        assert!(page.key_components.is_empty());
+        assert!(page.relationships.is_empty());
+
+        let aura: crate::types::AuraDocumentation =
+            serde_json::from_str(r#"{"component_name":"a","summary":"s","description":"d"}"#)
+                .unwrap();
+        assert!(aura.attributes.is_empty());
+        assert!(aura.relationships.is_empty());
+    }
 }

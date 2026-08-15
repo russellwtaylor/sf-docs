@@ -757,6 +757,39 @@ async fn gemini_client_empty_candidates_is_error() {
 }
 
 #[tokio::test]
+async fn gemini_client_quota_exhausted_does_not_retry() {
+    use sfdoc::gemini::GeminiClient;
+
+    let server = MockServer::start();
+    let quota = server.mock(|when, then| {
+        when.method(POST).path("/test-model:generateContent");
+        then.status(429)
+            .header("content-type", "application/json")
+            .body(r#"{"error":{"message":"You exceeded your current quota, limit: 0"}}"#);
+    });
+
+    let client = GeminiClient::new_with_endpoint(
+        "test-key".to_string(),
+        "test-model",
+        1,
+        0,
+        &server.base_url(),
+    )
+    .unwrap();
+
+    let err = sfdoc::doc_client::document::<sfdoc::types::ClassDocumentation>(
+        &client, "sys", "user", "Foo",
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("quota exhausted"),
+        "unexpected error: {err:#}"
+    );
+    quota.assert_hits(1);
+}
+
+#[tokio::test]
 async fn openai_compat_client_documents_trigger() {
     use sfdoc::openai_compat::OpenAiCompatClient;
     use sfdoc::types::SourceFile;

@@ -549,14 +549,29 @@ pub async fn run_generate(args: &cli::GenerateArgs) -> Result<()> {
         || !aura_work.is_empty()
     {
         let api_key = resolve_api_key(provider)?;
-        let client: Arc<dyn DocClient> = match provider {
-            Provider::Gemini => Arc::new(GeminiClient::new(
+        let client: Arc<dyn DocClient> = match (provider, args.api_base_url.as_deref()) {
+            (Provider::Gemini, Some(url)) => Arc::new(GeminiClient::new_with_endpoint(
+                api_key,
+                &model,
+                args.concurrency,
+                args.rpm,
+                url,
+            )?),
+            (Provider::Gemini, None) => Arc::new(GeminiClient::new(
                 api_key,
                 &model,
                 args.concurrency,
                 args.rpm,
             )?),
-            _ => Arc::new(OpenAiCompatClient::new(
+            (_, Some(url)) => Arc::new(OpenAiCompatClient::new(
+                api_key,
+                &model,
+                url,
+                args.concurrency,
+                provider.display_name(),
+                args.rpm,
+            )?),
+            (_, None) => Arc::new(OpenAiCompatClient::new(
                 api_key,
                 &model,
                 provider

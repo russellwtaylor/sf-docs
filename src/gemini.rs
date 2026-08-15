@@ -278,4 +278,14 @@ mod tests {
         let prompt = build_class_prompt(&file, &meta);
         assert!(prompt.contains("Service for accounts"));
     }
+
+    #[test]
+    fn quota_exhausted_detects_limit_zero() {
+        assert!(super::is_quota_exhausted(
+            r#"{"error":{"message":"You exceeded your current quota, limit: 0"}}"#
+        ));
+        assert!(!super::is_quota_exhausted(
+            r#"{"error":{"message":"Resource has been exhausted (e.g. check quota)."}}"#
+        ));
+    }
 }

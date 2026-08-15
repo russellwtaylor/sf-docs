@@ -2200,6 +2200,48 @@ mod tests {
     }
 
     #[test]
+    fn overlay_classes_replaces_matching_name_and_keeps_others() {
+        let mut account = sample_context();
+        account.metadata.class_name = "Account".to_string();
+        account.documentation.class_name = "Account".to_string();
+        account.documentation.summary = "Original".to_string();
+
+        let mut order = sample_context();
+        order.metadata.class_name = "Order".to_string();
+        order.documentation.class_name = "Order".to_string();
+
+        let mut owned = OwnedBundle {
+            classes: vec![account, order],
+            triggers: vec![],
+            flows: vec![],
+            validation_rules: vec![],
+            objects: vec![],
+            lwc: vec![],
+            flexipages: vec![],
+            custom_metadata: vec![],
+            aura: vec![],
+        };
+
+        let mut updated = sample_context();
+        updated.metadata.class_name = "Account".to_string();
+        updated.documentation.class_name = "Account".to_string();
+        updated.documentation.summary = "Updated".to_string();
+        owned.overlay_classes(vec![updated]);
+
+        assert_eq!(owned.classes.len(), 2);
+        let account = owned
+            .classes
+            .iter()
+            .find(|c| c.documentation.class_name == "Account")
+            .unwrap();
+        assert_eq!(account.documentation.summary, "Updated");
+        assert!(owned
+            .classes
+            .iter()
+            .any(|c| c.documentation.class_name == "Order"));
+    }
+
+    #[test]
     fn cross_link_picks_longest_name_in_relationship() {
         let mut ctx = sample_context();
         ctx.all_names = std::sync::Arc::new(crate::types::AllNames {
